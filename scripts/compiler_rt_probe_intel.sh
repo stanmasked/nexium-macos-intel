@@ -17,7 +17,7 @@ if [[ ! -s "$archive" ]]; then
     echo "CLANG_RT_BLOCKED: Xcode compiler runtime archive missing: $archive" >&2
     exit 4
 fi
-if ! xcrun nm -arch x86_64 "$archive" 2>/dev/null | grep -F -q '___isPlatformVersionAtLeast'; then
+if ! xcrun nm -arch x86_64 "$archive" 2>/dev/null | grep -F '___isPlatformVersionAtLeast' >/dev/null; then
     echo "CLANG_RT_BLOCKED: ___isPlatformVersionAtLeast is not exported by $archive" >&2
     exit 5
 fi

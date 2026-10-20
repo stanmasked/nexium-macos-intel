@@ -27,6 +27,17 @@ class ProcessProbeTests(unittest.TestCase):
             self.assertTrue((evidence / "nexium-stdout-stderr.log").is_file())
             return report
 
+    def test_panic_cause_extraction_removes_absolute_source_path(self):
+        lines = [
+            "thread 'main' panicked at /Users/runner/.cargo/registry/src/eframe.rs:123:21:",
+            "Unable to select a compatible graphics adapter",
+            "stack backtrace:",
+            "0: core::panicking::panic_fmt"
+        ]
+        excerpt = module.panic_reason_excerpt(lines)
+        self.assertIn("Unable to select a compatible graphics adapter", excerpt)
+        self.assertNotIn("/Users/runner", str(excerpt))
+
     def test_private_internal_logs_are_counted_without_exposing_paths(self):
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp)

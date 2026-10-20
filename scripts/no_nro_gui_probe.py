@@ -122,11 +122,25 @@ def collect_private_log_signals(output: Path) -> dict:
             "diagnostic_lines_redacted": True}
 
 
-def stop_group(process: subprocess.Popen, sig: signal.Signals) -> None:
+def stop_group(process: subprocess.Popen, sig: signal.Signals) -> str:
+    """Only signal a child we spawned; macOS runners can deny killpg."""
+    if process.poll() is not None:
+        return "already_exited"
     try:
         os.killpg(process.pid, sig)
+        return "process_group_signalled"
     except ProcessLookupError:
-        pass
+        return "already_exited"
+    except PermissionError:
+        # Some hosted macOS runners disallow process-group signalling.
+        # The direct child was started by us; never signal another PID.
+        try:
+            process.send_signal(sig)
+            return "direct_child_signalled"
+        except ProcessLookupError:
+            return "already_exited"
+        except PermissionError:
+            return "process_signal_denied"
 
 
 def probe(exe: Path, output: Path, seconds: int, window_helper: Path | None = None) -> dict:
@@ -189,12 +203,15 @@ def probe(exe: Path, output: Path, seconds: int, window_helper: Path | None = No
                     except (OSError, subprocess.TimeoutExpired) as exc:
                         result["window_probe"] = "window_inspection_failed"
                         result["window_probe_detail"] = str(exc)
-                stop_group(process, signal.SIGTERM)
+                result["cleanup_signal_mode"] = stop_group(process, signal.SIGTERM)
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    stop_group(process, signal.SIGKILL)
-                    process.wait(timeout=5)
+                    result["cleanup_kill_mode"] = stop_group(process, signal.SIGKILL)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        result["cleanup_incomplete"] = True
         except OSError as exc:
             result["outcome"] = "launch_failed"
             result["error"] = str(exc)

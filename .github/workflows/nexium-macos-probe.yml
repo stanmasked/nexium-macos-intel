@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -69,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -350,6 +350,117 @@ jobs:
             stage22-report/stage22-minimal-eframe-comparison.json
           if-no-files-found: warn
 
+  host-init-compare:
+    name: Stage25 Intel native same Mach-O early versus full-init versus HorizonApp
+    if: github.head_ref == 'work/intel-stage25-host-init-vs-horizonapp'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download a single new native Intel Rustarmic executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage25-bundle
+      - name: Verify x86_64 Mach-O and compile scoped CoreGraphics window inspector
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage25-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(uname -m)" = x86_64
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage25-executable"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage25-window-inspector" \
+            scripts/nexium_window_id.swift
+      - name: Original HorizonApp normal startup, no audio and no NRO
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage25-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage25-report/full-horizonapp --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage25-window-inspector"
+      - name: Normal host startup but replace only HorizonApp creator with minimal app
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage25-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage25-report/full-init-minimal-app --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage25-window-inspector"
+      - name: Stage22 early minimal eframe control, same binary and no NRO
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage25-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=1 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage25-report/early-minimal --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage25-window-inspector"
+      - name: Verify three genuinely executed variants with one executable
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage25-report')
+          markers={
+              'full-horizonapp':None,
+              'full-init-minimal-app':'STAGE25_HOST_INIT_MINIMAL_APP_ENTERED',
+              'early-minimal':'STAGE22_MINIMAL_EFRAME_ENTERED',
+          }
+          records={}
+          digest=None
+          for name,expected in markers.items():
+              p=root/name/'gui_process_probe.json'
+              assert p.is_file(), 'missing original Intel process receipt: '+name
+              data=json.loads(p.read_text())
+              assert data['probe']=='no_nro_gui_process_only'
+              assert data['nro_verified'] is False and data['gameplay_verified'] is False
+              assert data['gui_verified'] is False
+              assert data['outcome'] in ('exited_nonzero','exited_zero_unverified','alive_without_gui_verification')
+              if digest is None:
+                  digest=data['emulator_sha256']
+              assert data['emulator_sha256']==digest, 'not identical compiled Mach-O'
+              console=(root/name/'nexium-stdout-stderr.log').read_text(errors='replace')
+              if expected is not None:
+                  assert expected in console, 'did not reach '+name+' marker'
+              for other in (v for v in markers.values() if v and v!=expected):
+                  assert other not in console, 'unexpected other variant marker in '+name
+              records[name]={k:data.get(k) for k in ('outcome','exit_signal',
+                         'alive_at_deadline','window_found','window_probe')}
+          result={'schema':'nexium-stage25-normal-host-init-vs-horizonapp/v1',
+                  'result':'THREE_ACTUAL_INTEL_GUI_PATHS_CLASSIFIED',
+                  'same_executable_sha256':digest,'variants':records,
+                  'nro_supplied':False,'window_pixels_verified':False,
+                  'gameplay_or_audio_verified':False}
+          (root/'stage25-host-init-contrast.json').write_text(
+              json.dumps(result,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(result,sort_keys=True))
+          PY
+          echo 'Stage25: three real Intel GUI-process observations; no NRO.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish only sanitized process reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage25-host-init-horizonapp-contrast
+          path: |
+            stage25-report/full-horizonapp/gui_process_probe.json
+            stage25-report/full-init-minimal-app/gui_process_probe.json
+            stage25-report/early-minimal/gui_process_probe.json
+            stage25-report/stage25-host-init-contrast.json
+          if-no-files-found: warn
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
@@ -369,6 +480,7 @@ jobs:
       NEXIUM_CPU_BACKEND: ${{ matrix.backend }}
       NEXIUM_EXPERIMENT_AUDIO_ABLATION: '1'
       NEXIUM_EXPERIMENT_MINIMAL_EFRAME: '1'
+      NEXIUM_EXPERIMENT_FULL_INIT_MINIMAL_APP: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

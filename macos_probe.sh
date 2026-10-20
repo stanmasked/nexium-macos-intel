@@ -78,10 +78,17 @@ if [[ "$BACKEND" == "dynarmic" ]]; then
     python3 "$SELF/scripts/prepare_dynarmic_macos.py" "$SRC" \
         --cargo-home "${CARGO_HOME:-$HOME/.cargo}" --work "$WORK"
 fi
+# Apple Clang normally provides this compiler-rt archive during its own
+# final link, but rustc's macOS link command can omit it. SDL3 references
+# ___isPlatformVersionAtLeast from its Objective-C translation units.
+# Link ONLY the final binary with the native Xcode archive, not each crate.
+CLANG_RT_OSX="$(bash "$SELF/scripts/compiler_rt_probe_intel.sh" --path)"
+echo "Explicit Intel compiler-rt for SDL3 linkage: $CLANG_RT_OSX"
 set +e
-cargo build --release --target x86_64-apple-darwin \
+cargo rustc --release --target x86_64-apple-darwin \
     -p nexium-gui --bin nexium \
-    --no-default-features --features "backend-$BACKEND"
+    --no-default-features --features "backend-$BACKEND" -- \
+    -C "link-arg=$CLANG_RT_OSX"
 status=$?
 set -e
 if [[ $status -ne 0 ]]; then

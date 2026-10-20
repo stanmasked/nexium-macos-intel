@@ -1,0 +1,107 @@
+name: Stage24 independent Intel macOS eframe 0.37 control
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage24-independent-eframe-intel.yml'
+      - 'probes/standalone-eframe-intel/**'
+
+permissions:
+  contents: read
+
+# Independent of the NeXium Stage22/23 CI queues and source changes.
+concurrency:
+  group: stage24-independent-eframe-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-intel-control:
+    name: Build and observe isolated Intel eframe 0.37 Wgpu and Glow
+    runs-on: macos-15-intel
+    timeout-minutes: 65
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.15'
+      CMAKE_OSX_DEPLOYMENT_TARGET: '10.15'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Assert actual native Intel Mac and run nine fail-closed unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          python3 -m unittest discover -s probes/standalone-eframe-intel \
+            -p 'test_control_probe.py' -v
+          python3 -m py_compile probes/standalone-eframe-intel/control_probe.py
+          echo 'Stage24 independent unit tests and genuine Intel hardware passed.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build genuinely independent eframe 0.37 native x86_64 control
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release \
+            --manifest-path probes/standalone-eframe-intel/Cargo.toml
+          exe=probes/standalone-eframe-intel/target/release/intel-eframe-control
+          test -x "$exe"
+          test "$(xcrun lipo -archs "$exe")" = x86_64
+          shasum -a 256 "$exe"
+          printf '%s\n' "$exe" > "$RUNNER_TEMP/stage24-control-executable"
+          cargo tree --manifest-path probes/standalone-eframe-intel/Cargo.toml \
+            -p eframe --depth 0
+          echo 'Compiled independent eframe control, not the NeXium emulator.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Real Intel minimal Wgpu/Metal startup without an emulator or NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$(cat "$RUNNER_TEMP/stage24-control-executable")"
+          python3 probes/standalone-eframe-intel/control_probe.py \
+            --exe "$exe" --renderer wgpu \
+            --output stage24-control-reports/wgpu --seconds 12
+
+      - name: Real Intel minimal Glow/OpenGL startup, same binary and no NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$(cat "$RUNNER_TEMP/stage24-control-executable")"
+          python3 probes/standalone-eframe-intel/control_probe.py \
+            --exe "$exe" --renderer glow \
+            --output stage24-control-reports/glow --seconds 12
+
+      - name: Validate both original process observations, byte-identical executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          import json
+          from pathlib import Path
+          source = Path('probes/standalone-eframe-intel/control_probe.py')
+          spec = importlib.util.spec_from_file_location('stage24', source)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          root = Path('stage24-control-reports')
+          a = json.loads((root/'wgpu'/'process-receipt.json').read_text())
+          b = json.loads((root/'glow'/'process-receipt.json').read_text())
+          result = module.classify_pair(a, b)
+          (root/'stage24-independent-eframe-comparison.json').write_text(
+              json.dumps(result, indent=2, sort_keys=True)+'\n')
+          print(json.dumps(result, sort_keys=True))
+          PY
+          echo 'Both real Intel process starts source-matched. No NeXium/game/render proof.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve only compact original process receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage24-intel-standalone-eframe-wgpu-glow
+          path: |
+            stage24-control-reports/wgpu/process-receipt.json
+            stage24-control-reports/glow/process-receipt.json
+            stage24-control-reports/stage24-independent-eframe-comparison.json
+          if-no-files-found: warn
+          retention-days: 90

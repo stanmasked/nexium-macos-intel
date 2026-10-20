@@ -1,0 +1,10 @@
+[package]
+name = "nexium-intel-gui-stack-control"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Minimal macOS eframe/winit rendering control; no NeXium or Nintendo code"
+
+[dependencies]
+# Same eframe major/minor as the exact NeXium upstream pin.
+eframe = { version = "0.37", features = ["wgpu", "glow"] }

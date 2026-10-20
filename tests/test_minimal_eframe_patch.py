@@ -25,6 +25,12 @@ class Stage22MinimalEframeTests(unittest.TestCase):
         self.assertIn('cfg(target_os = "macos")',updated)
         self.assertIn('AppSettings::load()',updated)
 
+    def test_pinned_eframe_037_trait_uses_ui_not_update(self):
+        patched = stage.patch_text(PINNED_SHAPE)
+        self.assertIn("fn ui(&mut self, ui: &mut egui::Ui", patched)
+        self.assertNotIn("fn update(&mut self", patched)
+        self.assertNotIn("egui::CentralPanel::default().show(ctx", patched)
+
     def test_patcher_idempotent(self):
         first=stage.patch_text(PINNED_SHAPE)
         self.assertEqual(stage.patch_text(first),first)

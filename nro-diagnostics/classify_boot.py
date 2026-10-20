@@ -51,6 +51,13 @@ def classify(baseline: dict, guest: dict, expected: dict, signals: dict) -> dict
     image_hashes = guest.get("unique_frame_hashes", 0)
     if not isinstance(image_hashes, int) or image_hashes < 0:
         raise ValueError("invalid snapshot hashes")
+    capture = guest.get("window_capture", {})
+    captured_frames = capture.get("frames", 0)
+    captured_hashes = capture.get("unique_hashes", 0)
+    if (type(captured_frames) is not int or captured_frames < 0 or
+            type(captured_hashes) is not int or captured_hashes < 0 or
+            captured_hashes > captured_frames):
+        raise ValueError("invalid PID-owned window capture counts")
     return {
         "schema": "nexium-intel-public-nro-safegui-boot/v1",
         "public_nro_sha256": actual,
@@ -66,6 +73,13 @@ def classify(baseline: dict, guest: dict, expected: dict, signals: dict) -> dict
             "exit_code": guest.get("exit_code"),
             "unique_snapshot_hashes": image_hashes,
             "snapshot_count": len(guest.get("snapshots", [])),
+            "pid_owned_window_capture": {
+                "status": capture.get("status", "not_requested"),
+                "capture_attempted": bool(capture.get("requested", False)),
+                "frames_observed": captured_frames,
+                "unique_hashes": captured_hashes,
+                "may_include_only_gui_without_guest_presentation": True,
+            },
             **signals,
         },
         "public_test_nro_only": True,

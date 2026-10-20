@@ -67,6 +67,10 @@ git fetch origin "$REVISION"
 git checkout --detach "$REVISION"
 git submodule update --init --recursive
 python3 "$SELF/scripts/apply_macos_bootstrap.py" "$SRC"
+if [[ "${NEXIUM_EXPERIMENT_AUDIO_ABLATION:-0}" == "1" ]]; then
+    echo "AUDIO_ABLATION_EXPERIMENT: patching locally checked-out host and UI audio initialization"
+    python3 "$SELF/scripts/apply_macos_audio_ablation.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

@@ -115,9 +115,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t bins < <(find downloaded -type f -path '*/Contents/MacOS/nexium' | sort)
-          test "${#bins[@]}" -eq 1
-          BIN="${bins[0]}"
+          COUNT="$(find downloaded -type f -path '*/Contents/MacOS/nexium' | wc -l | tr -d '[:space:]')"
+          test "$COUNT" -eq 1
+          BIN="$(find downloaded -type f -path '*/Contents/MacOS/nexium' -print -quit)"
           test "$(xcrun lipo -archs "$BIN")" = x86_64
           chmod 755 "$BIN"
           printf '%s\n' "$BIN" > "$RUNNER_TEMP/nexium-exe-path"

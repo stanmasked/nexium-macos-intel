@@ -38,6 +38,36 @@ class ProcessProbeTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "exited_zero_unverified")
         self.assertEqual(result["exit_code"], 0)
 
+    def test_mock_owned_window_is_not_treated_as_rendered_game(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            exe = root / "synthetic-exe"
+            exe.write_text("#!/bin/sh\nsleep 3\n")
+            exe.chmod(0o755)
+            helper = root / "fake-window-id"
+            helper.write_text("#!/bin/sh\necho 124\n")
+            helper.chmod(0o755)
+            result = module.probe(exe, root / "out", 1, helper)
+            self.assertTrue(result["window_found"])
+            self.assertEqual(result["window_id"], 124)
+            self.assertEqual(result["window_probe"], "own_visible_window_observed")
+            self.assertFalse(result["gui_verified"])
+            self.assertFalse(result["nro_verified"])
+
+    def test_failed_window_enumeration_is_not_rendering_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            exe = root / "synthetic-exe"
+            exe.write_text("#!/bin/sh\nsleep 3\n")
+            exe.chmod(0o755)
+            helper = root / "fake-window-id"
+            helper.write_text("#!/bin/sh\necho window-unavailable >&2\nexit 4\n")
+            helper.chmod(0o755)
+            result = module.probe(exe, root / "out", 1, helper)
+            self.assertFalse(result["window_found"])
+            self.assertEqual(result["window_probe"], "no_visible_window_identified")
+            self.assertTrue(result["alive_at_deadline"])
+
     def test_alive_process_remains_unverified_and_is_terminated(self):
         result = self.run_case("sleep 3", seconds=1)
         self.assertEqual(result["outcome"], "alive_without_gui_verification")

@@ -61,6 +61,48 @@ class Stage23RendererTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'partially patched'):
             stage.patch_source(SOURCE+stage.MARKER)
 
+    def test_cargo_enables_explicit_glow(self):
+        original='eframe = { version = "0.37", features = ["wgpu"] }'
+        patched=stage.patch_cargo(original)
+        self.assertEqual(patched, stage.CARGO_UPDATED)
+        self.assertIn('"glow"',patched)
+
+    def test_cargo_idempotent(self):
+        self.assertEqual(stage.patch_cargo(stage.CARGO_UPDATED), stage.CARGO_UPDATED)
+
+    def test_cargo_source_drift_fails_closed(self):
+        with self.assertRaisesRegex(RuntimeError,'Cargo feature anchor'):
+            stage.patch_cargo('eframe = "0.37"')
+        with self.assertRaisesRegex(RuntimeError,'ambiguous'):
+            stage.patch_cargo(stage.CARGO_ORIGINAL+'\n'+stage.CARGO_ORIGINAL)
+
+    def test_dual_file_prevalidation_prevents_partial_write(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            directory=root/'nexium-gui'
+            (directory/'src').mkdir(parents=True)
+            mainfile=directory/'src/main.rs'
+            cargo=directory/'Cargo.toml'
+            mainfile.write_text(SOURCE)
+            cargo.write_text('eframe = "unexpected"')
+            self.assertEqual(stage.main([str(root)]),2)
+            self.assertEqual(mainfile.read_text(), SOURCE)
+            self.assertEqual(cargo.read_text(),'eframe = "unexpected"')
+
+    def test_dual_file_patch_idempotent_and_scoped(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            directory=root/'nexium-gui'
+            (directory/'src').mkdir(parents=True)
+            mainfile=directory/'src/main.rs'
+            cargo=directory/'Cargo.toml'
+            mainfile.write_text(SOURCE)
+            cargo.write_text(stage.CARGO_ORIGINAL+'\n[features]\ndefault=[]\n')
+            self.assertEqual(stage.main([str(root)]),0)
+            self.assertEqual(stage.main([str(root)]),0)
+            self.assertEqual(mainfile.read_text(),stage.patch_source(SOURCE))
+            self.assertEqual(cargo.read_text(),stage.CARGO_UPDATED+'\n[features]\ndefault=[]\n')
+
     def test_file_patch_idempotent_and_scoped(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'nexium-gui/src/main.rs'

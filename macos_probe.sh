@@ -31,7 +31,7 @@ export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 # Rust's default may be 10.12 while SDL3's C objects were built for 15.5,
 # causing undefined ___isPlatformVersionAtLeast at the final linker step.
 export MACOSX_DEPLOYMENT_TARGET="${NEXIUM_MIN_MACOS:-10.15}"
-if [[ ! "$MACOSX_DEPLOYMENT_TARGET" =~ ^(10\\.(1[5-9]|[2-9][0-9])|1[1-9](\\.[0-9]+)?)$ ]]; then
+if [[ ! "$MACOSX_DEPLOYMENT_TARGET" =~ ^(10\.(1[5-9]|[2-9][0-9])|1[1-9](\.[0-9]+)?)$ ]]; then
     echo "BLOCKED: invalid/unsupported minimum macOS: $MACOSX_DEPLOYMENT_TARGET"
     exit 3
 fi
@@ -92,7 +92,7 @@ fi
 APP="$WORK/dist/NeXium-Intel-$BACKEND-Experimental.app"
 mkdir -p "$APP/Contents/MacOS"
 cp "$SRC/target/x86_64-apple-darwin/release/nexium" "$APP/Contents/MacOS/nexium"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -103,7 +103,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundleVersion</key><string>2</string>
 <key>NSHighResolutionCapable</key><true/>
-<key>LSMinimumSystemVersion</key><string>10.15</string>
+<key>LSMinimumSystemVersion</key><string>${MACOSX_DEPLOYMENT_TARGET}</string>
 </dict></plist>
 PLIST
 cp "$SRC/LICENSE" "$WORK/dist/NeXium-LICENSE.txt"

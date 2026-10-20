@@ -30,14 +30,14 @@ class WindowCaptureTests(unittest.TestCase):
             self.assertIsNone(module.png_dimensions(path))
 
     def test_rejects_unauthorized_process_identity(self):
-        fake = subprocess.CompletedProcess(["ps"], 0, "/Applications/Notes.app/Contents/MacOS/Notes\\n", "")
-        with patch.object(module, "process_alive", return_value=True), \\
+        fake = subprocess.CompletedProcess(["ps"], 0, "/Applications/Notes.app/Contents/MacOS/Notes\n", "")
+        with patch.object(module, "process_alive", return_value=True), \
              patch.object(module.subprocess, "run", return_value=fake):
             self.assertFalse(module.is_nexium_process(1234))
 
     def test_accepts_only_nexium_executable_name(self):
-        fake = subprocess.CompletedProcess(["ps"], 0, "/tmp/NeXium.app/Contents/MacOS/nexium\\n", "")
-        with patch.object(module, "process_alive", return_value=True), \\
+        fake = subprocess.CompletedProcess(["ps"], 0, "/tmp/NeXium.app/Contents/MacOS/nexium\n", "")
+        with patch.object(module, "process_alive", return_value=True), \
              patch.object(module.subprocess, "run", return_value=fake):
             self.assertTrue(module.is_nexium_process(1234))
 

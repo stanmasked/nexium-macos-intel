@@ -89,6 +89,17 @@ if [[ $status -ne 0 ]]; then
     exit "$status"
 fi
 
+BIN="$SRC/target/x86_64-apple-darwin/release/nexium"
+if [[ ! -f "$BIN" ]]; then
+    echo "BUILD_BLOCKED: no native Intel Mach-O binary was emitted" >&2
+    exit 6
+fi
+ARCHES="$(xcrun lipo -archs "$BIN")"
+if [[ "$ARCHES" != "x86_64" ]]; then
+    echo "BUILD_BLOCKED: expected native x86_64-only binary; got: $ARCHES" >&2
+    exit 7
+fi
+echo "INTEL_MACHO_VERIFIED: $ARCHES"
 APP="$WORK/dist/NeXium-Intel-$BACKEND-Experimental.app"
 mkdir -p "$APP/Contents/MacOS"
 cp "$SRC/target/x86_64-apple-darwin/release/nexium" "$APP/Contents/MacOS/nexium"

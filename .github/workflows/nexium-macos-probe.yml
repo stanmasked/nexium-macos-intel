@@ -104,7 +104,7 @@ jobs:
           if test -f nexium-macos-intel-work/build.log; then
             echo 'Last compiler failures:' >> "$GITHUB_STEP_SUMMARY"
             echo '```text' >> "$GITHUB_STEP_SUMMARY"
-            grep -E 'fatal error:|error\\[|error: failed|BUILD_BLOCKED|DYNARMIC_MIG_BLOCKED|BOOTSTRAP BLOCKED' \
+            grep -F -e 'fatal error:' -e 'error[' -e 'error: failed' -e 'error:' -e 'BUILD_BLOCKED' -e 'DYNARMIC_MIG_BLOCKED' -e 'BOOTSTRAP BLOCKED' \
                 nexium-macos-intel-work/build.log | tail -n 18 >> "$GITHUB_STEP_SUMMARY" || true
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           else

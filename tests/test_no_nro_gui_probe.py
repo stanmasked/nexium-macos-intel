@@ -3,6 +3,8 @@ from pathlib import Path
 import importlib.util
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
+import signal
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/no_nro_gui_probe.py"
 spec = importlib.util.spec_from_file_location("intel_gui_probe", SCRIPT)
@@ -54,6 +56,28 @@ class ProcessProbeTests(unittest.TestCase):
             self.assertEqual(summary["keyword_counts"]["warn"], 1)
             self.assertNotIn("private-person", str(summary))
             self.assertNotIn("secret.nro", str(summary))
+
+    def test_hosted_macos_killpg_permission_error_does_not_relabel_gui_failure(self):
+        process = Mock()
+        process.pid = 12345
+        process.poll.return_value = None
+        with patch.object(module.os, "killpg", side_effect=PermissionError):
+            self.assertEqual(
+                module.stop_group(process, signal.SIGTERM),
+                "direct_child_signalled",
+            )
+        process.send_signal.assert_called_once_with(signal.SIGTERM)
+
+    def test_unavailable_signal_does_not_crash_diagnostic(self):
+        process = Mock()
+        process.pid = 12345
+        process.poll.return_value = None
+        process.send_signal.side_effect = PermissionError
+        with patch.object(module.os, "killpg", side_effect=PermissionError):
+            self.assertEqual(
+                module.stop_group(process, signal.SIGTERM),
+                "process_signal_denied",
+            )
 
     def test_immediate_nonzero_exit_is_not_success(self):
         result = self.run_case("exit 12")

@@ -2,18 +2,17 @@ name: NeXium Intel macOS experimental probe
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - work/intel-stage2-bootstrap
-    paths:
-      - 'macos_probe.sh'
-      - 'scripts/**'
-      - '.github/workflows/nexium-macos-probe.yml'
   pull_request:
     paths:
       - 'macos_probe.sh'
       - 'scripts/**'
+      - 'tests/**'
       - '.github/workflows/nexium-macos-probe.yml'
+
+# New revisions supersede older expensive Intel compiler probes.
+concurrency:
+  group: nexium-intel-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

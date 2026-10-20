@@ -61,7 +61,9 @@ rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then
     # Pin the published crate, then patch a LOCAL copy rather than editing
     # the shared Cargo registry. Its vendor CMake omits Mach MIG generation.
-    cargo fetch --locked --target x86_64-apple-darwin
+    # Upstream intentionally has no tracked Cargo.lock at this pin.
+    # Generate a local resolution before modifying Cargo.toml.
+    cargo fetch --target x86_64-apple-darwin
     python3 "$SELF/scripts/prepare_dynarmic_macos.py" "$SRC" \
         --cargo-home "${CARGO_HOME:-$HOME/.cargo}" --work "$WORK"
 fi

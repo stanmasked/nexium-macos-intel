@@ -78,7 +78,8 @@ jobs:
           NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
             NEXIUM_MACOS_SKIP_SDL_INPUT=1 python3 scripts/nro_smoke_test.py \
               --exe "$BIN" --nro public-nro/nexium_clean_smoke.nro \
-              --output safe-boot-report/guest --seconds 24 --snapshot-ms 1500
+              --output safe-boot-report/guest --seconds 24 --snapshot-ms 1500 \
+              --capture-window
       - name: Classify actual guest load logs without revealing private information
         if: always()
         shell: bash

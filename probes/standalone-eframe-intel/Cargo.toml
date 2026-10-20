@@ -7,5 +7,7 @@ publish = false
 # Mirror the native GUI crate's eframe/egui minor version. Do not import
 # NeXium crates, assets, NROs, Nintendo SDKs, keys or private files.
 [dependencies]
-eframe = { version = "0.37", features = ["wgpu"] }
+# Both backends must be enabled at compile-time. eframe::Renderer::Glow is
+# cfg-gated and otherwise raises E0599 even if Renderer::Wgpu builds.
+eframe = { version = "0.37", features = ["wgpu", "glow"] }
 egui = "0.37"

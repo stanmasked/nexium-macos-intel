@@ -19,11 +19,11 @@ struct Stage22MinimalEframe;
 
 #[cfg(target_os = "macos")]
 impl eframe::App for Stage22MinimalEframe {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("NeXium Intel - eframe startup isolation");
-            ui.label("No NRO, game initialization or audio assertions.");
-        });
+    // Pinned eframe 0.37 App trait uses ui(&mut egui::Ui), NOT update(ctx).
+    // Mirror HorizonApp in upstream nexium-gui/src/app.rs.
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui.heading("NeXium Intel - eframe startup isolation");
+        ui.label("No NRO, game initialization or audio assertions.");
     }
 }
 

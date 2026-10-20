@@ -31,6 +31,23 @@ jobs:
           python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/nro_smoke_test.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify patch anchors on actual pinned NeXium sources
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          BASE="$RUNNER_TEMP/nexium-pinned"
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
+          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+            curl --fail --location --silent --show-error --retry 3 \
+              "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
+              --output "$BASE/$file"
+            test -s "$BASE/$file"
+          done
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
 
   intel-build:
     name: Native Intel build (experimental)

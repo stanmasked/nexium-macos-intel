@@ -61,6 +61,21 @@ class Stage23RendererTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'partially patched'):
             stage.patch_source(SOURCE+stage.MARKER)
 
+
+    def test_eframe_glow_feature_changes_horizonapp_exit_signature(self):
+        app='impl eframe::App for HorizonApp {\n'+stage.APP_EXIT_ORIGINAL+'\n}'
+        patched=stage.patch_app(app)
+        self.assertIn('fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>)',patched)
+        self.assertEqual(stage.patch_app(patched),patched)
+        self.assertNotIn(stage.APP_EXIT_ORIGINAL,patched)
+
+    def test_app_exit_drift_rejected_before_any_file_is_written(self):
+        with self.assertRaisesRegex(RuntimeError,'HorizonApp'):
+            stage.patch_app('fn other_app() {}')
+        with self.assertRaisesRegex(RuntimeError,'ambiguous'):
+            stage.patch_app('impl eframe::App for HorizonApp {\n'+
+                            stage.APP_EXIT_ORIGINAL+'\n'+stage.APP_EXIT_ORIGINAL+'\n}')
+
     def test_cargo_enables_explicit_glow(self):
         original='eframe = { version = "0.37", features = ["wgpu"] }'
         patched=stage.patch_cargo(original)
@@ -83,11 +98,14 @@ class Stage23RendererTests(unittest.TestCase):
             (directory/'src').mkdir(parents=True)
             mainfile=directory/'src/main.rs'
             cargo=directory/'Cargo.toml'
+            app=directory/'src/app.rs'
             mainfile.write_text(SOURCE)
+            app.write_text('impl eframe::App for HorizonApp {\\n'+stage.APP_EXIT_ORIGINAL+'\\n}')
             cargo.write_text('eframe = "unexpected"')
             self.assertEqual(stage.main([str(root)]),2)
             self.assertEqual(mainfile.read_text(), SOURCE)
             self.assertEqual(cargo.read_text(),'eframe = "unexpected"')
+            self.assertIn(stage.APP_EXIT_ORIGINAL,app.read_text())
 
     def test_dual_file_patch_idempotent_and_scoped(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -96,12 +114,15 @@ class Stage23RendererTests(unittest.TestCase):
             (directory/'src').mkdir(parents=True)
             mainfile=directory/'src/main.rs'
             cargo=directory/'Cargo.toml'
+            app=directory/'src/app.rs'
             mainfile.write_text(SOURCE)
+            app.write_text('impl eframe::App for HorizonApp {\\n'+stage.APP_EXIT_ORIGINAL+'\\n}')
             cargo.write_text(stage.CARGO_ORIGINAL+'\n[features]\ndefault=[]\n')
             self.assertEqual(stage.main([str(root)]),0)
             self.assertEqual(stage.main([str(root)]),0)
             self.assertEqual(mainfile.read_text(),stage.patch_source(SOURCE))
             self.assertEqual(cargo.read_text(),stage.CARGO_UPDATED+'\n[features]\ndefault=[]\n')
+            self.assertIn(stage.APP_EXIT_UPDATED,app.read_text())
 
     def test_file_patch_idempotent_and_scoped(self):
         with tempfile.TemporaryDirectory() as temp:

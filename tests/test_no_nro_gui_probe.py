@@ -27,6 +27,23 @@ class ProcessProbeTests(unittest.TestCase):
             self.assertTrue((evidence / "nexium-stdout-stderr.log").is_file())
             return report
 
+    def test_private_internal_logs_are_counted_without_exposing_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp)
+            logdir = out / "private-neXium-data" / "logs"
+            logdir.mkdir(parents=True)
+            (logdir / "nexium-2026-test.log").write_text(
+                "ERROR wgpu adapter /Users/private-person/secret.nro\n"
+                "WARN Metal device /Users/private-person/key.txt\n"
+                "normal line\n"
+            )
+            summary = module.collect_private_log_signals(out)
+            self.assertEqual(len(summary["log_files"]), 1)
+            self.assertEqual(summary["keyword_counts"]["error"], 1)
+            self.assertEqual(summary["keyword_counts"]["warn"], 1)
+            self.assertNotIn("private-person", str(summary))
+            self.assertNotIn("secret.nro", str(summary))
+
     def test_immediate_nonzero_exit_is_not_success(self):
         result = self.run_case("exit 12")
         self.assertEqual(result["outcome"], "exited_nonzero")

@@ -26,8 +26,8 @@ jobs:
       - name: Syntax and isolated smoke-test harness
         run: |
           set -euo pipefail
-          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -67,8 +67,8 @@ jobs:
       - name: Syntax and isolated smoke-test harness
         run: |
           set -euo pipefail
-          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -89,6 +89,8 @@ jobs:
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
 
+      - name: Verify native-only window capture helper type checks
+        run: xcrun swiftc -typecheck scripts/nexium_window_id.swift
       - name: Verify SDL3 availability symbol links from Rust
         run: bash scripts/compiler_rt_probe_intel.sh --probe
 

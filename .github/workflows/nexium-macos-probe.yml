@@ -1,0 +1,68 @@
+name: NeXium Intel macOS experimental probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/intel-stage2-bootstrap
+    paths:
+      - 'macos_probe.sh'
+      - 'scripts/**'
+      - '.github/workflows/nexium-macos-probe.yml'
+  pull_request:
+    paths:
+      - 'macos_probe.sh'
+      - 'scripts/**'
+      - '.github/workflows/nexium-macos-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Script safety and syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and isolated smoke-test harness
+        run: |
+          set -euo pipefail
+          bash -n macos_probe.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/nro_smoke_test.py
+          python3 scripts/nro_smoke_test.py --help >/dev/null
+
+  intel-build:
+    name: Native Intel build (experimental)
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify true Intel hardware
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          sw_vers
+          xcodebuild -version
+      - name: Install build dependencies
+        run: brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
+      - name: Experimental Intel NeXium build
+        id: build
+        continue-on-error: true
+        run: bash ./macos_probe.sh
+      - name: Retain evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-macos-intel-probe
+          path: |
+            nexium-macos-intel-work/build.log
+            nexium-macos-intel-work/dist
+          if-no-files-found: warn
+      - name: Report compilation blockers
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::NeXium macOS Intel port is not yet buildable; inspect build.log"
+          exit 1

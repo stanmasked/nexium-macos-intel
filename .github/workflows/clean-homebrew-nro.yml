@@ -1,0 +1,52 @@
+name: Clean Nintendo Switch homebrew NRO for Intel emulator smoke tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'smoke-nro/**'
+      - '.github/workflows/clean-homebrew-nro.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: NRO structure validator fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject invalid NRO0 mock images
+        run: |
+          python3 -m unittest discover -s smoke-nro -p 'test_validator.py' -v
+
+  build-clean-nro:
+    name: Compile public-domain-style test homebrew with libnx
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build original clean homebrew using the official devkitPro image
+        run: |
+          set -euo pipefail
+          docker run --rm --pull=always \
+            -v "$GITHUB_WORKSPACE/smoke-nro:/work" -w /work \
+            devkitpro/devkita64:20260219 make -j2
+      - name: Verify header and create provenance receipt
+        run: |
+          set -euo pipefail
+          python3 smoke-nro/validate_nro.py smoke-nro/nexium_clean_smoke.nro \
+            --report smoke-nro/nro_build_receipt.json
+          echo '## Public clean Nintendo Switch test NRO' >> "$GITHUB_STEP_SUMMARY"
+          cat smoke-nro/nro_build_receipt.json >> "$GITHUB_STEP_SUMMARY"
+          echo 'Payload compiled from original public test-only source: NO private game assets, firmware or encryption keys.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Header validation is NOT a successful emulator launch.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve only the public test NRO and receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-clean-homebrew-nro
+          path: |
+            smoke-nro/nexium_clean_smoke.nro
+            smoke-nro/nro_build_receipt.json
+          if-no-files-found: error

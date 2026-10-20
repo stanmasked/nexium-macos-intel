@@ -79,6 +79,10 @@ if [[ "${NEXIUM_EXPERIMENT_FULL_INIT_MINIMAL_APP:-0}" == "1" ]]; then
     echo "STAGE25_FULL_INIT: isolate HorizonApp constructor after normal host startup"
     python3 "$SELF/scripts/apply_macos_full_init_minimal_app.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_HORIZON_CTOR_ONLY:-0}" == "1" ]]; then
+    echo "STAGE26_CONSTRUCTOR_ONLY: retain HorizonApp but suppress its eframe UI"
+    python3 "$SELF/scripts/apply_macos_horizonapp_ctor_only.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

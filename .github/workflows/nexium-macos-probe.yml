@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/nro_smoke_test.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -50,9 +50,16 @@ jobs:
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
 
   intel-build:
-    name: Native Intel build (experimental)
+    name: Native Intel build (${{ matrix.backend }}, experimental)
+    needs: syntax
     runs-on: macos-15-intel
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [dynarmic, rustarmic]
+    env:
+      NEXIUM_CPU_BACKEND: ${{ matrix.backend }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -74,13 +81,26 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nexium-macos-intel-probe
+          name: nexium-macos-intel-${{ matrix.backend }}-probe
           path: |
             nexium-macos-intel-work/build.log
             nexium-macos-intel-work/dist
           if-no-files-found: warn
+      - name: Summarize native compilation diagnostics
+        if: always()
+        run: |
+          echo "### NeXium Intel — ${{ matrix.backend }}" >> "$GITHUB_STEP_SUMMARY"
+          if test -f nexium-macos-intel-work/build.log; then
+            echo 'Last compiler failures:' >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            grep -E 'fatal error:|error\\[|error: failed|BUILD_BLOCKED|DYNARMIC_MIG_BLOCKED|BOOTSTRAP BLOCKED' \
+                nexium-macos-intel-work/build.log | tail -n 18 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No build log was produced' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Report compilation blockers
         if: steps.build.outcome == 'failure'
         run: |
-          echo "::error::NeXium macOS Intel port is not yet buildable; inspect build.log"
+          echo "::error::NeXium Intel (${{ matrix.backend }}) not yet buildable; inspect artifact build.log"
           exit 1

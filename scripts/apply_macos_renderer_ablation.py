@@ -43,6 +43,25 @@ MARKER = 'STAGE23_EFRAME_RENDERER_SELECTED='
 CARGO_ORIGINAL = 'eframe = { version = "0.37", features = ["wgpu"] }'
 CARGO_UPDATED = 'eframe = { version = "0.37", features = ["wgpu", "glow"] }'
 
+# Feature-gated eframe 0.37 App::on_exit trait contract:
+# enabling glow changes on_exit(&mut self) to
+# on_exit(&mut self, Option<&eframe::glow::Context>).
+APP_EXIT_ORIGINAL = "    fn on_exit(&mut self) {"
+APP_EXIT_UPDATED = "    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {"
+
+
+def patch_app(data: str) -> str:
+    if APP_EXIT_UPDATED in data:
+        if data.count(APP_EXIT_UPDATED) != 1 or APP_EXIT_ORIGINAL in data:
+            raise RuntimeError("HorizonApp on_exit partially patched or ambiguous")
+        return data
+    if data.count(APP_EXIT_ORIGINAL) != 1:
+        raise RuntimeError("pinned HorizonApp on_exit anchor missing or ambiguous")
+    if "impl eframe::App for HorizonApp {" not in data:
+        raise RuntimeError("HorizonApp trait implementation anchor missing")
+    return data.replace(APP_EXIT_ORIGINAL, APP_EXIT_UPDATED, 1)
+
+
 def patch_cargo(data: str) -> str:
     if CARGO_UPDATED in data:
         if data.count(CARGO_UPDATED) != 1 or CARGO_ORIGINAL in data:
@@ -71,20 +90,27 @@ def main(argv=None):
     args=parser.parse_args(argv)
     path=args.source/'nexium-gui/src/main.rs'
     cargo_path=args.source/'nexium-gui/Cargo.toml'
+    app_path=args.source/'nexium-gui/src/app.rs'
     try:
         old=path.read_text(encoding='utf-8')
         old_cargo=cargo_path.read_text(encoding='utf-8')
-        # Validate BOTH files before editing EITHER. A source-drift failure
-        # must never leave a partial local build checkout behind.
+        old_app=app_path.read_text(encoding='utf-8')
+        # Validate ALL THREE source files before making ANY changes.
+        # eframe 0.37's glow feature also changes the App::on_exit trait.
         new=patch_source(old)
         new_cargo=patch_cargo(old_cargo)
+        new_app=patch_app(old_app)
         if new!=old:
             path.write_text(new,encoding='utf-8')
         if new_cargo!=old_cargo:
             cargo_path.write_text(new_cargo,encoding='utf-8')
-        print('STAGE23_RENDERER_PATCH_APPLIED' if new!=old or new_cargo!=old_cargo
+        if new_app!=old_app:
+            app_path.write_text(new_app,encoding='utf-8')
+        print('STAGE23_RENDERER_PATCH_APPLIED' if
+              (new!=old or new_cargo!=old_cargo or new_app!=old_app)
               else 'STAGE23_RENDERER_PATCH_ALREADY_APPLIED')
         print('STAGE23_EFRAME_GLOW_FEATURE_VERIFIED')
+        print('STAGE23_EFRAME_ON_EXIT_SIGNATURE_VERIFIED')
     except (OSError, UnicodeError, RuntimeError) as exc:
         print('STAGE23_RENDERER_PATCH_BLOCKED: '+str(exc),file=sys.stderr)
         return 2

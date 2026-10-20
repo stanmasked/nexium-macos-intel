@@ -13,7 +13,9 @@ permissions:
 jobs:
   validate:
     name: NRO structure validator fixtures
-    runs-on: ubuntu-latest
+    # Run pure Python NRO structure fixtures on a physical Intel Mac while
+    # the separate Docker-capable Ubuntu compilation queue is busy.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - name: Reject invalid NRO0 mock images

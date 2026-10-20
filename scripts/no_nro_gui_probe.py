@@ -34,14 +34,14 @@ def sha256(path: Path) -> str:
 def sanitized_diagnostic_line(line: str) -> str:
     """Expose diagnostics but not home paths or secret-looking values."""
     line = re.sub(
-        r"/(?:Users|private|Applications|Volumes|tmp|var|opt|home)/[^\\s\\]\\x22]+",
+        r"/(?:Users|private|Applications|Volumes|tmp|var|opt|home)/[^\s\"']+",
         "<local-path>", line, flags=re.IGNORECASE,
     )
     line = re.sub(
-        r"(?i)\\b(token|password|secret|key)\\s*[:=]\\s*[^\\s,;]+",
-        r"\\1=<redacted>", line,
+        r"(?i)\b(token|password|secret|key)\s*[:=]\s*[^\s,;]+",
+        r"\1=<redacted>", line,
     )
-    line = re.sub(r"(?i)\\b[0-9a-f]{32,}\\b", "<digest>", line)
+    line = re.sub(r"(?i)\b[0-9a-f]{32,}\b", "<digest>", line)
     return line.strip()[:320]
 
 

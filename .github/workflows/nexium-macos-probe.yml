@@ -16,6 +16,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   syntax:
@@ -26,8 +27,8 @@ jobs:
       - name: Syntax and isolated smoke-test harness
         run: |
           set -euo pipefail
-          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -67,8 +68,8 @@ jobs:
       - name: Syntax and isolated smoke-test harness
         run: |
           set -euo pipefail
-          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -89,10 +90,122 @@ jobs:
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
 
+      - name: Verify native-only window capture helper type checks
+        run: xcrun swiftc -typecheck scripts/nexium_window_id.swift
       - name: Verify SDL3 availability symbol links from Rust
         run: bash scripts/compiler_rt_probe_intel.sh --probe
 
+  appkit-control-intel:
+    name: Intel macOS clean AppKit window-session control
+    if: github.head_ref == 'work/intel-stage13-private-window-evidence'
+    runs-on: macos-15-intel
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile isolated native GUI session control
+        run: |
+          set -euo pipefail
+          xcrun swiftc -framework AppKit -framework CoreGraphics \
+            -o "$RUNNER_TEMP/appkit-control" scripts/appkit_gui_session_control.swift
+      - name: Determine whether an ordinary AppKit window is visible
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+          exe = Path(os.environ["RUNNER_TEMP"]) / "appkit-control"
+          try:
+              run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=18)
+              signal = next((line for line in run.stdout.splitlines()
+                             if line.startswith("APPKIT_CONTROL_SESSION:")), None)
+              if signal is not None:
+                  print(signal[:160])
+              print("APPKIT_CONTROL_RESULT: " + (
+                  "visible_window_confirmed" if run.returncode == 0 and signal else
+                  "no_visible_window" if run.returncode == 4 else
+                  f"control_failed_or_headless_{run.returncode}"))
+          except subprocess.TimeoutExpired:
+              print("APPKIT_CONTROL_RESULT: control_timed_out_or_headless")
+          print("A negative AppKit result limits hosted-CI graphical inference; "
+                "it does not demonstrate that NeXium fails on an interactive Intel Mac.")
+          PY
+
+  no-nro-startup:
+    name: Intel Rustarmic GUI process launch without game
+    if: github.head_ref == 'work/intel-stage13-private-window-evidence'
+    runs-on: macos-15-intel
+    needs: [compiler-rt-intel, mig-intel]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve already-built pinned Intel Rustarmic executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          repository: ${{ github.repository }}
+          run-id: 39493834124
+          github-token: ${{ github.token }}
+          path: downloaded
+      - name: Validate pinned NeXium app architecture and restore ZIP permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          COUNT="$(find downloaded -type f -path '*/Contents/MacOS/nexium' | wc -l | tr -d '[:space:]')"
+          test "$COUNT" -eq 1
+          BIN="$(find downloaded -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/nexium-exe-path"
+          APP="${BIN%/Contents/MacOS/nexium}"
+          LICENSE="$(find downloaded -type f -name 'NeXium-LICENSE.txt' -print -quit)"
+          test -n "$LICENSE"
+          bash scripts/package_intel_app.sh "$APP" "$LICENSE"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/nexium-window-id" scripts/nexium_window_id.swift
+          test -x "$RUNNER_TEMP/nexium-window-id"
+          echo "x86_64 NeXium app, scoped window inspector and portable archive verified"
+      - name: Repeat real Intel GUI-process startup twice without any NRO
+        id: launch
+        continue-on-error: true
+        shell: bash
+        run: |
+          # GitHub's bash shell starts with -e; disable it so a first-run
+          # crash still allows the independent second start and its report.
+          set +e
+          set -uo pipefail
+          BIN="$(cat "$RUNNER_TEMP/nexium-exe-path")"
+          python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output gui-probe-report/attempt-1 --seconds 12 \
+            --window-helper "$RUNNER_TEMP/nexium-window-id"
+          first=$?
+          python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output gui-probe-report/attempt-2 --seconds 12 \
+            --window-helper "$RUNNER_TEMP/nexium-window-id"
+          second=$?
+          echo "First process result: $first; second process result: $second"
+          test "$first" -eq 0 && test "$second" -eq 0
+      - name: Upload private-free startup evidence and portable bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-rustarmic-no-nro-startup
+          path: |
+            gui-probe-report/attempt-1/gui_process_probe.json
+            gui-probe-report/attempt-1/nexium-stdout-stderr.log
+            gui-probe-report/attempt-2/gui_process_probe.json
+            gui-probe-report/attempt-2/nexium-stdout-stderr.log
+            downloaded/**/*.tar.gz
+            downloaded/**/*.tar.gz.sha256
+          if-no-files-found: warn
+      - name: Fail if the GUI process could not start
+        if: steps.launch.outcome == 'failure'
+        run: |
+          echo '::error::NeXium Intel exited nonzero before no-NRO observation; review attached process log.'
+          exit 1
+
   intel-build:
+    # Stage-13 independently checks capture/archive helpers without duplicating
+    # the expensive active main-port compiler jobs.
+    if: github.head_ref != 'work/intel-stage13-private-window-evidence'
     name: Native Intel build (${{ matrix.backend }}, experimental)
     # Intel compiler-rt preflight itself now reruns all syntax and fixture tests;
     # do not stall macOS builds on GitHub's independent Ubuntu runner queue.

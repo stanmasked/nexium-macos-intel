@@ -125,6 +125,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 cp "$SRC/LICENSE" "$WORK/dist/NeXium-LICENSE.txt"
+bash "$SELF/scripts/package_intel_app.sh" "$APP" "$WORK/dist/NeXium-LICENSE.txt"
 echo "EXPERIMENTAL_BUILD_OK: $APP"
 xcrun otool -l "$APP/Contents/MacOS/nexium" | grep -A 5 -E "LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX" || true
 echo "No NRO, audio, graphics or gameplay success has been asserted."

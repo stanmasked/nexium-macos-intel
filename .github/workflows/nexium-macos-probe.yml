@@ -30,6 +30,7 @@ jobs:
           bash -n macos_probe.sh
           python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/nro_smoke_test.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
 
   intel-build:
     name: Native Intel build (experimental)

@@ -48,6 +48,15 @@ jobs:
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
 
+  mig-intel:
+    name: Intel macOS Mach header generation
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native Mac MIG without compiling NeXium
+        run: bash scripts/mig_probe_intel.sh
+
   intel-build:
     name: Native Intel build (${{ matrix.backend }}, experimental)
     needs: syntax

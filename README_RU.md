@@ -71,3 +71,20 @@ python3 scripts/nro_smoke_test.py \
 5. Упаковка, подпись, запуск двойным кликом и стабильные регрессионные проверки.
 
 **Apple Silicon остаётся отложенной целью.**
+
+## Этап №5 — 20 октября 2026: первый реальный Intel-сборочный блокер
+
+GitHub Actions [run №39479780717](https://github.com/stanmasked/nexium-macos-intel/actions/runs/39479780717) завершился ошибкой в **Dynarmic**, ещё до запуска NeXium:
+
+```text
+dynarmic/backend/x64/mig/mach_exc_server.h: file not found
+failed to run custom build command for dynarmic-sys-mythrax v0.3.6
+```
+
+Причина: `vendor/CMakeLists.txt` опубликованного `dynarmic-sys-mythrax 0.3.6` компилирует macOS exception handler без генерации Mach RPC-файлов через `mig`.
+
+Подготовлен **экспериментальный** фикс: `scripts/prepare_dynarmic_macos.py` копирует эту зависимость в отдельную директорию `nexium-macos-intel-work/dynarmic-sys-mythrax-macos` и добавляет CMake-шаг `mig` для Intel; Cargo использует локальный `[patch.crates-io]` в рабочей копии NeXium. Глобальный реестр Cargo не редактируется. Исправление требует подтверждения настоящей повторной Intel-сборкой.
+
+Параллельно запускается CPU-вариант `backend-rustarmic`, который не должен зависеть от сборки Dynarmic. Оба варианта остаются **Intel x86_64**, не Apple Silicon.
+
+Задания CI теперь разделяют компиляцию Dynarmic и Rustarmic, а старые запуски вытесняются актуальной ревизией. После сборки переходить к NRO-тестам можно только при наличии настоящего исполняемого файла и подтверждённого запуска.

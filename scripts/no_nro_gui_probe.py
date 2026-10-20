@@ -37,7 +37,7 @@ def stop_group(process: subprocess.Popen, sig: signal.Signals) -> None:
         pass
 
 
-def probe(exe: Path, output: Path, seconds: int) -> dict:
+def probe(exe: Path, output: Path, seconds: int, window_helper: Path | None = None) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     result = {
         "utc": datetime.now(timezone.utc).isoformat(),
@@ -48,6 +48,9 @@ def probe(exe: Path, output: Path, seconds: int) -> dict:
         "exit_code": None,
         "alive_at_deadline": False,
         "gui_verified": False,
+        "window_found": False,
+        "window_id": None,
+        "window_probe": "not_requested",
         "nro_verified": False,
         "gameplay_verified": False,
     }
@@ -72,6 +75,23 @@ def probe(exe: Path, output: Path, seconds: int) -> dict:
             except subprocess.TimeoutExpired:
                 result["alive_at_deadline"] = True
                 result["outcome"] = "alive_without_gui_verification"
+                if window_helper is not None:
+                    try:
+                        inspected = subprocess.run(
+                            [str(window_helper), str(process.pid)],
+                            capture_output=True, text=True, timeout=10, check=False,
+                        )
+                        id_text = inspected.stdout.strip()
+                        if inspected.returncode == 0 and id_text.isdigit() and int(id_text) > 0:
+                            result["window_found"] = True
+                            result["window_id"] = int(id_text)
+                            result["window_probe"] = "own_visible_window_observed"
+                        else:
+                            result["window_probe"] = "no_visible_window_identified"
+                            result["window_probe_detail"] = inspected.stderr.strip()[-300:]
+                    except (OSError, subprocess.TimeoutExpired) as exc:
+                        result["window_probe"] = "window_inspection_failed"
+                        result["window_probe_detail"] = str(exc)
                 stop_group(process, signal.SIGTERM)
                 try:
                     process.wait(timeout=5)
@@ -97,6 +117,8 @@ def main() -> int:
     parser.add_argument("--exe", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--seconds", type=int, default=12)
+    parser.add_argument("--window-helper", type=Path,
+                        help="optional compiled macOS helper: identify a visible window owned by this PID")
     parser.add_argument("--allow-nonmac-synthetic", action="store_true",
                         help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -115,7 +137,10 @@ def main() -> int:
     executable = args.exe.expanduser().resolve()
     if not executable.is_file() or not os.access(executable, os.X_OK):
         parser.error(f"missing/non-executable NeXium binary: {executable}")
-    outcome = probe(executable, args.output.expanduser().resolve(), args.seconds)
+    helper = args.window_helper.expanduser().resolve() if args.window_helper is not None else None
+    if helper is not None and (not helper.is_file() or not os.access(helper, os.X_OK)):
+        parser.error("--window-helper must be an existing executable")
+    outcome = probe(executable, args.output.expanduser().resolve(), args.seconds, helper)
     print(json.dumps(outcome, ensure_ascii=False, indent=2))
     # Exit-zero from a child is not gameplay proof, but it is valid telemetry.
     return 2 if outcome["outcome"] in ("exited_nonzero", "launch_failed") else 0

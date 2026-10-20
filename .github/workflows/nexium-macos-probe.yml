@@ -128,23 +128,33 @@ jobs:
           xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/nexium-window-id" scripts/nexium_window_id.swift
           test -x "$RUNNER_TEMP/nexium-window-id"
           echo "x86_64 NeXium app, scoped window inspector and portable archive verified"
-      - name: Attempt genuine macOS GUI-process startup without any NRO
+      - name: Repeat real Intel GUI-process startup twice without any NRO
         id: launch
         continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           BIN="$(cat "$RUNNER_TEMP/nexium-exe-path")"
-          python3 scripts/no_nro_gui_probe.py --exe "$BIN" --output gui-probe-report --seconds 12 \
+          python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output gui-probe-report/attempt-1 --seconds 12 \
             --window-helper "$RUNNER_TEMP/nexium-window-id"
+          first=$?
+          python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output gui-probe-report/attempt-2 --seconds 12 \
+            --window-helper "$RUNNER_TEMP/nexium-window-id"
+          second=$?
+          echo "First process result: $first; second process result: $second"
+          test "$first" -eq 0 && test "$second" -eq 0
       - name: Upload private-free startup evidence and portable bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nexium-intel-rustarmic-no-nro-startup
           path: |
-            gui-probe-report/gui_process_probe.json
-            gui-probe-report/nexium-stdout-stderr.log
+            gui-probe-report/attempt-1/gui_process_probe.json
+            gui-probe-report/attempt-1/nexium-stdout-stderr.log
+            gui-probe-report/attempt-2/gui_process_probe.json
+            gui-probe-report/attempt-2/nexium-stdout-stderr.log
             downloaded/**/*.tar.gz
             downloaded/**/*.tar.gz.sha256
           if-no-files-found: warn

@@ -1,0 +1,23 @@
+# Build checkouts, binaries, diagnostic reports
+nexium-macos-intel-work/
+nexium-intel-test-reports/
+target/
+dist/
+*.app/
+*.dmg
+.DS_Store
+__pycache__/
+*.pyc
+# Never publish Nintendo files or private game dumps
+*.nro
+*.nso
+*.nsp
+*.xci
+*.nca
+*.keys
+*.rom
+*.iso
+*.cue
+*.bin
+*.pkg
+*.ipa

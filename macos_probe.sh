@@ -9,6 +9,11 @@ fi
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REVISION="089562567a0a8760dfdd8420e1f57c35159a9219"
+BACKEND="${NEXIUM_CPU_BACKEND:-dynarmic}"
+case "$BACKEND" in
+    dynarmic|rustarmic) ;;
+    *) echo "BLOCKED: NEXIUM_CPU_BACKEND must be dynarmic or rustarmic" >&2; exit 2 ;;
+esac
 WORK="${NEXIUM_MAC_WORKDIR:-$PWD/nexium-macos-intel-work}"
 SRC="$WORK/nexium"
 mkdir -p "$WORK"
@@ -21,6 +26,13 @@ for tool in git python3 clang cmake ninja rustc cargo rustup xcrun; do
     command -v "$tool" >/dev/null || { echo "BLOCKED: missing $tool"; exit 3; }
 done
 xcrun --show-sdk-version
+export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+if [[ ! -f "$SDKROOT/usr/include/mach/mach_exc.defs" ]]; then
+    echo "BLOCKED: macOS SDK missing Mach exception interface definitions"
+    exit 3
+fi
+echo "macOS SDK: $SDKROOT"
+echo "CPU backend: $BACKEND"
 rustc --version
 if command -v vulkaninfo >/dev/null; then
     vulkaninfo --summary || echo "WARN: Vulkan or MoltenVK capabilities unavailable"
@@ -46,10 +58,17 @@ git submodule update --init --recursive
 python3 "$SELF/scripts/apply_macos_bootstrap.py" "$SRC"
 
 rustup target add x86_64-apple-darwin
+if [[ "$BACKEND" == "dynarmic" ]]; then
+    # Pin the published crate, then patch a LOCAL copy rather than editing
+    # the shared Cargo registry. Its vendor CMake omits Mach MIG generation.
+    cargo fetch --locked --target x86_64-apple-darwin
+    python3 "$SELF/scripts/prepare_dynarmic_macos.py" "$SRC" \
+        --cargo-home "${CARGO_HOME:-$HOME/.cargo}" --work "$WORK"
+fi
 set +e
 cargo build --release --target x86_64-apple-darwin \
     -p nexium-gui --bin nexium \
-    --no-default-features --features backend-dynarmic
+    --no-default-features --features "backend-$BACKEND"
 status=$?
 set -e
 if [[ $status -ne 0 ]]; then
@@ -57,7 +76,7 @@ if [[ $status -ne 0 ]]; then
     exit "$status"
 fi
 
-APP="$WORK/dist/NeXium-Intel-Experimental.app"
+APP="$WORK/dist/NeXium-Intel-$BACKEND-Experimental.app"
 mkdir -p "$APP/Contents/MacOS"
 cp "$SRC/target/x86_64-apple-darwin/release/nexium" "$APP/Contents/MacOS/nexium"
 cat > "$APP/Contents/Info.plist" <<'PLIST'

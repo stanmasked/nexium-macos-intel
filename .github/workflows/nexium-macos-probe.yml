@@ -95,6 +95,41 @@ jobs:
       - name: Verify SDL3 availability symbol links from Rust
         run: bash scripts/compiler_rt_probe_intel.sh --probe
 
+  appkit-control-intel:
+    name: Intel macOS clean AppKit window-session control
+    if: github.head_ref == 'work/intel-stage13-private-window-evidence'
+    runs-on: macos-15-intel
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile isolated native GUI session control
+        run: |
+          set -euo pipefail
+          xcrun swiftc -framework AppKit -framework CoreGraphics \
+            -o "$RUNNER_TEMP/appkit-control" scripts/appkit_gui_session_control.swift
+      - name: Determine whether an ordinary AppKit window is visible
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+          exe = Path(os.environ["RUNNER_TEMP"]) / "appkit-control"
+          try:
+              run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=18)
+              signal = next((line for line in run.stdout.splitlines()
+                             if line.startswith("APPKIT_CONTROL_SESSION:")), None)
+              if signal is not None:
+                  print(signal[:160])
+              print("APPKIT_CONTROL_RESULT: " + (
+                  "visible_window_confirmed" if run.returncode == 0 and signal else
+                  "no_visible_window" if run.returncode == 4 else
+                  f"control_failed_or_headless_{run.returncode}"))
+          except subprocess.TimeoutExpired:
+              print("APPKIT_CONTROL_RESULT: control_timed_out_or_headless")
+          print("A negative AppKit result limits hosted-CI graphical inference; "
+                "it does not demonstrate that NeXium fails on an interactive Intel Mac.")
+          PY
+
   no-nro-startup:
     name: Intel Rustarmic GUI process launch without game
     if: github.head_ref == 'work/intel-stage13-private-window-evidence'

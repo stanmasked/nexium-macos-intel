@@ -50,6 +50,21 @@ def process_alive(pid: int) -> bool:
         return False
 
 
+def is_nexium_process(pid: int) -> bool:
+    """Fail closed if a PID was reused or belongs to another macOS app."""
+    if pid <= 0 or not process_alive(pid):
+        return False
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "comm="],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return (result.returncode == 0 and
+            Path(result.stdout.strip()).name.casefold() == "nexium")
+
+
 def run_capture(pid: int, out: Path, duration: int, interval: float) -> dict:
     result: dict = {
         "pid": pid, "capture_type": "macos_pid_owned_window_only",
@@ -57,6 +72,10 @@ def run_capture(pid: int, out: Path, duration: int, interval: float) -> dict:
         "frames": [], "unique_hashes": 0, "errors": [],
         "gameplay_verified": False,
     }
+    if not is_nexium_process(pid):
+        result["errors"].append("refusing capture: PID is not a running NeXium process")
+        result["status"] = "rejected_non_nexium_pid"
+        return result
     out.mkdir(parents=True, exist_ok=True)
     src = Path(__file__).with_name("nexium_window_id.swift")
     helper = out / "nexium-window-id"
@@ -74,7 +93,7 @@ def run_capture(pid: int, out: Path, duration: int, interval: float) -> dict:
 
     end = time.monotonic() + duration
     index = 0
-    while time.monotonic() < end and process_alive(pid):
+    while time.monotonic() < end and is_nexium_process(pid):
         try:
             detected = subprocess.run(
                 [str(helper), str(pid)], capture_output=True, text=True, timeout=6,

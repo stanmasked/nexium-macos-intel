@@ -30,6 +30,40 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def collect_private_log_signals(output: Path) -> dict:
+    """Analyze NeXium's own isolated log files without publishing raw logs."""
+    logdir = output / "private-neXium-data" / "logs"
+    entries = []
+    selected = []
+    for logfile in sorted(logdir.glob("*.log"))[:10]:
+        if not logfile.is_file() or logfile.is_symlink():
+            continue
+        try:
+            size = logfile.stat().st_size
+            with logfile.open("rb") as reader:
+                raw = reader.read(512_000)
+            lines = raw.decode("utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        entries.append({"bytes": size, "sha256": sha256(logfile),
+                        "scanned_bytes": len(raw)})
+        for line in lines:
+            if any(key in line.casefold() for key in (
+                "error", "warn", "panic", "metal", "wgpu", "vulkan",
+                "adapter", "surface", "device lost",
+            )):
+                # Do not expose names, access tokens, or arbitrary paths
+                # in public Actions. Only emit normalized keyword counts.
+                category = next((key for key in (
+                    "panic", "error", "warn", "device lost", "metal", "wgpu",
+                    "vulkan", "adapter", "surface",
+                ) if key in line.casefold()), "other")
+                selected.append(category)
+    counts = {key: selected.count(key) for key in sorted(set(selected))}
+    return {"log_files": entries, "keyword_counts": counts,
+            "diagnostic_lines_redacted": True}
+
+
 def stop_group(process: subprocess.Popen, sig: signal.Signals) -> None:
     try:
         os.killpg(process.pid, sig)
@@ -101,6 +135,7 @@ def probe(exe: Path, output: Path, seconds: int, window_helper: Path | None = No
         except OSError as exc:
             result["outcome"] = "launch_failed"
             result["error"] = str(exc)
+    result["internal_log_signals"] = collect_private_log_signals(output)
     result["wall_seconds"] = round(time.monotonic() - started, 2)
     result["note"] = (
         "NO NRO was supplied. A living process or zero exit is NOT proof of "

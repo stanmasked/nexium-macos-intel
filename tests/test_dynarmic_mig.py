@@ -41,7 +41,8 @@ class DynarmicMigTests(unittest.TestCase):
             cmake = (staged / "vendor/CMakeLists.txt").read_text()
             self.assertIn("mach_exc_server.h", cmake)
             self.assertIn("mach_exc_server.c", cmake)
-            self.assertIn("find_program(NE_X_MIG_TOOL", cmake)
+            self.assertIn("COMMAND xcrun --find mig", cmake)
+            self.assertIn("NE_X_MIG_FIND_RESULT", cmake)
             self.assertIn('[patch.crates-io]', (checkout / "Cargo.toml").read_text())
             self.assertIn('dynarmic-sys-mythrax-macos', (checkout / "Cargo.toml").read_text())
 

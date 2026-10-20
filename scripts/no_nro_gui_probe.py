@@ -45,12 +45,33 @@ def sanitized_diagnostic_line(line: str) -> str:
     return line.strip()[:320]
 
 
+def panic_reason_excerpt(lines: list[str]) -> list[str]:
+    """Capture panic cause, not stack addresses or original source paths."""
+    for index, line in enumerate(lines):
+        if "panicked at" not in line:
+            continue
+        # First line often ends in file.rs:<line>:<col>: <reason>;
+        # never reveal filesystem paths from the panic location.
+        reason = re.split(r":\d+(?::\d+)?:\s*", line, maxsplit=1)
+        context = [sanitized_diagnostic_line(reason[-1])] if len(reason) > 1 else []
+        for follow in lines[index + 1:index + 5]:
+            follow = follow.strip()
+            if not follow or follow.lower().startswith("stack backtrace:"):
+                break
+            if follow.startswith(("0:", "1:", "2:", "3:", "4:")):
+                break
+            context.append(sanitized_diagnostic_line(follow))
+        return [message for message in context if message][:5]
+    return []
+
+
 def collect_private_log_signals(output: Path) -> dict:
     """Analyze NeXium's own isolated log files without publishing raw logs."""
     logdir = output / "private-neXium-data" / "logs"
     entries = []
     selected = []
     messages = []
+    panic_reason = []
     for logfile in sorted(logdir.glob("*.log"))[:10]:
         if not logfile.is_file() or logfile.is_symlink():
             continue
@@ -84,6 +105,7 @@ def collect_private_log_signals(output: Path) -> dict:
             lines = console.read_bytes()[:128_000].decode(
                 "utf-8", errors="replace"
             ).splitlines()
+            panic_reason = panic_reason_excerpt(lines)
             for line in lines:
                 if len(messages) >= 24:
                     break
@@ -96,7 +118,7 @@ def collect_private_log_signals(output: Path) -> dict:
             pass
     counts = {key: selected.count(key) for key in sorted(set(selected))}
     return {"log_files": entries, "keyword_counts": counts,
-            "diagnostic_messages": messages,
+            "diagnostic_messages": messages, "panic_reason_excerpt": panic_reason,
             "diagnostic_lines_redacted": True}
 
 

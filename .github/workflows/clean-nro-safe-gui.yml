@@ -1,0 +1,108 @@
+name: Native Intel safe-GUI public NRO boot diagnostic
+
+on:
+  pull_request:
+    paths:
+      - 'nro-diagnostics/**'
+      - '.github/workflows/clean-nro-safe-gui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  safe-intel-nro:
+    name: True Intel SDL-safe NeXium and public Homebrew NRO A-B
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Synthetic classifier safety regression tests
+        run: python3 -m unittest discover -s nro-diagnostics -p 'test_*.py' -v
+      - name: Download verified public Homebrew NRO (no private assets)
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-clean-homebrew-nro
+          repository: ${{ github.repository }}
+          run-id: 39508041890
+          github-token: ${{ github.token }}
+          path: public-nro
+      - name: Download previously tested SDL-safe Intel Rustarmic executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          repository: ${{ github.repository }}
+          run-id: 39514848791
+          github-token: ${{ github.token }}
+          path: safe-emulator
+      - name: Verify public NRO checksum and native x86_64
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          p=Path('public-nro/nexium_clean_smoke.nro')
+          receipt=json.loads(Path('public-nro/nro_build_receipt.json').read_text())
+          data=p.read_bytes()
+          assert data[0x10:0x14]==b'NRO0'
+          sha=hashlib.sha256(data).hexdigest()
+          assert sha==receipt['sha256']
+          assert len(data)>=receipt['declared_image_bytes']>=64
+          print('PUBLIC_NRO_SHA256_VERIFIED',sha)
+          PY
+          BIN="$(find safe-emulator -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(uname -m)" = x86_64
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/nexium-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/nexium-window-id" scripts/nexium_window_id.swift
+      - name: No-NRO full GUI baseline with SDL3 input initialization skipped
+        id: baseline
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/nexium-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_SKIP_SDL_INPUT=1 python3 scripts/no_nro_gui_probe.py \
+              --exe "$BIN" --output safe-boot-report/baseline --seconds 12 \
+              --window-helper "$RUNNER_TEMP/nexium-window-id"
+      - name: Attempt actual self-authored NRO in same SDL-safe GUI binary
+        id: guest
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/nexium-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_SKIP_SDL_INPUT=1 python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" --nro public-nro/nexium_clean_smoke.nro \
+              --output safe-boot-report/guest --seconds 24 --snapshot-ms 1500
+      - name: Classify actual guest load logs without revealing private information
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 nro-diagnostics/classify_boot.py \
+            --baseline safe-boot-report/baseline/gui_process_probe.json \
+            --guest safe-boot-report/guest/smoke_result.json \
+            --receipt public-nro/nro_build_receipt.json \
+            --output safe-boot-report/safe-public-nro-comparison.json
+          cat safe-boot-report/safe-public-nro-comparison.json >> "$GITHUB_STEP_SUMMARY"
+          echo 'No firmware, private game NRO, keys or raw screen pixels included.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload JSON metadata only, never logs, pixels or NRO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-safe-public-nro-boot-evidence
+          path: |
+            safe-boot-report/safe-public-nro-comparison.json
+            safe-boot-report/baseline/gui_process_probe.json
+            safe-boot-report/guest/smoke_result.json
+          if-no-files-found: warn
+      - name: Surface true NRO process failure as a failed diagnostic
+        if: steps.guest.outcome == 'failure'
+        run: |
+          echo '::error::Public clean NRO process aborted; consult sanitized report.'
+          exit 1

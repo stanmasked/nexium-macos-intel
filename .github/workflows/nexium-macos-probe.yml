@@ -26,7 +26,7 @@ jobs:
       - name: Syntax and isolated smoke-test harness
         run: |
           set -euo pipefail
-          bash -n macos_probe.sh
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh
           python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
@@ -70,6 +70,9 @@ jobs:
           test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
           sw_vers
           xcodebuild -version
+      - name: Validate Intel Mach Interface Generator
+        if: matrix.backend == 'dynarmic'
+        run: bash scripts/mig_probe_intel.sh
       - name: Install build dependencies
         run: brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
       - name: Experimental Intel NeXium build

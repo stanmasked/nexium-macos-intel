@@ -1,0 +1,11 @@
+[package]
+name = "intel-eframe-control"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Mirror the native GUI crate's eframe/egui minor version. Do not import
+# NeXium crates, assets, NROs, Nintendo SDKs, keys or private files.
+[dependencies]
+eframe = { version = "0.37", features = ["wgpu"] }
+egui = "0.37"

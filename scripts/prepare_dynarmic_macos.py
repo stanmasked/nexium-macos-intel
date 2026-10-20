@@ -19,7 +19,17 @@ NEW = '''elseif (APPLE)
     if (NOT CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
         message(FATAL_ERROR "This experimental Dynarmic patch supports Intel macOS only")
     endif()
-    find_program(NE_X_MIG_TOOL NAMES mig REQUIRED)
+    # Apple's mig may reside inside Xcode toolchains rather than PATH.
+    execute_process(
+        COMMAND xcrun --find mig
+        RESULT_VARIABLE NE_X_MIG_FIND_RESULT
+        OUTPUT_VARIABLE NE_X_MIG_TOOL
+        ERROR_VARIABLE NE_X_MIG_FIND_ERROR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if (NOT NE_X_MIG_FIND_RESULT EQUAL 0 OR NOT EXISTS "${NE_X_MIG_TOOL}")
+        message(FATAL_ERROR "Could not locate Apple's mig with xcrun: ${NE_X_MIG_FIND_ERROR}")
+    endif()
     if (NOT DEFINED ENV{SDKROOT} OR NOT EXISTS "$ENV{SDKROOT}/usr/include/mach/mach_exc.defs")
         message(FATAL_ERROR "Set SDKROOT to the macOS SDK with mach/mach_exc.defs")
     endif()
@@ -52,7 +62,7 @@ def stage(upstream: Path, cargo_home: Path, work_dir: Path) -> Path:
     registry = cargo_home.expanduser().resolve() / "registry" / "src"
     matches = list(registry.glob(f"*/{CRATE}"))
     if len(matches) != 1:
-        raise RuntimeError(f"expected one cached ${CRATE} under ${registry}, found {len(matches)}")
+        raise RuntimeError(f"expected one cached {CRATE} under {registry}, found {len(matches)}")
     source = matches[0]
     if not (source / "vendor/CMakeLists.txt").is_file():
         raise RuntimeError("cached Dynarmic crate is missing vendor/CMakeLists.txt")

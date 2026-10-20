@@ -49,7 +49,7 @@ class BootstrapTests(unittest.TestCase):
     def test_changed_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            gui, adapter = self.fixture(root)
+            gui, adapter, clocks = self.fixture(root)
             adapter.write_text("upstream source changed; do not guess")
             run = [sys.executable, str(SCRIPT), str(root)]
             self.assertNotEqual(subprocess.run(run, capture_output=True).returncode, 0)

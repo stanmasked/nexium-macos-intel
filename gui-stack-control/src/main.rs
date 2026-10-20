@@ -9,12 +9,12 @@ use eframe::{egui, egui_wgpu};
 struct Control;
 
 impl eframe::App for Control {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Intel macOS GUI stack control");
-            ui.label("No ROM, firmware, emulator, or NRO is involved.");
-            ui.label("This is only a host window/event-loop smoke experiment.");
-        });
+    // eframe 0.37 uses App::ui(&mut egui::Ui), not the older App::update.
+    // Match the actual pinned NeXium HorizonApp implementation.
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui.heading("Intel macOS GUI stack control");
+        ui.label("No ROM, firmware, emulator, or NRO is involved.");
+        ui.label("This is only a host window/event-loop smoke experiment.");
     }
 }
 

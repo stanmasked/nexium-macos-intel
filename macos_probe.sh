@@ -75,6 +75,10 @@ if [[ "${NEXIUM_EXPERIMENT_MINIMAL_EFRAME:-0}" == "1" ]]; then
     echo "STAGE22_MINIMAL_EFRAME: opt-in minimal macOS eframe/Wgpu startup experiment"
     python3 "$SELF/scripts/apply_macos_minimal_eframe.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_RENDERER_ABLATION:-0}" == "1" ]]; then
+    echo "STAGE23_RENDERER_ABLATION: opt-in eframe Wgpu vs Glow contrast"
+    python3 "$SELF/scripts/apply_macos_renderer_ablation.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -30,11 +31,26 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def sanitized_diagnostic_line(line: str) -> str:
+    """Expose diagnostics but not home paths or secret-looking values."""
+    line = re.sub(
+        r"/(?:Users|private|Applications|Volumes|tmp|var|opt|home)/[^\\s\\]\\x22]+",
+        "<local-path>", line, flags=re.IGNORECASE,
+    )
+    line = re.sub(
+        r"(?i)\\b(token|password|secret|key)\\s*[:=]\\s*[^\\s,;]+",
+        r"\\1=<redacted>", line,
+    )
+    line = re.sub(r"(?i)\\b[0-9a-f]{32,}\\b", "<digest>", line)
+    return line.strip()[:320]
+
+
 def collect_private_log_signals(output: Path) -> dict:
     """Analyze NeXium's own isolated log files without publishing raw logs."""
     logdir = output / "private-neXium-data" / "logs"
     entries = []
     selected = []
+    messages = []
     for logfile in sorted(logdir.glob("*.log"))[:10]:
         if not logfile.is_file() or logfile.is_symlink():
             continue
@@ -59,8 +75,28 @@ def collect_private_log_signals(output: Path) -> dict:
                     "vulkan", "adapter", "surface",
                 ) if key in line.casefold()), "other")
                 selected.append(category)
+                if len(messages) < 16:
+                    messages.append(sanitized_diagnostic_line(line))
+    # stderr may carry native SDL/AppKit panics before FileLogger starts.
+    console = output / "nexium-stdout-stderr.log"
+    if console.is_file() and not console.is_symlink():
+        try:
+            lines = console.read_bytes()[:128_000].decode(
+                "utf-8", errors="replace"
+            ).splitlines()
+            for line in lines:
+                if len(messages) >= 24:
+                    break
+                if any(term in line.casefold() for term in (
+                    "panic", "fatal", "abort", "error", "exception", "surface",
+                    "metal", "wgpu", "adapter", "libc++",
+                )):
+                    messages.append(sanitized_diagnostic_line(line))
+        except OSError:
+            pass
     counts = {key: selected.count(key) for key in sorted(set(selected))}
     return {"log_files": entries, "keyword_counts": counts,
+            "diagnostic_messages": messages,
             "diagnostic_lines_redacted": True}
 
 
@@ -106,6 +142,11 @@ def probe(exe: Path, output: Path, seconds: int, window_helper: Path | None = No
             try:
                 result["exit_code"] = process.wait(timeout=seconds)
                 result["outcome"] = "exited_zero_unverified" if process.returncode == 0 else "exited_nonzero"
+                if process.returncode is not None and process.returncode < 0:
+                    try:
+                        result["exit_signal"] = signal.Signals(-process.returncode).name
+                    except ValueError:
+                        result["exit_signal"] = "unknown_signal"
             except subprocess.TimeoutExpired:
                 result["alive_at_deadline"] = True
                 result["outcome"] = "alive_without_gui_verification"

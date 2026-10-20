@@ -1,0 +1,154 @@
+name: NeXium Intel macOS experimental probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'macos_probe.sh'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/nexium-macos-probe.yml'
+
+# New revisions supersede older expensive Intel compiler probes.
+concurrency:
+  group: nexium-intel-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Script safety and syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and isolated smoke-test harness
+        run: |
+          set -euo pipefail
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
+          python3 scripts/nro_smoke_test.py --help >/dev/null
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify patch anchors on actual pinned NeXium sources
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          BASE="$RUNNER_TEMP/nexium-pinned"
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
+          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+            curl --fail --location --silent --show-error --retry 3 \
+              "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
+              --output "$BASE/$file"
+            test -s "$BASE/$file"
+          done
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+
+  mig-intel:
+    name: Intel macOS Mach header generation
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native Mac MIG without compiling NeXium
+        run: bash scripts/mig_probe_intel.sh
+
+  compiler-rt-intel:
+    name: Intel Xcode compiler-rt linker probe
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Syntax and isolated smoke-test harness
+        run: |
+          set -euo pipefail
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
+          python3 scripts/nro_smoke_test.py --help >/dev/null
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify patch anchors on actual pinned NeXium sources
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          BASE="$RUNNER_TEMP/nexium-pinned"
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
+          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+            curl --fail --location --silent --show-error --retry 3 \
+              "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
+              --output "$BASE/$file"
+            test -s "$BASE/$file"
+          done
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+
+      - name: Verify SDL3 availability symbol links from Rust
+        run: bash scripts/compiler_rt_probe_intel.sh --probe
+
+  intel-build:
+    name: Native Intel build (${{ matrix.backend }}, experimental)
+    # Intel compiler-rt preflight itself now reruns all syntax and fixture tests;
+    # do not stall macOS builds on GitHub's independent Ubuntu runner queue.
+    needs: [mig-intel, compiler-rt-intel]
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [dynarmic, rustarmic]
+    env:
+      NEXIUM_CPU_BACKEND: ${{ matrix.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify true Intel hardware
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          sw_vers
+          xcodebuild -version
+      - name: Validate Intel Mach Interface Generator
+        if: matrix.backend == 'dynarmic'
+        run: bash scripts/mig_probe_intel.sh
+      - name: Install build dependencies
+        run: brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
+      - name: Experimental Intel NeXium build
+        id: build
+        continue-on-error: true
+        run: bash ./macos_probe.sh
+      - name: Retain evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-macos-intel-${{ matrix.backend }}-probe
+          path: |
+            nexium-macos-intel-work/build.log
+            nexium-macos-intel-work/dist
+          if-no-files-found: warn
+      - name: Summarize native compilation diagnostics
+        if: always()
+        run: |
+          echo "### NeXium Intel — ${{ matrix.backend }}" >> "$GITHUB_STEP_SUMMARY"
+          if test -f nexium-macos-intel-work/build.log; then
+            echo 'Last compiler failures:' >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            grep -F -e 'fatal error:' -e 'error[' -e 'error: failed' -e 'error:' -e 'BUILD_BLOCKED' -e 'DYNARMIC_MIG_BLOCKED' -e 'BOOTSTRAP BLOCKED' \
+                nexium-macos-intel-work/build.log | tail -n 18 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No build log was produced' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Report compilation blockers
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::NeXium Intel (${{ matrix.backend }}) not yet buildable; inspect artifact build.log"
+          exit 1

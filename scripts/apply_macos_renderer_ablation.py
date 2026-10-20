@@ -38,6 +38,20 @@ EXPERIMENT = '''        // Stage23: controlled renderer A/B within the same fres
 '''
 MARKER = 'STAGE23_EFRAME_RENDERER_SELECTED='
 
+# E0599 prevention: the pinned eframe 0.37 Renderer::Glow enum member is
+# cfg-gated behind the explicit "glow" feature. Upstream selects only wgpu.
+CARGO_ORIGINAL = 'eframe = { version = "0.37", features = ["wgpu"] }'
+CARGO_UPDATED = 'eframe = { version = "0.37", features = ["wgpu", "glow"] }'
+
+def patch_cargo(data: str) -> str:
+    if CARGO_UPDATED in data:
+        if data.count(CARGO_UPDATED) != 1 or CARGO_ORIGINAL in data:
+            raise RuntimeError("Cargo manifest partly patched or ambiguous")
+        return data
+    if data.count(CARGO_ORIGINAL) != 1:
+        raise RuntimeError("pinned eframe Cargo feature anchor missing or ambiguous")
+    return data.replace(CARGO_ORIGINAL, CARGO_UPDATED, 1)
+
 def patch_source(data: str) -> str:
     if MARKER in data:
         if data.count(MARKER) != 1 or EXPERIMENT not in data or UPDATED not in data:
@@ -56,12 +70,21 @@ def main(argv=None):
     parser.add_argument('source',type=Path)
     args=parser.parse_args(argv)
     path=args.source/'nexium-gui/src/main.rs'
+    cargo_path=args.source/'nexium-gui/Cargo.toml'
     try:
         old=path.read_text(encoding='utf-8')
+        old_cargo=cargo_path.read_text(encoding='utf-8')
+        # Validate BOTH files before editing EITHER. A source-drift failure
+        # must never leave a partial local build checkout behind.
         new=patch_source(old)
+        new_cargo=patch_cargo(old_cargo)
         if new!=old:
             path.write_text(new,encoding='utf-8')
-        print('STAGE23_RENDERER_PATCH_APPLIED' if new!=old else 'STAGE23_RENDERER_PATCH_ALREADY_APPLIED')
+        if new_cargo!=old_cargo:
+            cargo_path.write_text(new_cargo,encoding='utf-8')
+        print('STAGE23_RENDERER_PATCH_APPLIED' if new!=old or new_cargo!=old_cargo
+              else 'STAGE23_RENDERER_PATCH_ALREADY_APPLIED')
+        print('STAGE23_EFRAME_GLOW_FEATURE_VERIFIED')
     except (OSError, UnicodeError, RuntimeError) as exc:
         print('STAGE23_RENDERER_PATCH_BLOCKED: '+str(exc),file=sys.stderr)
         return 2

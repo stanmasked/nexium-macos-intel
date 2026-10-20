@@ -26,7 +26,7 @@ jobs:
       - name: Syntax and isolated smoke-test harness
         run: |
           set -euo pipefail
-          bash -n macos_probe.sh scripts/mig_probe_intel.sh
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh
           python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
@@ -57,9 +57,19 @@ jobs:
       - name: Verify native Mac MIG without compiling NeXium
         run: bash scripts/mig_probe_intel.sh
 
+  compiler-rt-intel:
+    name: Intel Xcode compiler-rt linker probe
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify SDL3 availability symbol links from Rust
+        run: bash scripts/compiler_rt_probe_intel.sh --probe
+
   intel-build:
     name: Native Intel build (${{ matrix.backend }}, experimental)
-    needs: syntax
+    needs: [syntax, mig-intel, compiler-rt-intel]
     runs-on: macos-15-intel
     timeout-minutes: 90
     strategy:

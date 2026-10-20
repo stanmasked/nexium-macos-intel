@@ -44,6 +44,8 @@ def main() -> int:
     p.add_argument("--seconds", type=int, default=30)
     p.add_argument("--snapshot-ms", type=int, default=2000)
     p.add_argument("--allow-nonmac-test", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--capture-window", action="store_true",
+                   help="locally capture only the emulator-owned macOS window; requires Screen Recording permission")
     args = p.parse_args()
     if not 1 <= args.seconds <= 3600:
         p.error("--seconds must be 1..3600")
@@ -58,6 +60,8 @@ def main() -> int:
                 p.error("Apple Silicon / Rosetta is not supported")
         except subprocess.CalledProcessError:
             pass
+    if args.capture_window and (platform.system() != "Darwin" or platform.machine() != "x86_64"):
+        p.error("--capture-window requires native Intel macOS")
     exe = args.exe.expanduser().resolve()
     nro = args.nro.expanduser().resolve()
     if not exe.is_file() or not os.access(exe, os.X_OK):
@@ -87,11 +91,28 @@ def main() -> int:
         "snapshots": [], "unique_frame_hashes": 0,
         "gameplay_verified": False
     }
+    report["window_capture"] = {"requested": bool(args.capture_window),
+                                "frames": 0, "unique_hashes": 0,
+                                "status": "not_requested"}
     started = time.monotonic()
+    capture_proc = None
     with (out / "nexium-console.log").open("wb") as logfile:
         try:
             proc = subprocess.Popen([str(exe), str(nro)], stdout=logfile,
                                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
+            if args.capture_window:
+                observer = Path(__file__).with_name("capture_macos_window.py")
+                report_dir = out / "window-capture"
+                report_dir.mkdir(exist_ok=True)
+                capture_log = (out / "window-capture-console.log").open("wb")
+                capture_proc = subprocess.Popen(
+                    [sys.executable, str(observer), "--pid", str(proc.pid),
+                     "--output", str(report_dir),
+                     "--duration", str(max(1, args.seconds - 1))],
+                    stdout=capture_log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                    env=env,
+                )
+                capture_log.close()
             try:
                 report["exit_code"] = proc.wait(timeout=args.seconds)
                 report["status"] = ("exited_zero_unverified" if proc.returncode == 0
@@ -107,6 +128,32 @@ def main() -> int:
         except OSError as e:
             report["status"] = "launch_failed"
             report["error"] = str(e)
+    if capture_proc is not None:
+        try:
+            capture_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            capture_proc.terminate()
+            try:
+                capture_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                capture_proc.kill()
+                capture_proc.wait()
+        location = out / "window-capture/window_capture_result.json"
+        if location.is_file():
+            try:
+                captures = json.loads(location.read_text(encoding="utf-8"))
+                report["window_capture"] = {
+                    "requested": True,
+                    "frames": len(captures.get("frames", [])),
+                    "unique_hashes": captures.get("unique_hashes", 0),
+                    "status": captures.get("status", "unverified"),
+                    "errors": captures.get("errors", []),
+                }
+            except (OSError, json.JSONDecodeError) as exc:
+                report["window_capture"]["status"] = "invalid_capture_report"
+                report["window_capture"]["error"] = str(exc)
+        else:
+            report["window_capture"]["status"] = "no_capture_report"
     report["wall_seconds"] = round(time.monotonic() - started, 2)
     for path in sorted(snaps.glob("*.bmp")):
         report["snapshots"].append({

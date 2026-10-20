@@ -27,11 +27,22 @@ for tool in git python3 clang cmake ninja rustc cargo rustup xcrun; do
 done
 xcrun --show-sdk-version
 export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+# Keep Rust, SDL3/Clang and CMake on one minimum macOS deployment target.
+# Rust's default may be 10.12 while SDL3's C objects were built for 15.5,
+# causing undefined ___isPlatformVersionAtLeast at the final linker step.
+export MACOSX_DEPLOYMENT_TARGET="${NEXIUM_MIN_MACOS:-10.15}"
+if [[ ! "$MACOSX_DEPLOYMENT_TARGET" =~ ^(10\\.(1[5-9]|[2-9][0-9])|1[1-9](\\.[0-9]+)?)$ ]]; then
+    echo "BLOCKED: invalid/unsupported minimum macOS: $MACOSX_DEPLOYMENT_TARGET"
+    exit 3
+fi
+export CMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
 if [[ ! -f "$SDKROOT/usr/include/mach/mach_exc.defs" ]]; then
     echo "BLOCKED: macOS SDK missing Mach exception interface definitions"
     exit 3
 fi
 echo "macOS SDK: $SDKROOT"
+echo "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET"
+echo "SDK Clang: $(xcrun clang --version | head -n 1)"
 echo "CPU backend: $BACKEND"
 rustc --version
 if command -v vulkaninfo >/dev/null; then
@@ -92,8 +103,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundleVersion</key><string>2</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>LSMinimumSystemVersion</key><string>10.15</string>
 </dict></plist>
 PLIST
 cp "$SRC/LICENSE" "$WORK/dist/NeXium-LICENSE.txt"
 echo "EXPERIMENTAL_BUILD_OK: $APP"
+xcrun otool -l "$APP/Contents/MacOS/nexium" | grep -A 5 -E "LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX" || true
 echo "No NRO, audio, graphics or gameplay success has been asserted."

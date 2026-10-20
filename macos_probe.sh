@@ -71,6 +71,10 @@ if [[ "${NEXIUM_EXPERIMENT_AUDIO_ABLATION:-0}" == "1" ]]; then
     echo "AUDIO_ABLATION_EXPERIMENT: patching locally checked-out host and UI audio initialization"
     python3 "$SELF/scripts/apply_macos_audio_ablation.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_MINIMAL_EFRAME:-0}" == "1" ]]; then
+    echo "STAGE22_MINIMAL_EFRAME: opt-in minimal macOS eframe/Wgpu startup experiment"
+    python3 "$SELF/scripts/apply_macos_minimal_eframe.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

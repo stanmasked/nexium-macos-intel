@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   validate:
@@ -52,3 +53,85 @@ jobs:
             smoke-nro/nexium_clean_smoke.nro
             smoke-nro/nro_build_receipt.json
           if-no-files-found: error
+
+  launch-self-authored-nro:
+    name: Intel NeXium guest NRO load diagnostic (not gameplay validation)
+    runs-on: macos-15-intel
+    needs: build-clean-nro
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve just-compiled public test NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-clean-homebrew-nro
+          path: public-smoke
+      - name: Retrieve pinned previously verified Rustarmic Intel executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          repository: ${{ github.repository }}
+          run-id: 39493834124
+          github-token: ${{ github.token }}
+          path: pinned-emulator
+      - name: Verify test payload SHA-256 and native emulator architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 smoke-nro/validate_nro.py public-smoke/nexium_clean_smoke.nro \
+            --report public-smoke/verified-nro.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('public-smoke/nro_build_receipt.json').read_text())
+          verified = json.loads(Path('public-smoke/verified-nro.json').read_text())
+          assert manifest['sha256'] == verified['sha256']
+          assert manifest['declared_image_bytes'] == verified['declared_image_bytes']
+          print('PUBLIC_NRO_INTEGRITY_VERIFIED:', verified['sha256'])
+          PY
+          BIN="$(find pinned-emulator -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/nexium-nro-test-exe"
+      - name: Attempt genuine clean homebrew NRO load, with fail-closed evidence
+        id: nro-launch
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/nexium-nro-test-exe")"
+          python3 scripts/nro_smoke_test.py --exe "$BIN" \
+            --nro public-smoke/nexium_clean_smoke.nro \
+            --output nro-launch-report --seconds 18 --snapshot-ms 2000
+      - name: Report technical observation separately from game success
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('nro-launch-report/smoke_result.json')
+          if p.is_file():
+              data = json.loads(p.read_text())
+              print('CLEAN_NRO_LOAD_ATTEMPT:', {
+                  k: data.get(k) for k in
+                  ('status', 'exit_code', 'wall_seconds', 'unique_frame_hashes',
+                   'gameplay_verified')
+              })
+          else:
+              print('CLEAN_NRO_LOAD_ATTEMPT: no runtime telemetry produced')
+          print('A valid NRO or live GUI process does NOT prove guest code, visual frames or controls.')
+          PY
+      - name: Preserve just the public receipt and diagnostic metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-clean-nro-load-report
+          path: |
+            public-smoke/verified-nro.json
+            nro-launch-report/smoke_result.json
+          if-no-files-found: warn
+      - name: Fail explicitly if the real NRO startup probe crashed
+        if: steps.nro-launch.outcome == 'failure'
+        run: |
+          echo "::error::Clean homebrew NRO load attempt failed; inspect public diagnostic report."
+          exit 1

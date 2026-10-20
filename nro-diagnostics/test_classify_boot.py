@@ -46,6 +46,33 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(report["conclusion"], "PROCESS_CRASHED_OR_EXITED")
         self.assertTrue(report["clean_nro_argument_run"]["winit_reentrant_panic"])
 
+    def test_pid_scoped_capture_counts_do_not_certify_gameplay(self):
+        payload = {**GUEST, "window_capture": {
+            "requested": True, "status": "window_frames_unverified",
+            "frames": 5, "unique_hashes": 2}}
+        report = stage.classify(BASE, payload, EXPECTED, FLAGS)
+        capture = report["clean_nro_argument_run"]["pid_owned_window_capture"]
+        self.assertEqual(capture["frames_observed"], 5)
+        self.assertEqual(capture["unique_hashes"], 2)
+        self.assertTrue(capture["may_include_only_gui_without_guest_presentation"])
+        self.assertFalse(report["actual_guest_instructions_verified"])
+        self.assertFalse(report["pixel_correctness_verified"])
+
+    def test_capture_permission_denied_remains_unverified(self):
+        payload = {**GUEST, "window_capture": {
+            "requested": True, "status": "no_window_frames_unverified",
+            "frames": 0, "unique_hashes": 0}}
+        capture = stage.classify(BASE, payload, EXPECTED, FLAGS)
+        self.assertFalse(capture["gameplay_verified"])
+        self.assertEqual(capture["clean_nro_argument_run"]
+                         ["pid_owned_window_capture"]["frames_observed"], 0)
+
+    def test_impossible_capture_count_rejected(self):
+        payload = {**GUEST, "window_capture": {
+            "requested": True, "frames": 2, "unique_hashes": 3}}
+        with self.assertRaisesRegex(ValueError, "capture counts"):
+            stage.classify(BASE, payload, EXPECTED, FLAGS)
+
     def test_private_or_wrong_nro_digest_rejected(self):
         with self.assertRaisesRegex(ValueError, "digest"):
             stage.classify(BASE, GUEST, {"sha256": "b" * 64}, FLAGS)

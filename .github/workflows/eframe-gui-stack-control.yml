@@ -1,0 +1,89 @@
+name: Isolated eframe winit Metal vs OpenGL GUI control Intel macOS
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'gui-stack-control/**'
+      - '.github/workflows/eframe-gui-stack-control.yml'
+      - 'scripts/no_nro_gui_probe.py'
+      - 'scripts/nexium_window_id.swift'
+
+permissions:
+  contents: read
+
+jobs:
+  minimal-eframe-control:
+    name: Intel eframe 0.37 Metal vs Glow visible-window A/B
+    if: github.head_ref == 'work/intel-stage24-gui-stack-control'
+    runs-on: macos-15-intel
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - name: Build minimal independent eframe window
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --target x86_64-apple-darwin \
+            --manifest-path gui-stack-control/Cargo.toml
+          BIN="gui-stack-control/target/x86_64-apple-darwin/release/nexium-intel-gui-stack-control"
+          test -x "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          echo "GUI_STACK_CONTROL_X86_64_BUILD_OK"
+      - name: Compile PID-scoped CoreGraphics window census helper
+        run: |
+          xcrun swiftc -framework CoreGraphics \
+            -o "$RUNNER_TEMP/gui-control-window-id" scripts/nexium_window_id.swift
+      - name: Compare minimal eframe Metal/WGPU and OpenGL/Glow process/window behavior
+        id: compare
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          BIN="gui-stack-control/target/x86_64-apple-darwin/release/nexium-intel-gui-stack-control"
+          NEXIUM_GUI_CONTROL_RENDERER=wgpu python3 scripts/no_nro_gui_probe.py \
+            --exe "$BIN" --output gui-stack-control-results/metal-wgpu \
+            --seconds 12 --window-helper "$RUNNER_TEMP/gui-control-window-id"
+          wgpu=$?
+          NEXIUM_GUI_CONTROL_RENDERER=glow python3 scripts/no_nro_gui_probe.py \
+            --exe "$BIN" --output gui-stack-control-results/opengl-glow \
+            --seconds 12 --window-helper "$RUNNER_TEMP/gui-control-window-id"
+          glow=$?
+          echo "GUI_STACK_CONTROL_PROBE_EXIT: wgpu=$wgpu glow=$glow"
+          if [[ "$wgpu" != "0" && "$glow" != "0" ]]; then
+            exit 1
+          fi
+      - name: Summarize true differences without treating an open window as gameplay
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for mode in ('metal-wgpu', 'opengl-glow'):
+              p = Path('gui-stack-control-results') / mode / 'gui_process_probe.json'
+              if not p.is_file():
+                  print(f'{mode}: no process report')
+                  continue
+              d = json.loads(p.read_text())
+              print(f'{mode}: ' + json.dumps({
+                  k: d.get(k) for k in ('outcome', 'exit_signal', 'alive_at_deadline',
+                                        'window_found', 'window_probe', 'cleanup_signal_mode')
+              }))
+              print(f'{mode} panic={d.get("internal_log_signals",{}).get("panic_reason_excerpt")}')
+          print('Only host GUI control: no NeXium/NRO/rendered-frame/gameplay certification.')
+          PY
+      - name: Preserve small process telemetry; no desktop images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-eframe-wgpu-vs-glow-control
+          path: gui-stack-control-results/**/gui_process_probe.json
+          if-no-files-found: warn
+      - name: Flag both minimal GUI controls failing to start
+        if: steps.compare.outcome == 'failure'
+        run: |
+          echo '::error::Both isolated eframe GUI variants failed. See separate reports.'
+          exit 1

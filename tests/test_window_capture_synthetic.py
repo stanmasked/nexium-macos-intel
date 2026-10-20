@@ -3,6 +3,8 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import subprocess
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/capture_macos_window.py"
 spec = importlib.util.spec_from_file_location("window_capture_macos", SCRIPT)
@@ -26,6 +28,23 @@ class WindowCaptureTests(unittest.TestCase):
             path = Path(temp) / "not-png.png"
             path.write_bytes(b"this is neither a png nor a screenshot")
             self.assertIsNone(module.png_dimensions(path))
+
+    def test_rejects_unauthorized_process_identity(self):
+        fake = subprocess.CompletedProcess(["ps"], 0, "/Applications/Notes.app/Contents/MacOS/Notes\\n", "")
+        with patch.object(module, "process_alive", return_value=True), \\
+             patch.object(module.subprocess, "run", return_value=fake):
+            self.assertFalse(module.is_nexium_process(1234))
+
+    def test_accepts_only_nexium_executable_name(self):
+        fake = subprocess.CompletedProcess(["ps"], 0, "/tmp/NeXium.app/Contents/MacOS/nexium\\n", "")
+        with patch.object(module, "process_alive", return_value=True), \\
+             patch.object(module.subprocess, "run", return_value=fake):
+            self.assertTrue(module.is_nexium_process(1234))
+
+    def test_invalid_pid_never_reaches_process_list(self):
+        with patch.object(module.subprocess, "run") as run:
+            self.assertFalse(module.is_nexium_process(-3))
+            run.assert_not_called()
 
     def test_nonexistent_pid_is_not_alive(self):
         # A negative PID should never be passed to os.kill because it can

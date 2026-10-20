@@ -19,7 +19,10 @@ impl eframe::App for Control {
 }
 
 fn main() -> Result<(), eframe::Error> {
-    let mode = std::env::args().nth(1).unwrap_or_else(|| "wgpu".into());
+    let mode = std::env::var("NEXIUM_GUI_CONTROL_RENDERER")
+        .ok()
+        .or_else(|| std::env::args().nth(1))
+        .unwrap_or_else(|| "wgpu".into());
     if mode != "wgpu" && mode != "glow" {
         eprintln!("GUI_CONTROL_BLOCKED: mode must be 'wgpu' or 'glow'");
         std::process::exit(2);

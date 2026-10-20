@@ -27,6 +27,14 @@ def row(renderer: str) -> dict:
 
 
 class TestIndependentControl(unittest.TestCase):
+    def test_manifest_explicitly_compiles_wgpu_and_glow(self):
+        # Regression for original Intel CI E0599 (Renderer::Glow cfg-gated).
+        manifest = Path(__file__).with_name("Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn('eframe = { version = "0.37", features = ["wgpu", "glow"] }', manifest)
+        source = Path(__file__).with_name("src").joinpath("main.rs").read_text(encoding="utf-8")
+        self.assertIn('eframe::Renderer::Wgpu', source)
+        self.assertIn('eframe::Renderer::Glow', source)
+
     def test_detect_exact_marker_not_prefix(self):
         e = control.parse_evidence("STAGE24_CONTROL_RENDERER=wgpu\n", "wgpu")
         self.assertTrue(e["expected_renderer_marker_observed"])

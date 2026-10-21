@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_input_ablation.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_input_ablation.py scripts/apply_nro_fullfile_offset.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -36,8 +36,8 @@ jobs:
           set -euo pipefail
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
-          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src" "$BASE/nexium-loader/src"
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs nexium-loader/src/nro.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -51,6 +51,10 @@ jobs:
           python3 scripts/apply_macos_input_ablation.py "$BASE"
           python3 scripts/apply_macos_input_ablation.py "$BASE"
           grep -q 'STAGE28_SDL_INPUT_SKIPPED' "$BASE/nexium-gui/src/app.rs"
+          python3 scripts/apply_nro_fullfile_offset.py "$BASE"
+          python3 scripts/apply_nro_fullfile_offset.py "$BASE"
+          grep -q 'standard_nro_start' "$BASE/nexium-loader/src/nro.rs"
+          grep -q 'NRO declared image size out of bounds' "$BASE/nexium-loader/src/nro.rs"
 
   mig-intel:
     name: Intel macOS Mach header generation
@@ -72,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_input_ablation.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_input_ablation.py scripts/apply_nro_fullfile_offset.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -80,8 +84,8 @@ jobs:
           set -euo pipefail
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
-          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src" "$BASE/nexium-loader/src"
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs nexium-loader/src/nro.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -95,6 +99,10 @@ jobs:
           python3 scripts/apply_macos_input_ablation.py "$BASE"
           python3 scripts/apply_macos_input_ablation.py "$BASE"
           grep -q 'STAGE28_SDL_INPUT_SKIPPED' "$BASE/nexium-gui/src/app.rs"
+          python3 scripts/apply_nro_fullfile_offset.py "$BASE"
+          python3 scripts/apply_nro_fullfile_offset.py "$BASE"
+          grep -q 'standard_nro_start' "$BASE/nexium-loader/src/nro.rs"
+          grep -q 'NRO declared image size out of bounds' "$BASE/nexium-loader/src/nro.rs"
 
       - name: Verify native-only window capture helper type checks
         run: xcrun swiftc -typecheck scripts/nexium_window_id.swift
@@ -457,6 +465,122 @@ jobs:
             stage28-report/sdl-input-comparison.json
           if-no-files-found: warn
 
+  nro-fullfile-boot:
+    name: Stage33 genuine Intel guest boot after strict full-file NRO loader fix
+    if: github.head_ref == 'work/intel-stage33-nro-fullfile-layout'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download just-built native Intel Rustarmic with loader correction
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: corrected-rustarmic
+      - name: Download exact previously verified devkitPro public NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-clean-homebrew-nro
+          repository: ${{ github.repository }}
+          run-id: 39508041890
+          github-token: ${{ github.token }}
+          path: public-nro
+      - name: Validate x86_64 plus public NRO checksum and size
+        run: |
+          set -euo pipefail
+          BIN="$(find corrected-rustarmic -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/loader-fixed-exe"
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path("public-nro")
+          nro=(root/"nexium_clean_smoke.nro").read_bytes()
+          receipt=json.loads((root/"nro_build_receipt.json").read_text())
+          assert len(nro)>=0x80 and nro[0x10:0x14]==b"NRO0"
+          assert hashlib.sha256(nro).hexdigest()==receipt["sha256"]
+          assert receipt["sha256"]=="2a1faf864eac55b033b2fcf8f385f2246a897a88b0b2d2f535dc0439e4dbf9d3"
+          print("STAGE33_PUBLIC_NRO_INTEGRITY_VERIFIED")
+          PY
+      - name: Real original full GUI no-NRO process control, input startup bypassed
+        continue-on-error: true
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/loader-fixed-exe")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_SKIP_SDL_INPUT=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 python3 scripts/no_nro_gui_probe.py \
+              --exe "$BIN" --output stage33-report/baseline --seconds 12
+      - name: Actual clean NRO boot into patched guest loader and CPU
+        id: guest
+        continue-on-error: true
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/loader-fixed-exe")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_SKIP_SDL_INPUT=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" --nro public-nro/nexium_clean_smoke.nro \
+              --output stage33-report/guest --seconds 24 --snapshot-ms 1500
+      - name: Classify genuine BootContext/CPU/presentation stage without false gameplay
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, hashlib, re
+          from pathlib import Path
+          root=Path('stage33-report')
+          baseline=json.loads((root/'baseline/gui_process_probe.json').read_text())
+          guest=json.loads((root/'guest/smoke_result.json').read_text())
+          assert baseline['emulator_sha256']==guest['emulator_sha256'], 'not the same native Intel Mach-O'
+          assert not baseline['nro_verified'] and not guest['gameplay_verified']
+          files=[root/'guest/nexium-console.log',
+                 *sorted((root/'guest/data-root/logs').glob('*.log'))[:12]]
+          content='\n'.join(
+              p.read_bytes()[:300000].decode('utf-8',errors='replace')
+              for p in files if p.is_file() and not p.is_symlink()
+          )
+          errors=[]
+          for line in content.splitlines():
+              if 'Boot failed:' not in line: continue
+              value=line.partition('Boot failed:')[2].strip()
+              value=re.sub(r'/(?:Users|private|tmp|var|Volumes|home)/[^\s,;)]*',
+                           '<local-path>',value,flags=re.IGNORECASE)
+              errors.append(value[:220])
+          report={
+            'schema':'nexium-intel-stage33-strict-nro-offset-fix/v1',
+            'same_executable_sha256':guest['emulator_sha256'],
+            'nro_sha256':guest['nro_sha256'],
+            'gui_process_baseline_alive':baseline['alive_at_deadline'],
+            'guest_process_status':guest['status'],
+            'loader_ui_acceptance': 'Auto-loaded NRO:' in content,
+            'guest_boot_thread_entered':'Booting NRO:' in content,
+            'guest_boot_context_ready':'Boot context ready' in content,
+            'boot_failure_messages_redacted':errors[:3],
+            'guest_cpu_started_marker':'cpu memory null policy:' in content,
+            'vulkan_renderer_created_marker':'nexium-nvdrv: Vulkan Renderer initialized' in content,
+            'snapshot_count':len(guest['snapshots']),
+            'unique_snapshot_hashes':guest['unique_frame_hashes'],
+            'actual_guest_instructions_verified':False,
+            'gameplay_verified':False,
+            'sound_or_controller_tested':False,
+            'correct_frame_pixels_verified':False
+          }
+          (root/'stage33-boot-classification.json').write_text(
+              json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - name: Upload JSON metadata, never raw NRO, private logs or images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage33-fullfile-nro-boot
+          path: |
+            stage33-report/stage33-boot-classification.json
+            stage33-report/baseline/gui_process_probe.json
+            stage33-report/guest/smoke_result.json
+          if-no-files-found: warn
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
@@ -477,6 +601,7 @@ jobs:
       NEXIUM_EXPERIMENT_AUDIO_ABLATION: '1'
       NEXIUM_EXPERIMENT_MINIMAL_EFRAME: '1'
       NEXIUM_EXPERIMENT_SDL_INPUT_ABLATION: '1'
+      NEXIUM_EXPERIMENT_NRO_FULLFILE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

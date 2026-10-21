@@ -79,6 +79,10 @@ if [[ "${NEXIUM_EXPERIMENT_SDL_INPUT_ABLATION:-0}" == "1" ]]; then
     echo "STAGE28_SDL_INPUT_ABLATION: guarded macOS gamepad initialization probe"
     python3 "$SELF/scripts/apply_macos_input_ablation.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_NRO_FULLFILE:-0}" == "1" ]]; then
+    echo "STAGE33_NRO_FILE_ORIGIN: official NRO0 full-file segment-offset experiment"
+    python3 "$SELF/scripts/apply_nro_fullfile_offset.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

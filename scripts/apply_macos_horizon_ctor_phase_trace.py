@@ -48,9 +48,8 @@ def patch_source(data: str) -> str:
     before,tail=data.split(START,1)
     ctor,after=tail.split(END,1)
     ctor=START+ctor
-    if "STAGE26_HORIZON_CTOR_ENTERED" not in data or (
-        "impl eframe::App for HorizonApp" not in data):
-        raise RuntimeError("Stage26 experiment or HorizonApp trait not present")
+    if "impl eframe::App for HorizonApp" not in data:
+        raise RuntimeError("HorizonApp eframe trait implementation missing")
     positions=[]
     for name,anchor in PHASES:
         if ctor.count(anchor)!=1:

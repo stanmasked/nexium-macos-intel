@@ -10,10 +10,10 @@ AUDIT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AUDIT)
 
 
-def fixture(root: Path, *, guest_up=True, mapping=True, exit_zero=True):
+def fixture(root: Path, *, guest_up=True, mapping=True, status="exited_zero_unverified"):
     report = {
-        "status": "exited_zero_unverified" if exit_zero else "timeout_alive_unverified",
-        "exit_code": 0 if exit_zero else None,
+        "status": status,
+        "exit_code": 0 if status == "exited_zero_unverified" else 1 if status == "exited_nonzero" else None,
     }
     (root / "smoke_result.json").write_text(json.dumps(report), encoding="utf-8")
     mapping_lines = (
@@ -61,12 +61,27 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
             report = AUDIT.audit(root)
             self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
 
-    def test_nonzero_or_timeout_fails(self):
+    def test_nonzero_process_fails_even_if_markers_exist(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            fixture(root, exit_zero=False)
+            fixture(root, status="exited_nonzero")
             report = AUDIT.audit(root)
             self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_timeout_without_guest_roundtrip_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, guest_up=False, status="timeout_alive_unverified")
+            report = AUDIT.audit(root)
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_timeout_after_complete_guest_roundtrip_is_acceptable(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, status="timeout_alive_unverified")
+            report = AUDIT.audit(root)
+            self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
+            self.assertTrue(report["probe_process_outcome_acceptable"])
 
     def test_missing_receipts_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:

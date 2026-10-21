@@ -1,0 +1,93 @@
+name: Stage46 native Intel NeXium full UI audio startup A-B
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "stage46/**"
+      - ".github/workflows/stage46-full-gui-audio.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  stage46-audit-tests:
+    name: Stage46 audio source-audit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run audit syntax and privacy regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile stage46/audit_audio_original_gui.py stage46/test_audio_original_gui.py
+          python3 -m unittest discover -s stage46 -p 'test_*.py' -v
+
+  stage46-audio-macos-intel:
+    name: Native Intel original NeXium GUI, SDL3 + audio-on and audio-off
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reuse audited exact Stage43 Intel Rustarmic executable — no rebuild
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          run-id: 39600339146
+          github-token: ${{ github.token }}
+          repository: stanmasked/nexium-macos-intel
+          path: stage46-binary
+      - name: Check native Intel and build PID-owned window observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          BIN="$(find stage46-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage46-executable-path"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage46-own-window" scripts/nexium_window_id.swift
+      - name: Two authentic same-binary processes with the original full UI and SDL3
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage46-executable-path")"
+          for mode in audio-off audio-on; do
+            no_audio=0
+            if [[ "$mode" == "audio-off" ]]; then no_audio=1; fi
+            echo "Stage46 native original NeXium audio mode: $mode"
+            env NEXIUM_MACOS_NO_AUDIO="$no_audio" \
+              NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+              NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+              NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+              NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+              NEXIUM_MACOS_PREWARM_SDL3_INPUT=1 \
+              NEXIUM_MACOS_SDL3_STOP_BEFORE=none \
+              NEXIUM_MACOS_SDL3_SUBPHASE_TRACE=1 \
+              NEXIUM_MACOS_SDL3_POLL_TRACE=1 \
+              python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                --output "stage46-reports/$mode" --seconds 12 \
+                --window-helper "$RUNNER_TEMP/stage46-own-window" || true
+          done
+      - name: Validate identical Mach-O and original UI / SDL3 in both audio modes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 stage46/audit_audio_original_gui.py \
+            --reports stage46-reports \
+            --output stage46-evidence/stage46-audio-ab.json
+          echo 'Audio-enabled process startup is not PCM generation, audio playback or device verification.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload only whitelisted source and process facts; no audio or game data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage46-intel-original-ui-audio-startup-contrast
+          path: stage46-evidence/stage46-audio-ab.json
+          if-no-files-found: warn
+          retention-days: 30

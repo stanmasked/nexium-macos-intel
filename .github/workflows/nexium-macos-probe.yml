@@ -1807,7 +1807,7 @@ jobs:
       - name: Download compiled guest HID probe NRO
         uses: actions/download-artifact@v4
         with:
-          name: stage40-stage42-guest-ab-probe-nro
+          name: stage42-guest-ab-probe-nro
           path: stage42-probe
       - name: Verify native binary and guest probe
         shell: bash

@@ -84,6 +84,9 @@ def audit(report_dir: Path) -> dict:
                 state |= value
             states[sample_idx] = state
     unexpected_npad = any(state & ~(B | UP | RIGHT) for state in states)
+    opposite_directions_same_sample = any(
+        (state & (UP | RIGHT)) == (UP | RIGHT) for state in states
+    )
     known = all((
         source["nro_autoload_observed"],
         source["guest_boot_started_observed"],
@@ -96,7 +99,8 @@ def audit(report_dir: Path) -> dict:
     ))
     passed = bool(known and guest_order and not guest_failed and host_mixed
                   and snapshot_order and not virtual_fail and npad_order
-                  and not unexpected_npad)
+                  and not unexpected_npad
+                  and not opposite_directions_same_sample)
 
     return {
         "schema": "nexium-stage50-guest-mixed-dpad-dual-stick/v1",
@@ -108,6 +112,8 @@ def audit(report_dir: Path) -> dict:
         "original_npad_b_up_b_right_b_neutral_observed": npad_order,
         "original_npad_serialized_sample_count": len(samples),
         "original_npad_unexpected_button_bits_observed": unexpected_npad,
+        "original_npad_opposite_directions_same_sample_observed":
+            opposite_directions_same_sample,
         "guest_incomplete_or_spurious_marker_observed": guest_failed,
         "host_sdl3_virtual_input_call_failure_observed": virtual_fail,
         "physical_controller_verified": False,

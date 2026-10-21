@@ -1,0 +1,111 @@
+name: Stage37 original Intel SDL3 constructor replay
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/stage37_sdl3_replay.py"
+      - "tests/test_stage37_sdl3_replay.py"
+      - ".github/workflows/stage37-sdl3-original-replay.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  original-sdl3-replay:
+    name: Four native Intel SDL3 input comparisons with corrected real branch semantics
+    if: github.head_ref == 'work/intel-stage37-sdl3-original-replay'
+    runs-on: macos-15-intel
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Eight source-aware fail-closed audit tests
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          python3 -m unittest discover -s tests -p test_stage37_sdl3_replay.py -v
+      - name: Retrieve real Stage29 Rustarmic x86_64 binary without rebuilding
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          repository: stanmasked/nexium-macos-intel
+          run-id: 39559370735
+          github-token: ${{ github.token }}
+          path: stage37-original-emulator
+      - name: Confirm native Intel image and compile PID-owned window census
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage37-original-emulator -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage37-bin"
+          xcrun swiftc -framework CoreGraphics \
+            -o "$RUNNER_TEMP/stage37-window" scripts/nexium_window_id.swift
+      - name: Genuine HorizonApp constructor with SDL3 enabled
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage37-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage37-reports/ctor-input-enabled --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage37-window"
+      - name: Same genuine constructor with SDL3 bypassed
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage37-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage37-reports/ctor-input-skipped --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage37-window"
+      - name: Entire genuine HorizonApp and UI with SDL3 bypassed
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage37-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage37-reports/full-input-skipped --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage37-window"
+      - name: Original host init, no HorizonApp constructor
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage37-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=1 NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage37-reports/full-init-minimal --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage37-window"
+      - name: Validate each branch and save only bounded evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/stage37_sdl3_replay.py \
+            --reports stage37-reports \
+            --output stage37-reports/stage37-comparison.json
+          echo 'Comparing one native Intel Mach-O, no NRO; input bypass is only a diagnostic.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload process receipts only, never raw logs or images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage37-original-sdl3-replay
+          path: |
+            stage37-reports/ctor-input-enabled/gui_process_probe.json
+            stage37-reports/ctor-input-skipped/gui_process_probe.json
+            stage37-reports/full-input-skipped/gui_process_probe.json
+            stage37-reports/full-init-minimal/gui_process_probe.json
+            stage37-reports/stage37-comparison.json
+          if-no-files-found: warn

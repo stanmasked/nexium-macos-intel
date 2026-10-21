@@ -76,7 +76,7 @@ def main() -> int:
     env["NEXIUM_DATA_ROOT"] = str(out / "data-root")
     env["NEXIUM_SNAPSHOT_DIR"] = str(snaps)
     env["NEXIUM_SNAPSHOT_EVERY_MS"] = str(args.snapshot_ms)
-    env["NEXIUM_LOG_LEVEL"] = "info"
+    env["NEXIUM_LOG_LEVEL"] = os.environ.get("NEXIUM_LOG_LEVEL", "info")
     env["RUST_BACKTRACE"] = "1"
     report = {
         "utc": datetime.now(timezone.utc).isoformat(),

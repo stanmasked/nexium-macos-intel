@@ -1,0 +1,194 @@
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/audit_guest_hid_runtime.py"
+SPEC = importlib.util.spec_from_file_location("guest_hid_audit", SCRIPT)
+AUDIT = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(AUDIT)
+
+
+def fixture(root: Path, *, guest_up=True, mapping=True, include_trace=True, status="exited_zero_unverified"):
+    report = {
+        "status": status,
+        "exit_code": 0 if status == "exited_zero_unverified" else 1 if status == "exited_nonzero" else None,
+    }
+    (root / "smoke_result.json").write_text(json.dumps(report), encoding="utf-8")
+    mapping_lines = (
+        "svcMapSharedMemory handle=0x1 addr=0x1000 size=0x40000 perm=0x3\n"
+        "recognized as HID shared memory\n"
+    ) if mapping else ""
+    boot_lines = (
+        "Auto-loaded NRO: nexium-guest-hid-probe.nro\n"
+        "Booting NRO: nexium-guest-hid-probe.nro\n"
+        "cpu memory null policy: enabled\n"
+        "svcOutputDebugString (X0=str_ptr, X1=str_len)\n"
+    )
+    up = "OutputDebugString: STAGE40_GUEST_HID_B_UP\n" if guest_up else ""
+    trace_lines = (
+        "[hid-publish] npad=[0x2, 0x0]\n"
+        "[hid-publish] npad=[0x0, 0x0]\n"
+    ) if include_trace else ""
+    guest_log = (
+        boot_lines
+        + mapping_lines
+        + trace_lines
+        + "OutputDebugString: STAGE40_GUEST_HID_PROBE_START\n"
+        + "OutputDebugString: STAGE40_GUEST_HID_B_DOWN\n"
+        + up
+        + ("OutputDebugString: STAGE40_GUEST_HID_PRESS_RELEASE_PASS\n" if guest_up else "")
+    )
+    host_log = (
+        "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE\n"
+        + "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE\n"
+    )
+    (root / "nexium-console.log").write_text(host_log, encoding="utf-8")
+    log_dir = root / "data-root" / "logs"
+    log_dir.mkdir(parents=True)
+    (log_dir / "nexium-test.log").write_text(guest_log, encoding="utf-8")
+
+
+class GuestHidRuntimeAuditTests(unittest.TestCase):
+    def test_reads_guest_svc_markers_from_isolated_file_logger(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            console = (root / "nexium-console.log").read_text(encoding="utf-8")
+            guest_log = (root / "data-root" / "logs" / "nexium-test.log").read_text(encoding="utf-8")
+            self.assertNotIn("STAGE40_GUEST_HID_B_DOWN", console)
+            self.assertIn("STAGE40_GUEST_HID_B_DOWN", guest_log)
+
+            report = AUDIT.audit(root)
+            self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
+            self.assertEqual(report["file_logger_log_count"], 1)
+            self.assertTrue(report["guest_libnx_b_down_observed"])
+            self.assertTrue(report["guest_libnx_b_up_observed_after_down_marker"])
+            self.assertTrue(report["nro_autoload_observed"])
+            self.assertTrue(report["guest_boot_started_observed"])
+            self.assertTrue(report["guest_boot_context_ready_observed"])
+            self.assertTrue(report["guest_output_debug_svc_observed"])
+            self.assertFalse(report["guest_boot_failed_observed"])
+
+    def test_console_markers_cannot_substitute_for_guest_file_log(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            guest_path = root / "data-root" / "logs" / "nexium-test.log"
+            guest_log = guest_path.read_text(encoding="utf-8")
+            console_path = root / "nexium-console.log"
+            with console_path.open("a", encoding="utf-8") as stream:
+                stream.write(guest_log)
+            guest_path.unlink()
+
+            report = AUDIT.audit(root)
+            self.assertTrue(report["host_original_hid_b_press_observed"])
+            self.assertTrue(report["guest_probe_pass_marker_observed"] is False)
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_complete_guest_and_host_roundtrip_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            report = AUDIT.audit(root)
+            self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
+            self.assertTrue(report["guest_hid_map_success_marker_observed"])
+            self.assertTrue(report["serialized_npad_b_release_after_press_observed"])
+            self.assertFalse(report["gameplay_verified"])
+            self.assertFalse(report["real_switch_verified"])
+
+    def test_guest_readback_passes_if_optional_host_trace_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, include_trace=False)
+            report = AUDIT.audit(root)
+            self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
+            self.assertFalse(report["serialized_npad_trace_roundtrip_observed"])
+
+    def test_missing_guest_boot_context_fails_even_with_input_markers(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            console_path = root / "data-root" / "logs" / "nexium-test.log"
+            log = console_path.read_text(encoding="utf-8")
+            console_path.write_text(
+                log.replace("cpu memory null policy: enabled\n", ""),
+                encoding="utf-8",
+            )
+            report = AUDIT.audit(root)
+            self.assertTrue(report["guest_probe_pass_marker_observed"])
+            self.assertFalse(report["guest_boot_context_ready_observed"])
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_guest_boot_failure_fails_even_with_input_markers(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            console_path = root / "data-root" / "logs" / "nexium-test.log"
+            with console_path.open("a", encoding="utf-8") as stream:
+                stream.write("Boot failed: fixture injected failure\n")
+            report = AUDIT.audit(root)
+            self.assertTrue(report["guest_probe_pass_marker_observed"])
+            self.assertTrue(report["guest_boot_failed_observed"])
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_missing_guest_svc_handler_fails_even_with_input_markers(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            console_path = root / "data-root" / "logs" / "nexium-test.log"
+            log = console_path.read_text(encoding="utf-8")
+            console_path.write_text(
+                log.replace("svcOutputDebugString (X0=str_ptr, X1=str_len)\n", ""),
+                encoding="utf-8",
+            )
+            report = AUDIT.audit(root)
+            self.assertTrue(report["guest_probe_pass_marker_observed"])
+            self.assertFalse(report["guest_output_debug_svc_observed"])
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_missing_guest_release_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, guest_up=False)
+            report = AUDIT.audit(root)
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_missing_hid_mapping_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, mapping=False)
+            report = AUDIT.audit(root)
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_nonzero_process_fails_even_if_markers_exist(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, status="exited_nonzero")
+            report = AUDIT.audit(root)
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_timeout_without_guest_roundtrip_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, guest_up=False, status="timeout_alive_unverified")
+            report = AUDIT.audit(root)
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_timeout_after_complete_guest_roundtrip_is_acceptable(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, status="timeout_alive_unverified")
+            report = AUDIT.audit(root)
+            self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
+            self.assertTrue(report["probe_process_outcome_acceptable"])
+
+    def test_missing_receipts_fail_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaisesRegex(ValueError, "missing NRO smoke receipt"):
+                AUDIT.audit(Path(td))
+
+
+if __name__ == "__main__":
+    unittest.main()

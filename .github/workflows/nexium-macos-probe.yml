@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py scripts/apply_macos_guest_deadzone_jitter.py scripts/audit_guest_deadzone_jitter.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py scripts/apply_macos_guest_deadzone_jitter.py scripts/audit_guest_deadzone_jitter.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -2815,6 +2815,144 @@ jobs:
 
 
 
+  stage52-guest-deadzone-jitter-nro:
+    name: Stage52 build guest analog deadzone jitter NRO
+    if: github.head_ref == 'work/intel-stage52-controller-deadzone-jitter'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage52-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_deadzone_jitter_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage52-guest-probe/nexium-guest-deadzone-jitter-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest Deadzone Jitter Probe" "NeXium Intel Research" "0.1.0" \
+            stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage52-guest-probe/nexium-guest-deadzone-jitter-probe.elf \
+            stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nro \
+            --nacp=stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE52_GUEST_MIXED_DPAD_DUAL_STICK_NRO_INVALID")
+          print(f"STAGE52_GUEST_MIXED_DPAD_DUAL_STICK_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage52-guest-deadzone-jitter-nro
+          path: stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage52-guest-deadzone-jitter-readback:
+    name: Stage52 native Intel guest analog deadzone jitter
+    if: github.head_ref == 'work/intel-stage52-controller-deadzone-jitter'
+    needs: [intel-build, stage52-guest-deadzone-jitter-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage52-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage52-guest-deadzone-jitter-nro
+          path: stage52-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage52-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage52-probe/nexium-guest-deadzone-jitter-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage52-exe"
+      - name: Run guest original four-axis low-amplitude deadzone jitter
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage52-exe")"
+          # Stage52 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DUAL_STICK_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DEADZONE_JITTER_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage52-probe/nexium-guest-deadzone-jitter-probe.nro \
+              --output stage52-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require raw jitter filtered in original host snapshot and guest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_deadzone_jitter.py \
+            --report-dir stage52-evidence \
+            --output stage52-evidence/stage52-guest-deadzone-jitter.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage52-guest-deadzone-jitter-evidence
+          path: stage52-evidence/stage52-guest-deadzone-jitter.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
@@ -2871,7 +3009,8 @@ jobs:
         continue-on-error: true
         env:
           # Explicit profile opt-in, never enabled by default or on main.
-          NEXIUM_INTEL_INPUT_PROFILE: ${{ github.head_ref == 'work/intel-stage51-controller-profile' && 'controller-diagnostics-v1' || 'off' }}
+          NEXIUM_INTEL_INPUT_PROFILE: ${{ (github.head_ref == 'work/intel-stage51-controller-profile' || github.head_ref == 'work/intel-stage52-controller-deadzone-jitter') && 'controller-diagnostics-v1' || 'off' }}
+          NEXIUM_EXPERIMENT_STAGE52_DEADZONE_JITTER: ${{ github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' && '1' || '0' }}
         run: |
           set -euo pipefail
           if [[ "$NEXIUM_INTEL_INPUT_PROFILE" == "controller-diagnostics-v1" ]]; then

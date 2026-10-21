@@ -65,5 +65,13 @@ class RustSDL3AuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"contradiction"):
             stage.inspect("direct-update",0,lines(*stage.EXPECTED),True)
 
+    def test_contract_marker_with_crash_is_not_success(self):
+        with self.assertRaisesRegex(ValueError,"nonzero process exit"):
+            stage.inspect("direct-update",-6,lines(*stage.EXPECTED))
+
+    def test_contract_marker_with_timeout_is_not_success(self):
+        with self.assertRaisesRegex(ValueError,"timeout/nonzero"):
+            stage.inspect("direct-update",None,lines(*stage.EXPECTED),True)
+
 if __name__=="__main__":
     unittest.main()

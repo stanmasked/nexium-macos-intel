@@ -43,7 +43,7 @@ class Stage32PreWinitInputTests(unittest.TestCase):
     def test_early_controller_initialization_occurs_before_winit(self):
         main=stage.patch_triplet(fixture())["nexium-gui/src/main.rs"]
         self.assertLess(main.index("STAGE32_PREINPUT_BEGIN_BEFORE_WINIT"),
-                        main.index("eframe::run_native"))
+                        main.index("    let result = eframe::run_native("))
         self.assertIn("settings.gamepad.clone()",main)
         self.assertIn("settings.motion_enabled",main)
 

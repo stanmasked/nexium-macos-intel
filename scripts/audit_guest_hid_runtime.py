@@ -95,8 +95,17 @@ def audit(report_dir: Path) -> dict:
     result = {
         "schema": "nexium-stage40-guest-npad-readback/v1",
         "same_process_guest_input_roundtrip_passed": bool(
-            guest_pass_after_edges and host_edges_ordered and mapping_call
-            and hid_mapping_success and process_outcome_acceptable
+            guest[GUEST_MARKERS[0]]
+            and guest_pass_after_edges
+            and host_edges_ordered
+            and mapping_call
+            and hid_mapping_success
+            and nro_autoload_observed
+            and guest_boot_started_observed
+            and guest_boot_context_ready_observed
+            and not guest_boot_failed_observed
+            and guest_output_debug_svc_observed
+            and process_outcome_acceptable
         ),
         "guest_libnx_b_down_observed": guest[GUEST_MARKERS[1]],
         "guest_libnx_b_up_observed_after_down_marker": guest_edges_ordered,

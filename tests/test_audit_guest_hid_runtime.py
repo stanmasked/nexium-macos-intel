@@ -31,18 +31,23 @@ def fixture(root: Path, *, guest_up=True, mapping=True, include_trace=True, stat
         "[hid-publish] npad=[0x2, 0x0]\n"
         "[hid-publish] npad=[0x0, 0x0]\n"
     ) if include_trace else ""
-    log = (
+    guest_log = (
         boot_lines
         + mapping_lines
-        + "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE\n"
-        + "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE\n"
         + trace_lines
         + "OutputDebugString: STAGE40_GUEST_HID_PROBE_START\n"
         + "OutputDebugString: STAGE40_GUEST_HID_B_DOWN\n"
         + up
         + ("OutputDebugString: STAGE40_GUEST_HID_PRESS_RELEASE_PASS\n" if guest_up else "")
     )
-    (root / "nexium-console.log").write_text(log, encoding="utf-8")
+    host_log = (
+        "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE\n"
+        + "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE\n"
+    )
+    (root / "nexium-console.log").write_text(host_log, encoding="utf-8")
+    log_dir = root / "data-root" / "logs"
+    log_dir.mkdir(parents=True)
+    (log_dir / "nexium-test.log").write_text(guest_log, encoding="utf-8")
 
 
 class GuestHidRuntimeAuditTests(unittest.TestCase):
@@ -50,28 +55,10 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             fixture(root)
-            console_path = root / "nexium-console.log"
-            lines = console_path.read_text(encoding="utf-8").splitlines()
-            file_lines = [
-                line for line in lines
-                if (
-                    "svcMapSharedMemory" in line
-                    or "recognized as HID shared memory" in line
-                    or "Auto-loaded NRO:" in line
-                    or "Booting NRO:" in line
-                    or "cpu memory null policy:" in line
-                    or "svcOutputDebugString" in line
-                    or "[hid-publish]" in line
-                    or "OutputDebugString:" in line
-                )
-            ]
-            host_lines = [line for line in lines if line not in file_lines]
-            console_path.write_text("\n".join(host_lines) + "\n", encoding="utf-8")
-            log_dir = root / "data-root" / "logs"
-            log_dir.mkdir(parents=True)
-            (log_dir / "nexium-test.log").write_text(
-                "\n".join(file_lines) + "\n", encoding="utf-8"
-            )
+            console = (root / "nexium-console.log").read_text(encoding="utf-8")
+            guest_log = (root / "data-root" / "logs" / "nexium-test.log").read_text(encoding="utf-8")
+            self.assertNotIn("STAGE40_GUEST_HID_B_DOWN", console)
+            self.assertIn("STAGE40_GUEST_HID_B_DOWN", guest_log)
 
             report = AUDIT.audit(root)
             self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
@@ -83,6 +70,22 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
             self.assertTrue(report["guest_boot_context_ready_observed"])
             self.assertTrue(report["guest_output_debug_svc_observed"])
             self.assertFalse(report["guest_boot_failed_observed"])
+
+    def test_console_markers_cannot_substitute_for_guest_file_log(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            guest_path = root / "data-root" / "logs" / "nexium-test.log"
+            guest_log = guest_path.read_text(encoding="utf-8")
+            console_path = root / "nexium-console.log"
+            with console_path.open("a", encoding="utf-8") as stream:
+                stream.write(guest_log)
+            guest_path.unlink()
+
+            report = AUDIT.audit(root)
+            self.assertTrue(report["host_original_hid_b_press_observed"])
+            self.assertTrue(report["guest_probe_pass_marker_observed"] is False)
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
 
     def test_complete_guest_and_host_roundtrip_passes(self):
         with tempfile.TemporaryDirectory() as td:
@@ -107,7 +110,7 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             fixture(root)
-            console_path = root / "nexium-console.log"
+            console_path = root / "data-root" / "logs" / "nexium-test.log"
             log = console_path.read_text(encoding="utf-8")
             console_path.write_text(
                 log.replace("cpu memory null policy: enabled\n", ""),
@@ -122,7 +125,7 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             fixture(root)
-            console_path = root / "nexium-console.log"
+            console_path = root / "data-root" / "logs" / "nexium-test.log"
             with console_path.open("a", encoding="utf-8") as stream:
                 stream.write("Boot failed: fixture injected failure\n")
             report = AUDIT.audit(root)
@@ -134,7 +137,7 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             fixture(root)
-            console_path = root / "nexium-console.log"
+            console_path = root / "data-root" / "logs" / "nexium-test.log"
             log = console_path.read_text(encoding="utf-8")
             console_path.write_text(
                 log.replace("svcOutputDebugString (X0=str_ptr, X1=str_len)\n", ""),

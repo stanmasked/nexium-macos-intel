@@ -92,6 +92,10 @@ def run_mode(exe: Path, nro: Path, mode: str, seconds: int, window_helper: Path)
         env.update({
             "HOME":str(home), "XDG_CONFIG_HOME":str(root/"config"),
             "XDG_DATA_HOME":str(root/"data"),
+            # The real pinned nexium-common::paths::data_root() honors this,
+            # and FileLogger writes under NEXIUM_DATA_ROOT/logs.
+            "NEXIUM_DATA_ROOT":str(root/"nexium-data"),
+            "NEXIUM_LOG_LEVEL":"info",
             "NEXIUM_MACOS_NO_AUDIO":"1",
             "NEXIUM_MACOS_MINIMAL_EFRAME":"0",
             "NEXIUM_MACOS_FULL_INIT_MINIMAL_APP":"0",
@@ -124,13 +128,19 @@ def run_mode(exe: Path, nro: Path, mode: str, seconds: int, window_helper: Path)
                     except subprocess.TimeoutExpired:
                         proc.kill()
                         proc.wait(timeout=5)
-        raw=private.read_text(encoding="utf-8",errors="replace")
+        # NeXium FileLogger writes to the private data root, not stdout.
+        # Read both private console AND actual app-owned log files.
+        raw_parts=[private.read_text(encoding="utf-8",errors="replace")]
+        logs=root/"nexium-data"/"logs"
+        if logs.is_dir():
+            raw_parts.extend(p.read_text(encoding="utf-8",errors="replace")
+                             for p in sorted(logs.glob("nexium-*.log")) if p.is_file())
+        raw="\n".join(raw_parts)
         # Do not echo arbitrary local paths or device information.
-        probe_files=[
-            p for p in home.rglob("*") if p.is_file()
-            and "sdmc" in p.parts and "vandal-hearts-remake" in p.parts
-            and p.stat().st_size>0
-        ]
+        # Original guest files reside in exact NeXium SDL root/sdmc/switch.
+        guest_root=root/"nexium-data"/"sdmc"/"switch"/"vandal-hearts-remake"
+        probe_files=[p for p in guest_root.rglob("*")
+                     if p.is_file() and p.stat().st_size>0]
         state={
             "alive_at_deadline":alive,
             "window_found":own,

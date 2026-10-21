@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --release --locked --manifest-path stage47/Cargo.toml
+          cargo build --release --manifest-path stage47/Cargo.toml
           BIN="stage47/target/release/nexium-stage47-rust-sdl3-intel"
           test -x "$BIN"
           test "$(xcrun lipo -archs "$BIN")" = x86_64

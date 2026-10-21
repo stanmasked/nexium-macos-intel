@@ -19,11 +19,9 @@ int main(int argc, char **argv) {
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
 
     PadState pad;
-    Result result = padInitializeDefault(&pad);
-    if (R_FAILED(result)) {
-        emit_marker("STAGE40_GUEST_HID_PAD_INIT_FAILED\n");
-        return 3;
-    }
+    /* libnx padInitializeDefault() returns void; there is no Result to test. */
+    padInitializeDefault(&pad);
+    emit_marker("STAGE40_GUEST_HID_PAD_INIT_CALLED\n");
 
     bool previous_b = false;
     bool saw_b_down = false;

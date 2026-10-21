@@ -20,7 +20,7 @@ class GuestHidLongHoldPatchTests(unittest.TestCase):
         self.assertIn('var("NEXIUM_MACOS_GUEST_HID_PROBE")', result)
         self.assertIn('.ok().as_deref() == Some("1")', result)
         self.assertIn("900", result)
-        self.assertIn("else {\\n                12", result)
+        self.assertIn("else {\n                12", result)
         self.assertIn("else if n == hold_ticks", result)
         self.assertNotIn("let down = n >= 1 && n < 12;", result)
 

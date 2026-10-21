@@ -46,7 +46,10 @@ class Stage36VirtualInputTests(unittest.TestCase):
 
     def test_marker_evidence_not_fabricated_button(self):
         result=stage.patch_source(SOURCE)
-        self.assertIn("stage36_observe_synthetic_snapshot(snap.connected, snap.buttons)",result)
+        self.assertIn("stage36_observe_synthetic_snapshot(",result)
+        self.assertIn("snap.connected && virtual_pad_is_the_selected_source",result)
+        self.assertIn("self.pad.as_ref().and_then(|pad| pad.id().ok())",result)
+        self.assertIn("STAGE36_VIRTUAL_ID.with(|value| value.set(id.0))",result)
         self.assertIn("if connected && mapped_buttons != 0",result)
         self.assertIn("if pressed.replace(false)",result)
         self.assertNotIn("snap.buttons = 1",result)

@@ -1,0 +1,11 @@
+# Stage30 — independently replay the exact Stage28 Intel constructor trace
+
+The original native Intel [Stage28 Actions #39558456359](https://github.com/stanmasked/nexium-macos-intel/actions/runs/39558456359), job `119090931154`, built the authentic x86_64 Rustarmic NeXium executable SHA-256 `345bb6188e3e5956018605d994e245550f660832fd240587fce6ac292ce59049` and ran three real no-NRO processes, all with host/UI audio disabled. The two paths that entered `HorizonApp::new` aborted with SIGABRT while full host startup but minimal app survived 12 seconds. The final Stage28 trace verifier ended failure `AssertionError: phase trace skipped a checkpoint` and preserved only process receipts in artifact #12327198750. We cannot infer a precise failing source call from that verifier error.
+
+This separate experiment **reuses the identical original Stage28 executable** from its public GitHub Actions artifact, instead of rebuilding NeXium or editing any existing experiment. The dedicated genuine macOS Intel runner verifies x86_64 and the exact SHA-256. It executes the same three modes, with NRO absent and sound disabled, and keeps raw process stdout/stderr only in ephemeral runner files.
+
+A new classifier matches **only exact complete Rust stderr phase-marker lines**, preserving the observed emission order. It records gaps before the highest emitted checkpoint, the longest contiguous prefix, duplicates, actual return/entry markers, SIGABRT, and whether the negative control ran its own source branch. It explicitly refuses to treat absent markers as proof that a Rust statement never executed. Ten synthetic tests validate gaps, duplicate markers, unrelated source-text quotations, forged phase IDs, binary provenance, negative controls and fail-closed NRO claims.
+
+Public artifacts contain only whitelisted marker IDs and sanitary process receipts, not full stdout/stderr, private file paths, GUI screenshots, or Nintendo/game files. Even complete checkpoints do not establish root cause. Any repair needs an independent source-specific control and real GUI/guest re-test.
+
+This is a separate **Draft PR** to avoid modifying Stage28 and Stage29 while their native jobs are active. NeXium main and Vandal Hearts PR #176 stay untouched.

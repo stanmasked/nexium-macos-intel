@@ -1,0 +1,116 @@
+name: Stage30 original Intel constructor phase trace replay
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage30-original-intel-ctor-replay.yml'
+      - 'scripts/stage30_original_phase_replay.py'
+      - 'tests/test_stage30_original_phase_replay.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: stage30-original-ctor-replay-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  phase-source-audit:
+    name: Replay original Stage28 native Intel Mach-O; report actual noncontiguous phases
+    runs-on: macos-15-intel
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Intel hardware and ten original receipt unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python3 -m unittest discover -s tests \
+            -p test_stage30_original_phase_replay.py -v
+          python3 -m py_compile scripts/stage30_original_phase_replay.py
+
+      - name: Download only already-built authentic Stage28 Rustarmic Mach-O
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ github.repository }}
+          run-id: 39558456359
+          name: nexium-macos-intel-rustarmic-probe
+          github-token: ${{ github.token }}
+          path: stage30-original-stage28-bundle
+
+      - name: Validate exact Stage28 source binary and real macOS Intel format
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage30-original-stage28-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(shasum -a 256 "$BIN" | awk '{print $1}')" = \
+            345bb6188e3e5956018605d994e245550f660832fd240587fce6ac292ce59049
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage30-bin"
+          echo "Authentic Stage28 native Intel executable SHA-256 pinned." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Observe original full NeXium constructor path with phase trace
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage30-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage30-reports/full-horizonapp --seconds 12
+
+      - name: Observe real HorizonApp constructor retained without original UI
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage30-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage30-reports/constructor-only --seconds 12
+
+      - name: Original full host initialization without HorizonApp control
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage30-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=1 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage30-reports/full-init-minimal --seconds 12
+
+      - name: Save only exact observed emitted phases including legitimate gaps
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/stage30_original_phase_replay.py \
+            --reports stage30-reports \
+            --output stage30-reports/stage30-original-phase-replay.json
+          echo 'Stage30: genuine Intel constructor phase order captured; no causal fix claimed.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish only sanitized original process receipts and marker names
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage30-original-stage28-intel-phase-marker-replay
+          path: |
+            stage30-reports/full-horizonapp/gui_process_probe.json
+            stage30-reports/constructor-only/gui_process_probe.json
+            stage30-reports/full-init-minimal/gui_process_probe.json
+            stage30-reports/stage30-original-phase-replay.json
+          if-no-files-found: warn
+          retention-days: 90

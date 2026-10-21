@@ -3175,7 +3175,7 @@ jobs:
         env:
           # Explicit profile opt-in, never enabled by default or on main.
           NEXIUM_INTEL_INPUT_PROFILE: ${{ (github.head_ref == 'work/intel-stage51-controller-profile' || github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' || github.head_ref == 'work/intel-stage53-deadzone-threshold' || github.head_ref == 'work/intel-stage54-controller-proof-manifest') && 'controller-diagnostics-v1' || 'off' }}
-          NEXIUM_EXPERIMENT_STAGE52_DEADZONE_JITTER: ${{ (github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' || github.head_ref == 'work/intel-stage53-deadzone-threshold') && '1' || '0' }}
+          NEXIUM_EXPERIMENT_STAGE52_DEADZONE_JITTER: ${{ (github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' || github.head_ref == 'work/intel-stage53-deadzone-threshold' || github.head_ref == 'work/intel-stage54-controller-proof-manifest') && '1' || '0' }}
           NEXIUM_EXPERIMENT_STAGE53_DEADZONE_THRESHOLD: ${{ (github.head_ref == 'work/intel-stage53-deadzone-threshold' || github.head_ref == 'work/intel-stage54-controller-proof-manifest') && '1' || '0' }}
         run: |
           set -euo pipefail

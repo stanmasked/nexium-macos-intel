@@ -41,7 +41,7 @@ class Stage36OriginalHomebrew(unittest.TestCase):
         self.assertFalse(d["complete_guest_boot_verified"])
 
     def test_control_does_not_pretend_guest_arg(self):
-        d=stage.sanitize(stage.MODES[2],{"alive_at_deadline":True})
+        d=stage.sanitize(stage.MODES[3],{"alive_at_deadline":True})
         self.assertIsNone(d["source_original_guest_nro_sha256"])
         self.assertFalse(d["exact_command_line_nro_argument_supplied"])
 
@@ -187,11 +187,37 @@ class Stage36OriginalHomebrew(unittest.TestCase):
         self.assertFalse(rust["guest_cpu_instructions_verified"])
         self.assertFalse(rust["complete_guest_boot_verified"])
 
+    def test_trace_target_proves_original_cpu_svc_without_raw_guest_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            console=root/"console.txt"
+            console.write_text("")
+            log=root/"nexium-data"/"logs"/"nexium-svc-sample.log"
+            log.parent.mkdir(parents=True)
+            log.write_text("[trace nexium_runner::boot] SVC 0x01 (count: 1)\\n"
+                           "[trace nexium_runner::boot] SVC 0x22 (count: 2)\\n")
+            evidence=stage.collect_private_source_evidence(root,console)
+            self.assertEqual(evidence["runner_svc_count"],2)
+            receipt=stage.sanitize(stage.MODES[2],evidence)
+            self.assertTrue(receipt["source_guest_svc_event_observed"])
+            self.assertEqual(receipt["original_runner_svc_trace_count"],2)
+            self.assertNotIn("0x22",str(receipt))
+            self.assertFalse(receipt["complete_guest_boot_verified"])
+
+    def test_non_runner_text_not_misreported_as_svc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            console=root/"console.txt"
+            console.write_text("SVC text without a real source count and hexadecimal")
+            evidence=stage.collect_private_source_evidence(root,console)
+            self.assertEqual(evidence["runner_svc_count"],0)
+
     def test_source_modes_are_distinct_and_not_commercial_game(self):
-        self.assertEqual(len(set(stage.MODES)),3)
+        self.assertEqual(len(set(stage.MODES)),4)
         self.assertEqual(stage.MODES[0],"original-homebrew-nro")
         self.assertEqual(stage.MODES[1],"rustarmic-homebrew-nro")
-        self.assertEqual(stage.MODES[2],"no-guest-control")
+        self.assertEqual(stage.MODES[2],"rustarmic-svc-trace-nro")
+        self.assertEqual(stage.MODES[3],"no-guest-control")
 
 if __name__=="__main__":
     unittest.main()

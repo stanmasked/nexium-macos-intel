@@ -1873,7 +1873,7 @@ jobs:
 
   stage43-guest-dpad-up-right-nro:
     name: Stage43 build guest DPad Up/Right diagnostic NRO
-    if: github.head_ref == 'work/intel-stage43-guest-ab-chord'
+    if: github.head_ref == 'work/intel-stage43-guest-dpad-up-right'
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:latest
@@ -1908,8 +1908,8 @@ jobs:
           path = Path("stage43-guest-probe/nexium-guest-dpad-probe.nro")
           data = path.read_bytes()
           if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
-              raise SystemExit("STAGE42_GUEST_DPAD_NRO_INVALID")
-          print(f"STAGE42_GUEST_DPAD_NRO_READY bytes={len(data)}")
+              raise SystemExit("STAGE43_GUEST_DPAD_NRO_INVALID")
+          print(f"STAGE43_GUEST_DPAD_NRO_READY bytes={len(data)}")
           PY
       - name: Upload diagnostic NRO
         uses: actions/upload-artifact@v4
@@ -1923,7 +1923,7 @@ jobs:
 
   stage43-guest-dpad-up-right-readback:
     name: Stage43 native Intel guest DPad Up/Right readback
-    if: github.head_ref == 'work/intel-stage43-guest-ab-chord'
+    if: github.head_ref == 'work/intel-stage43-guest-dpad-up-right'
     needs: [intel-build, stage43-guest-dpad-up-right-nro]
     runs-on: macos-15-intel
     timeout-minutes: 16

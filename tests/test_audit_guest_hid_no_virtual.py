@@ -82,7 +82,7 @@ class Stage41NoVirtualGuestControlTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             report_dir, positive, log = fixture(Path(td))
             with log.open("a", encoding="utf-8") as stream:
-                stream.write("OutputDebugString: STAGE40_GUEST_HID_B_UP\\n")
+                stream.write("OutputDebugString: STAGE40_GUEST_HID_B_UP\n")
             r = audit_no_virtual(report_dir, positive)
             self.assertFalse(r["negative_guest_b_markers_absent"])
             self.assertFalse(r["no_virtual_guest_control_passed"])
@@ -91,7 +91,7 @@ class Stage41NoVirtualGuestControlTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             report_dir, positive, log = fixture(Path(td))
             text = log.read_text(encoding="utf-8")
-            marker = "OutputDebugString: STAGE40_GUEST_HID_PROBE_END_WITHOUT_ROUNDTRIP\\n"
+            marker = "OutputDebugString: STAGE40_GUEST_HID_PROBE_END_WITHOUT_ROUNDTRIP\n"
             text = text.replace(marker, "")
             text = marker + text
             log.write_text(text, encoding="utf-8")

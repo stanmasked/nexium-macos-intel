@@ -25,8 +25,8 @@ STAGE43_MASK = '''    desc.button_mask = if std::env::var("NEXIUM_MACOS_GUEST_DP
 BUTTON_ANCHOR = "            if !unsafe { SDL_SetJoystickVirtualButton(ptr, 0, down) } {"
 
 STAGE43_DPAD_PULSES = '''            // Stage43: mutually exclusive real SDL3 DPad Up and Right pulses.
-            // SDL3 virtual gamepad maps advertised buttons densely: SOUTH raw 0,
-            // DPad Up raw 1, DPad Right raw 2 (not their enum values).
+            // SDL virtual gamepad packs advertised buttons densely: SOUTH -> raw0,
+            // DPAD_UP -> raw1, DPAD_RIGHT -> raw2, independent of enum bits.
             if std::env::var("NEXIUM_MACOS_GUEST_DPAD_PROBE")
                 .ok().as_deref() == Some("1")
             {

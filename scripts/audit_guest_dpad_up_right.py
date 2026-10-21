@@ -89,12 +89,36 @@ def audit(report_dir: Path) -> dict:
     ))
     passed = bool(guest_boot_ok and guest_order and guest_no_failure
                   and host_order and traced)
+    # Source-bound diagnostic breadcrumbs only. Never publish raw FileLogger,
+    # pointer addresses, raw button traces or guest memory values.
+    phase_observed = {
+        marker.lower().replace("stage43_guest_", ""):
+            ("OutputDebugString: " + marker) in guest_text
+        for marker in GUEST
+    }
+    original_npad_states = []
+    for sample in samples:
+        combined = 0
+        for buttons in sample:
+            combined |= buttons
+        original_npad_states.append(combined)
     return {
         "schema": "nexium-stage43-guest-dpad-up-right/v1",
         "same_process_guest_dpad_readback_passed": passed,
         "guest_boot_and_hid_map_observed": guest_boot_ok,
         "guest_dpad_sequence_observed": guest_order,
         "guest_incomplete_or_unexpected_button_observed": not guest_no_failure,
+        "guest_incomplete_marker_observed":
+            "OutputDebugString: STAGE43_GUEST_DPAD_INCOMPLETE" in guest_text,
+        "guest_unexpected_button_marker_observed":
+            "OutputDebugString: STAGE43_GUEST_DPAD_UNEXPECTED_BUTTON" in guest_text,
+        "guest_phases_source_observed": phase_observed,
+        "npad_b_only_state_observed": B in original_npad_states,
+        "npad_b_plus_up_state_observed": (B | UP) in original_npad_states,
+        "npad_b_plus_right_state_observed": (B | RIGHT) in original_npad_states,
+        "npad_neutral_state_observed": 0 in original_npad_states,
+        "npad_unexpected_button_mask_observed":
+            any((state & ~MASK) != 0 for state in original_npad_states),
         "host_dpad_pulses_nested_inside_b_observed": host_order,
         "original_npad_b_up_b_right_b_neutral_observed": traced,
         "original_npad_serialized_sample_count": len(samples),

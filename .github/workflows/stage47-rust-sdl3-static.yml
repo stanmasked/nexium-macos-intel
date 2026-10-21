@@ -1,0 +1,66 @@
+name: Stage47 safe Rust SDL3 0.20 static virtual gamepad on native Intel Mac
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "stage47/**"
+      - ".github/workflows/stage47-rust-sdl3-static.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  stage47-audit-unit:
+    name: Source-ordered Rust SDL3 audit regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test audit logic and never publish input values
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile stage47/audit_rust_sdl3.py stage47/test_rust_sdl3_audit.py
+          python3 -m unittest discover -s stage47 -p 'test_*.py' -v
+
+  stage47-native-intel-rust:
+    name: Native Intel x86_64 SDL3 0.20 static Rust virtual input roundtrip
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Confirm genuine Intel and build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          brew install cmake ninja pkgconf
+          xcrun --find clang
+      - name: Compile exact GUI dependency via isolated Rust crate, no emulator build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path stage47/Cargo.toml
+          BIN="stage47/target/release/nexium-stage47-rust-sdl3-intel"
+          test -x "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage47-bin"
+      - name: Four native processes on one identical static SDL3 Rust executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 stage47/audit_rust_sdl3.py \
+            --binary "$(cat "$RUNNER_TEMP/stage47-bin")" \
+            --output stage47-evidence/static-rust-sdl3-virtual.json
+      - name: Upload only sanitised authentic readback/release metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage47-intel-static-rust-sdl3-virtual-contract
+          path: stage47-evidence/static-rust-sdl3-virtual.json
+          if-no-files-found: warn
+          retention-days: 30

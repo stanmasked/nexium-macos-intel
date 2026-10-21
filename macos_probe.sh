@@ -107,6 +107,10 @@ if [[ "${NEXIUM_EXPERIMENT_FULL_UI_POLL_TRACE:-0}" == "1" ]]; then
     echo "STAGE42_FULL_UI: original HorizonApp first frame and SDL3 poll trace"
     python3 "$SELF/scripts/apply_macos_stage42_full_ui_poll.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_ORIGINAL_SNAPSHOT_VIRTUAL:-0}" == "1" ]]; then
+    echo "STAGE45_ORIGINAL_INPUT: virtual SDL3 device in original InputBackend before eframe"
+    python3 "$SELF/scripts/apply_macos_stage45_original_snapshot.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

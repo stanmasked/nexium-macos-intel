@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -1871,6 +1871,138 @@ jobs:
 
 
 
+  stage43-guest-dpad-up-right-nro:
+    name: Stage43 build guest DPad Up/Right diagnostic NRO
+    if: github.head_ref == 'work/intel-stage43-guest-dpad-up-right'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage43-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_dpad_up_right_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage43-guest-probe/nexium-guest-dpad-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest DPad Probe" "NeXium Intel Research" "0.1.0" \
+            stage43-guest-probe/nexium-guest-dpad-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage43-guest-probe/nexium-guest-dpad-probe.elf \
+            stage43-guest-probe/nexium-guest-dpad-probe.nro \
+            --nacp=stage43-guest-probe/nexium-guest-dpad-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage43-guest-probe/nexium-guest-dpad-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE43_GUEST_DPAD_NRO_INVALID")
+          print(f"STAGE43_GUEST_DPAD_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage43-guest-dpad-up-right-nro
+          path: stage43-guest-probe/nexium-guest-dpad-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage43-guest-dpad-up-right-readback:
+    name: Stage43 native Intel guest DPad Up/Right readback
+    if: github.head_ref == 'work/intel-stage43-guest-dpad-up-right'
+    needs: [intel-build, stage43-guest-dpad-up-right-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage43-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage43-guest-dpad-up-right-nro
+          path: stage43-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage43-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage43-probe/nexium-guest-dpad-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage43-exe"
+      - name: Run guest libnx DPad Up/Right through original SDL3 HID
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage43-exe")"
+          # Stage43 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage43-probe/nexium-guest-dpad-probe.nro \
+              --output stage43-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require guest DPad states, host pulses, and original NPad LIFO trace
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_dpad_up_right.py \
+            --report-dir stage43-evidence \
+            --output stage43-evidence/stage43-guest-dpad-up-right.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage43-guest-dpad-up-right-evidence
+          path: stage43-evidence/stage43-guest-dpad-up-right.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
@@ -1898,8 +2030,9 @@ jobs:
       NEXIUM_EXPERIMENT_INPUT_POLL_MARKERS: '1'
       NEXIUM_EXPERIMENT_VIRTUAL_INPUT_SNAPSHOT: '1'
       NEXIUM_EXPERIMENT_STAGE37_HID_BRIDGE: '1'
-      NEXIUM_EXPERIMENT_STAGE40_GUEST_HID: ${{ (github.head_ref == 'work/intel-stage40-guest-npad-readback' || github.head_ref == 'work/intel-stage42-guest-ab-chord') && '1' || '0' }}
-      NEXIUM_EXPERIMENT_STAGE42_GUEST_AB: ${{ github.head_ref == 'work/intel-stage42-guest-ab-chord' && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE40_GUEST_HID: ${{ (github.head_ref == 'work/intel-stage40-guest-npad-readback' || github.head_ref == 'work/intel-stage42-guest-ab-chord' || github.head_ref == 'work/intel-stage43-guest-dpad-up-right') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE42_GUEST_AB: ${{ (github.head_ref == 'work/intel-stage42-guest-ab-chord' || github.head_ref == 'work/intel-stage43-guest-dpad-up-right') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE43_GUEST_DPAD: ${{ github.head_ref == 'work/intel-stage43-guest-dpad-up-right' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

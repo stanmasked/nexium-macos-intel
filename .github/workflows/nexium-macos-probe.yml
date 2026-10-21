@@ -2173,8 +2173,8 @@ jobs:
           path = Path("stage45-guest-probe/nexium-guest-left-stick-y-probe.nro")
           data = path.read_bytes()
           if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
-              raise SystemExit("STAGE45_GUEST_STICK_X_NRO_INVALID")
-          print(f"STAGE45_GUEST_STICK_X_NRO_READY bytes={len(data)}")
+              raise SystemExit("STAGE45_GUEST_STICK_Y_NRO_INVALID")
+          print(f"STAGE45_GUEST_STICK_Y_NRO_READY bytes={len(data)}")
           PY
       - name: Upload diagnostic NRO
         uses: actions/upload-artifact@v4
@@ -2250,7 +2250,7 @@ jobs:
               --output stage45-evidence \
               --seconds 80 \
               --snapshot-ms 5000
-      - name: Require guest stick X sequence, original InputSnapshot and host B
+      - name: Require signed guest stick Y, inverted original InputSnapshot and B
         if: always()
         shell: bash
         run: |

@@ -96,6 +96,39 @@ class Stage36OriginalHomebrew(unittest.TestCase):
             self.assertNotIn("diagnostic data",str(d))
             self.assertNotIn(str(root),str(d))
 
+    def test_three_real_runner_boot_stages_independently_identified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            console=root/"console.log"
+            console.write_text("")
+            log=root/"nexium-data"/"logs"/"nexium-original.log"
+            log.parent.mkdir(parents=True)
+            log.write_text("Booting NRO: /isolated/homebrew.nro\\n"
+                           "cpu memory null policy: strict fault\\n")
+            original=stage.collect_private_source_evidence(root,console)
+            self.assertTrue(original["booting_nro"])
+            self.assertFalse(original["boot_failed"])
+            self.assertTrue(original["cpu_memory_policy"])
+            result=stage.sanitize(stage.MODES[0],original)
+            self.assertTrue(result["runner_guest_cpu_context_initialization_observed"])
+            self.assertFalse(result["guest_cpu_instructions_verified"])
+
+    def test_runner_boot_failure_distinct_from_successful_loader(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            c=root/"console.log"
+            c.write_text("")
+            log=root/"nexium-data"/"logs"/"nexium-boot-failure.log"
+            log.parent.mkdir(parents=True)
+            log.write_text("Auto-loaded NRO: fixture\\nBooting NRO: fixture\\n"
+                           "Boot failed: invalid firmware\\n")
+            original=stage.collect_private_source_evidence(root,c)
+            result=stage.sanitize(stage.MODES[0],original)
+            self.assertTrue(result["runner_guest_boot_attempt_observed"])
+            self.assertTrue(result["runner_guest_boot_failure_observed"])
+            self.assertFalse(result["runner_guest_cpu_context_initialization_observed"])
+            self.assertFalse(result["complete_guest_boot_verified"])
+
     def test_false_guest_loader_marker_outside_exact_log_scope_is_ignored(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

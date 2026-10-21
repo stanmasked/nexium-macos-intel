@@ -1372,8 +1372,8 @@ jobs:
           if-no-files-found: warn
 
   hid-host-original-bridge:
-    name: Stage37/38 original synthetic Switch B to host HID and NPad LIFO
-    if: github.head_ref == 'work/intel-stage37-synthetic-guest-hid-path' || github.head_ref == 'work/intel-stage38-npad-lifo-buffer' || github.head_ref == 'work/intel-stage39-guest-hid-map-audit'
+    name: Stage37/38/40 original synthetic Switch B, NPad LIFO and guest-map trace
+    if: github.head_ref == 'work/intel-stage37-synthetic-guest-hid-path' || github.head_ref == 'work/intel-stage38-npad-lifo-buffer' || github.head_ref == 'work/intel-stage39-guest-hid-map-audit' || github.head_ref == 'work/intel-stage40-svc-hid-map-runtime-trace'
     needs: intel-build
     runs-on: macos-15-intel
     timeout-minutes: 20

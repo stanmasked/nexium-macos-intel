@@ -13,7 +13,9 @@ from pathlib import Path
 import sys
 
 OLD_DOWN = "let down = n >= 1 && n < 12;"
-NEW_DOWN = """let hold_ticks = if std::env::var_os("NEXIUM_MACOS_GUEST_HID_PROBE").is_some() {
+NEW_DOWN = """let hold_ticks = if std::env::var("NEXIUM_MACOS_GUEST_HID_PROBE")
+                .ok().as_deref() == Some("1")
+            {
                 900
             } else {
                 12

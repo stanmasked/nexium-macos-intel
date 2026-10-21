@@ -39,7 +39,7 @@ def emitted(label: str) -> str:
 def patch_source(data: str) -> str:
     expected=[MARKER+name for name,_ in PHASES]
     if MARKER in data:
-        if all(data.count(marker+'";')==1 for marker in expected) and (
+        if all(data.count(marker+'");')==1 for marker in expected) and (
             data.count(MARKER)==len(PHASES)):
             return data
         raise RuntimeError("partial Stage28 markers or source mismatch")

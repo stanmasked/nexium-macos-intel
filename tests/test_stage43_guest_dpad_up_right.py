@@ -97,6 +97,12 @@ class Stage43GuestDpadAuditTests(unittest.TestCase):
             r = audit(root)
             self.assertTrue(r["same_process_guest_dpad_readback_passed"])
             self.assertEqual(r["original_npad_serialized_sample_count"], 7)
+            self.assertTrue(r["npad_b_plus_up_state_observed"])
+            self.assertTrue(r["npad_b_plus_right_state_observed"])
+            self.assertTrue(r["npad_neutral_state_observed"])
+            self.assertFalse(r["guest_unexpected_button_marker_observed"])
+            self.assertFalse(r["guest_incomplete_marker_observed"])
+            self.assertTrue(r["guest_phases_source_observed"]["dpad_pass"])
 
     def test_guest_marker_forged_in_host_console_rejected(self):
         with tempfile.TemporaryDirectory() as td:
@@ -122,7 +128,9 @@ class Stage43GuestDpadAuditTests(unittest.TestCase):
             _, log = fixture(root)
             with log.open("a", encoding="utf-8") as fd:
                 fd.write("OutputDebugString: STAGE43_GUEST_DPAD_UNEXPECTED_BUTTON\n")
-            self.assertFalse(audit(root)["same_process_guest_dpad_readback_passed"])
+            report = audit(root)
+            self.assertFalse(report["same_process_guest_dpad_readback_passed"])
+            self.assertTrue(report["guest_unexpected_button_marker_observed"])
 
     def test_host_right_press_before_up_release_rejected(self):
         with tempfile.TemporaryDirectory() as td:
@@ -145,7 +153,10 @@ class Stage43GuestDpadAuditTests(unittest.TestCase):
                 "[hid-publish] npad=[0x2002, 0x2002]\n",
                 "[hid-publish] npad=[0x2, 0x2]\n",
             ), encoding="utf-8")
-            self.assertFalse(audit(root)["same_process_guest_dpad_readback_passed"])
+            result = audit(root)
+            self.assertFalse(result["same_process_guest_dpad_readback_passed"])
+            self.assertFalse(result["npad_b_plus_up_state_observed"])
+            self.assertTrue(result["npad_b_plus_right_state_observed"])
 
     def test_npad_wrong_button_a_rejected(self):
         self.assertFalse(npad_direction_sequence([

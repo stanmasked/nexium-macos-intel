@@ -1312,6 +1312,8 @@ jobs:
           src=observed['full-virtual']
           synthetic_positive=(
               src['synthetic_attached_and_opened']
+              and 'STAGE36_VIRTUAL_SYNTHETIC_PRESS_SENT' in src['actual_synthetic_source_markers']
+              and 'STAGE36_VIRTUAL_SYNTHETIC_RELEASE_SENT' in src['actual_synthetic_source_markers']
               and src['synthetic_press_mapped_by_original_InputSnapshot']
               and src['synthetic_release_mapped_by_original_InputSnapshot']
           )

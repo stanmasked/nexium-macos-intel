@@ -1619,7 +1619,10 @@ jobs:
         run: |
           set -euo pipefail
           BIN="$(cat "$RUNNER_TEMP/stage40-exe")"
-          env NEXIUM_MACOS_NO_AUDIO=1 \
+          # Stage40 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
             NEXIUM_MACOS_MINIMAL_EFRAME=0 \
             NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
             NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
@@ -1630,7 +1633,8 @@ jobs:
             NEXIUM_MACOS_GUEST_HID_PROBE=1 \
             NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
             NEXIUM_HID_TRACE=1 \
-            NEXIUM_DIAG=1 \
+            # Keep SVC diagnostics enabled without verbose unrelated graphics dumps.
+            NEXIUM_DIAG=lite \
             NEXIUM_LOG_LEVEL=debug \
             python3 scripts/nro_smoke_test.py \
               --exe "$BIN" \

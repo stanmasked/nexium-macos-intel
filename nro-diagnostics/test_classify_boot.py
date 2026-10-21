@@ -1,0 +1,168 @@
+"""Stage30 strict public-NRO receipt classifier synthetic tests."""
+import importlib.util
+from pathlib import Path
+import tempfile
+import unittest
+
+SCRIPT = Path(__file__).with_name("classify_boot.py")
+spec = importlib.util.spec_from_file_location("safe_clean_nro", SCRIPT)
+stage = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stage)
+DIGEST = "a" * 64
+BASE = {"probe": "no_nro_gui_process_only", "emulator_sha256": DIGEST,
+        "nro_verified": False, "gameplay_verified": False,
+        "outcome": "alive_without_gui_verification", "alive_at_deadline": True,
+        "window_found": True}
+GUEST = {"emulator_sha256": DIGEST, "nro_file": "nexium_clean_smoke.nro",
+         "nro_sha256": DIGEST, "status": "timeout_alive_unverified",
+         "unique_frame_hashes": 0, "snapshots": [], "gameplay_verified": False}
+EXPECTED = {"sha256": DIGEST}
+FLAGS = {
+    "auto_loaded_nro_log_marker": False, "nro_load_error_log_marker": False,
+    "boot_command_log_marker": False, "winit_reentrant_panic": False,
+    "log_data_examined": False,
+}
+
+
+class ClassificationTests(unittest.TestCase):
+    def test_alive_guest_without_logs_is_not_success(self):
+        report = stage.classify(BASE, GUEST, EXPECTED, FLAGS)
+        self.assertFalse(report["actual_guest_instructions_verified"])
+        self.assertFalse(report["gameplay_verified"])
+        self.assertEqual(report["conclusion"], "PROCESS_OBSERVED_GUEST_LOAD_UNVERIFIED")
+
+    def test_auto_loader_marker_is_not_guest_execution(self):
+        report = stage.classify(
+            BASE, GUEST, EXPECTED, {**FLAGS, "auto_loaded_nro_log_marker": True})
+        self.assertEqual(report["conclusion"], "NRO_LOADER_LOG_MARKER_OBSERVED")
+        self.assertFalse(report["actual_guest_instructions_verified"])
+        self.assertFalse(report["pixel_correctness_verified"])
+
+    def test_abort_not_disguised_by_boot_marker(self):
+        report = stage.classify(BASE, {**GUEST, "status": "exited_nonzero",
+                                       "exit_code": -6}, EXPECTED,
+                                {**FLAGS, "auto_loaded_nro_log_marker": True,
+                                 "winit_reentrant_panic": True})
+        self.assertEqual(report["conclusion"], "PROCESS_CRASHED_OR_EXITED")
+        self.assertTrue(report["clean_nro_argument_run"]["winit_reentrant_panic"])
+
+    def test_pid_scoped_capture_counts_do_not_certify_gameplay(self):
+        payload = {**GUEST, "window_capture": {
+            "requested": True, "status": "window_frames_unverified",
+            "frames": 5, "unique_hashes": 2}}
+        report = stage.classify(BASE, payload, EXPECTED, FLAGS)
+        capture = report["clean_nro_argument_run"]["pid_owned_window_capture"]
+        self.assertEqual(capture["frames_observed"], 5)
+        self.assertEqual(capture["unique_hashes"], 2)
+        self.assertTrue(capture["may_include_only_gui_without_guest_presentation"])
+        self.assertFalse(report["actual_guest_instructions_verified"])
+        self.assertFalse(report["pixel_correctness_verified"])
+
+    def test_capture_permission_denied_remains_unverified(self):
+        payload = {**GUEST, "window_capture": {
+            "requested": True, "status": "no_window_frames_unverified",
+            "frames": 0, "unique_hashes": 0}}
+        capture = stage.classify(BASE, payload, EXPECTED, FLAGS)
+        self.assertFalse(capture["gameplay_verified"])
+        self.assertEqual(capture["clean_nro_argument_run"]
+                         ["pid_owned_window_capture"]["frames_observed"], 0)
+
+    def test_impossible_capture_count_rejected(self):
+        payload = {**GUEST, "window_capture": {
+            "requested": True, "frames": 2, "unique_hashes": 3}}
+        with self.assertRaisesRegex(ValueError, "capture counts"):
+            stage.classify(BASE, payload, EXPECTED, FLAGS)
+
+    def test_private_or_wrong_nro_digest_rejected(self):
+        with self.assertRaisesRegex(ValueError, "digest"):
+            stage.classify(BASE, GUEST, {"sha256": "b" * 64}, FLAGS)
+        with self.assertRaisesRegex(ValueError, "public clean NRO"):
+            stage.classify(BASE, {**GUEST, "nro_file": "private.nro"},
+                           EXPECTED, FLAGS)
+
+    def test_wrong_emulator_rejected(self):
+        with self.assertRaisesRegex(ValueError, "same Intel binary"):
+            stage.classify({**BASE, "emulator_sha256": "f" * 64},
+                           GUEST, EXPECTED, FLAGS)
+
+    def test_guest_gameplay_claim_rejected(self):
+        with self.assertRaisesRegex(ValueError, "gameplay"):
+            stage.classify(BASE, {**GUEST, "gameplay_verified": True},
+                           EXPECTED, FLAGS)
+
+    def test_only_bounded_log_keywords_not_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "nexium-console.log"
+            log.write_text("Auto-loaded NRO: /Users/private/test.nro (CPU: rustarmic)\n"
+                           "tried to handle event while another event is currently being handled\n")
+            flags = stage.marker_flags(log, root / "data-root/logs")
+            self.assertTrue(flags["auto_loaded_nro_log_marker"])
+            self.assertTrue(flags["winit_reentrant_panic"])
+            self.assertNotIn("Users", str(flags))
+            self.assertNotIn("private", str(flags))
+
+    def test_guest_boot_milestones_remain_uncertified_not_gameplay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "private-data/logs"
+            logs.mkdir(parents=True)
+            (logs / "emu.log").write_text(
+                "Booting NRO: /Users/private/nexium_clean_smoke.nro\n"
+                "cpu memory null policy: strict fault\n"
+                "nexium-nvdrv: Vulkan Renderer initialized\n"
+                "[snapshot] saved /Users/private/test.bmp\n"
+            )
+            m = stage.marker_flags(root / "nexium-console.log", logs)
+            self.assertTrue(m["guest_boot_thread_entered"])
+            self.assertTrue(m["guest_cpu_initialized_log_marker"])
+            self.assertTrue(m["guest_vulkan_renderer_log_marker"])
+            self.assertTrue(m["guest_snapshot_saved_log_marker"])
+            self.assertFalse(m["guest_boot_context_failure"])
+            report = stage.classify(BASE, GUEST, EXPECTED, m)
+            self.assertFalse(report["actual_guest_instructions_verified"])
+            self.assertFalse(report["gameplay_verified"])
+            self.assertNotIn("/Users/private/", str(report))
+
+    def test_guest_boot_failure_reported_without_source_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "emu.log").write_text(
+                "Booting NRO: /private/data/nexium_clean_smoke.nro\n"
+                "Boot failed: loader could not create process\n")
+            m = stage.marker_flags(root / "missing.log", root)
+            self.assertTrue(m["guest_boot_thread_entered"])
+            self.assertTrue(m["guest_boot_context_failure"])
+            self.assertNotIn("/private/data/", str(m))
+
+    def test_boot_error_excerpt_preserves_cause_without_home_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "boot.log").write_text(
+                "Boot failed: failed to parse NRO at /Users/runner/private/demo.nro: missing loader symbol\\n"
+            )
+            flags = stage.marker_flags(root / "missing-console.log", root)
+            self.assertEqual(len(flags["guest_boot_error_excerpt"]), 1)
+            summary = flags["guest_boot_error_excerpt"][0]
+            self.assertIn("missing loader symbol", summary)
+            self.assertNotIn("/Users/runner", summary)
+            self.assertNotIn("private/demo.nro", summary)
+            self.assertIn("<local-path>", summary)
+
+    def test_boot_error_secret_value_redacted(self):
+        summary = stage.scrub_public_boot_error(
+            "failed: token=example123 /private/tmp/secrets.json")
+        self.assertIn("token=<redacted>", summary)
+        self.assertNotIn("example123", summary)
+        self.assertNotIn("secrets.json", summary)
+
+    def test_late_failed_load_marker_must_override_auto_loaded_marker(self):
+        report = stage.classify(BASE, GUEST, EXPECTED,
+                                {**FLAGS, "auto_loaded_nro_log_marker": True,
+                                 "nro_load_error_log_marker": True})
+        self.assertEqual(report["conclusion"],
+                         "PROCESS_OBSERVED_GUEST_LOAD_UNVERIFIED")
+
+
+if __name__ == "__main__":
+    unittest.main()

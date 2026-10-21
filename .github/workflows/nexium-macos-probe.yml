@@ -876,6 +876,117 @@ jobs:
             stage29-reports/stage29-input-contrast.json
           if-no-files-found: warn
 
+  sdl3-subphase-compare:
+    name: Stage38 actual Intel SDL3 initialization call sequence
+    if: github.head_ref == 'work/intel-stage38-sdl3-init-subphases'
+    runs-on: macos-15-intel
+    needs: intel-build
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve this exact native Intel Rustarmic build
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage38-binary
+      - name: Verify x86_64 and compile own-window observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage38-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage38-exe"
+          xcrun swiftc -framework CoreGraphics \
+            -o "$RUNNER_TEMP/stage38-window" scripts/nexium_window_id.swift
+      - name: Observe unmodified SDL3 subsystem path with static subphase markers
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage38-exe")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 NEXIUM_MACOS_SDL3_SUBPHASE_TRACE=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage38-report/sdl3-on --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage38-window"
+      - name: Observe same constructor with SDL3 disabled negative control
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage38-exe")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=1 NEXIUM_MACOS_SDL3_SUBPHASE_TRACE=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage38-report/sdl3-off --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage38-window"
+      - name: Classify actual subphases without inferring a causal source call
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          root=Path("stage38-report")
+          markers=("00_ENTRY","01_BEFORE_SDL_INIT","02_BEFORE_GAMEPAD_SUBSYSTEM",
+                   "03_BEFORE_RUMBLE","04_BEFORE_INPUT_STRUCT")
+          records={}
+          digests=[]
+          for name in ("sdl3-on","sdl3-off"):
+              base=root/name
+              row=json.loads((base/"gui_process_probe.json").read_text())
+              assert row["probe"]=="no_nro_gui_process_only"
+              assert row["nro_verified"] is False and row["gameplay_verified"] is False
+              assert row["gui_verified"] is False
+              digests.append(row["emulator_sha256"])
+              log=(base/"nexium-stdout-stderr.log").read_bytes()[:350000].decode("utf-8","replace")
+              observed=re.findall(r"^STAGE38_SDL3_INPUT_([A-Z0-9_]+)\s*$",log,re.M)
+              assert observed==list(markers[:len(observed)]), "out-of-order/unknown SDL3 checkpoint"
+              if name=="sdl3-on":
+                  assert re.search(r"^STAGE29_SDL3_INPUT_ENABLED\s*$",log,re.M)
+                  assert observed, "authentic SDL3 InputBackend was never entered"
+              else:
+                  assert re.search(r"^STAGE29_SDL3_INPUT_SKIPPED\s*$",log,re.M)
+                  assert not observed, "negative SDL3 bypass unexpectedly called InputBackend"
+              records[name]={
+                  "process_outcome":row["outcome"],
+                  "exit_signal":row.get("exit_signal"),
+                  "alive_at_deadline":row["alive_at_deadline"],
+                  "own_window_found":row.get("window_found",False),
+                  "observed_ordered_input_phases":observed,
+                  "last_observed_input_phase":observed[-1] if observed else None,
+                  "winit_reentrant_panic":
+                     "tried to handle event while another event is currently being handled" in log
+              }
+          assert len(set(digests))==1,"different Intel executables"
+          report={
+              "schema":"nexium-stage38-sdl3-input-subphase-intel/v1",
+              "single_native_executable_sha256":digests[0],
+              "variants":records,
+              "absence_of_a_marker_not_proof_source_call_never_executed":True,
+              "root_cause_verified":False,
+              "nro_supplied":False,
+              "gameplay_verified":False,
+              "graphics_pixels_verified":False,
+              "controllers_verified":False
+          }
+          (root/"stage38-subphases.json").write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(report,sort_keys=True))
+          PY
+      - name: Keep only whitelisted diagnostics, no process logs or screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage38-sdl3-subphase-evidence
+          path: |
+            stage38-report/sdl3-on/gui_process_probe.json
+            stage38-report/sdl3-off/gui_process_probe.json
+            stage38-report/stage38-subphases.json
+          if-no-files-found: warn
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.

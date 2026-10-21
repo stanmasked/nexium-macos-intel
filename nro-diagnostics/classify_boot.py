@@ -27,6 +27,11 @@ def marker_flags(console: Path, data_logs: Path) -> dict:
         "auto_loaded_nro_log_marker": "Auto-loaded NRO:" in text,
         "nro_load_error_log_marker": "Failed to load NRO:" in text,
         "boot_command_log_marker": "Boot: NRO=" in text,
+        "guest_boot_thread_entered": "Booting NRO:" in text,
+        "guest_boot_context_failure": "Boot failed:" in text,
+        "guest_cpu_initialized_log_marker": "cpu memory null policy:" in text,
+        "guest_vulkan_renderer_log_marker": "nexium-nvdrv: Vulkan Renderer initialized" in text,
+        "guest_snapshot_saved_log_marker": "[snapshot] saved " in text,
         "winit_reentrant_panic": (
             "tried to handle event while another event is currently being handled" in text
         ),

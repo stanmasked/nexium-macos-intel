@@ -50,6 +50,11 @@ class Stage45SourceTests(unittest.TestCase):
         self.assertIn("self.preferred = saved_preferred",stage.INPUT_METHOD)
         self.assertIn("drop(connection)",stage.INPUT_METHOD)
 
+    def test_motion_ranking_cannot_select_physical_controller(self):
+        self.assertIn("let saved_motion_enabled = self.motion_enabled;",stage.INPUT_METHOD)
+        self.assertIn("self.motion_enabled = false;",stage.INPUT_METHOD)
+        self.assertIn("self.motion_enabled = saved_motion_enabled;",stage.INPUT_METHOD)
+
     def test_only_macos_explicit_opt_in(self):
         self.assertIn('NEXIUM_MACOS_VIRTUAL_SNAPSHOT_TEST',stage.MAIN_PATCH)
         self.assertIn('#[cfg(target_os = "macos")]',stage.MAIN_PATCH)

@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py scripts/audit_sdl3_cutpoints.py scripts/apply_macos_sdl3_prewarm.py scripts/audit_sdl3_prewarm.py scripts/apply_macos_stage42_full_ui_poll.py scripts/audit_stage42_full_ui_poll.py scripts/probe_stage43_owned_window_pixels.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py scripts/audit_sdl3_cutpoints.py scripts/apply_macos_sdl3_prewarm.py scripts/audit_sdl3_prewarm.py scripts/apply_macos_stage42_full_ui_poll.py scripts/audit_stage42_full_ui_poll.py scripts/probe_stage43_owned_window_pixels.py scripts/apply_macos_stage45_original_snapshot.py scripts/audit_stage45_original_snapshot.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           # Isolate Pillow only for Stage43 decoded private-pixel tests.
           python3 -m venv "$RUNNER_TEMP/stage43-test-venv"
@@ -58,6 +58,12 @@ jobs:
           python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
           grep -q 'STAGE38_SDL3_INPUT_04_BEFORE_INPUT_STRUCT' "$BASE/nexium-gui/src/input.rs"
           grep -q 'STAGE39_SDL3_STOP_BEFORE_STRUCT' "$BASE/nexium-gui/src/input.rs"
+          # Stage45: parse the actual pinned Rust source with the virtual
+          # input method inserted. This catches unclosed 'impl' delimiters
+          # before the expensive 15+ minute Rustarmic Intel compilation.
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts"); from apply_macos_stage45_original_snapshot import patch_input; p=Path(sys.argv[1]); p.write_text(patch_input(p.read_text("utf-8")), encoding="utf-8")' "$BASE/nexium-gui/src/input.rs"
+          rustfmt --edition 2021 --emit stdout "$BASE/nexium-gui/src/input.rs" >/dev/null
+          echo "STAGE45_ACTUAL_PINNED_RUSTFMT_PARSE_OK"
 
   mig-intel:
     name: Intel macOS Mach header generation
@@ -79,7 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py scripts/audit_sdl3_cutpoints.py scripts/apply_macos_sdl3_prewarm.py scripts/audit_sdl3_prewarm.py scripts/apply_macos_stage42_full_ui_poll.py scripts/audit_stage42_full_ui_poll.py scripts/probe_stage43_owned_window_pixels.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py scripts/audit_sdl3_cutpoints.py scripts/apply_macos_sdl3_prewarm.py scripts/audit_sdl3_prewarm.py scripts/apply_macos_stage42_full_ui_poll.py scripts/audit_stage42_full_ui_poll.py scripts/probe_stage43_owned_window_pixels.py scripts/apply_macos_stage45_original_snapshot.py scripts/audit_stage45_original_snapshot.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           # Isolate Pillow only for Stage43 decoded private-pixel tests.
           python3 -m venv "$RUNNER_TEMP/stage43-test-venv"
@@ -109,6 +115,12 @@ jobs:
           python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
           grep -q 'STAGE38_SDL3_INPUT_04_BEFORE_INPUT_STRUCT' "$BASE/nexium-gui/src/input.rs"
           grep -q 'STAGE39_SDL3_STOP_BEFORE_STRUCT' "$BASE/nexium-gui/src/input.rs"
+          # Stage45: parse the actual pinned Rust source with the virtual
+          # input method inserted. This catches unclosed 'impl' delimiters
+          # before the expensive 15+ minute Rustarmic Intel compilation.
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts"); from apply_macos_stage45_original_snapshot import patch_input; p=Path(sys.argv[1]); p.write_text(patch_input(p.read_text("utf-8")), encoding="utf-8")' "$BASE/nexium-gui/src/input.rs"
+          rustfmt --edition 2021 --emit stdout "$BASE/nexium-gui/src/input.rs" >/dev/null
+          echo "STAGE45_ACTUAL_PINNED_RUSTFMT_PARSE_OK"
 
       - name: Verify native-only window capture helper type checks
         run: xcrun swiftc -typecheck scripts/nexium_window_id.swift
@@ -1251,6 +1263,67 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  stage45-original-virtual-snapshot:
+    name: Stage45 native Intel original InputBackend virtual InputSnapshot roundtrip
+    if: github.head_ref == 'work/intel-stage45-original-input-snapshot'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve exact instrumented Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage45-binary
+      - name: Require native x86_64 and prepare own-window verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage45-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage45-exe"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage45-window" scripts/nexium_window_id.swift
+      - name: Run two identical genuine NeXium processes with virtual snapshot disabled/enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage45-exe")"
+          for mode in virtual-off virtual-on; do
+            snapshot=0
+            if [[ "$mode" == virtual-on ]]; then snapshot=1; fi
+            echo "Stage45 original InputSnapshot native mode: $mode"
+            env NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+              NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+              NEXIUM_MACOS_SKIP_SDL3_INPUT=0 NEXIUM_MACOS_PREWARM_SDL3_INPUT=1 \
+              NEXIUM_MACOS_SDL3_STOP_BEFORE=none \
+              NEXIUM_MACOS_SDL3_SUBPHASE_TRACE=1 NEXIUM_MACOS_SDL3_POLL_TRACE=1 \
+              NEXIUM_MACOS_VIRTUAL_SNAPSHOT_TEST="$snapshot" \
+              python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                --output "stage45-reports/$mode" --seconds 12 \
+                --window-helper "$RUNNER_TEMP/stage45-window" || true
+          done
+      - name: Require source-bound original InputSnapshot readback/release and window
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_stage45_original_snapshot.py \
+            --reports stage45-reports \
+            --output stage45-reports/stage45-original-snapshot.json
+      - name: Publish only whitelisted native original InputSnapshot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage45-intel-original-InputSnapshot-virtual-input
+          path: stage45-reports/stage45-original-snapshot.json
+          if-no-files-found: warn
+          retention-days: 30
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
@@ -1278,6 +1351,7 @@ jobs:
       NEXIUM_EXPERIMENT_SDL3_CUTPOINT_BISECT: '1'
       NEXIUM_EXPERIMENT_SDL3_PREWARM: '1'
       NEXIUM_EXPERIMENT_FULL_UI_POLL_TRACE: '1'
+      NEXIUM_EXPERIMENT_ORIGINAL_SNAPSHOT_VIRTUAL: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

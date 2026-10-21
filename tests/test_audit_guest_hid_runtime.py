@@ -39,6 +39,35 @@ def fixture(root: Path, *, guest_up=True, mapping=True, include_trace=True, stat
 
 
 class GuestHidRuntimeAuditTests(unittest.TestCase):
+    def test_reads_guest_svc_markers_from_isolated_file_logger(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            console_path = root / "nexium-console.log"
+            lines = console_path.read_text(encoding="utf-8").splitlines()
+            file_lines = [
+                line for line in lines
+                if (
+                    "svcMapSharedMemory" in line
+                    or "recognized as HID shared memory" in line
+                    or "[hid-publish]" in line
+                    or "OutputDebugString:" in line
+                )
+            ]
+            host_lines = [line for line in lines if line not in file_lines]
+            console_path.write_text("\\n".join(host_lines) + "\\n", encoding="utf-8")
+            log_dir = root / "data-root" / "logs"
+            log_dir.mkdir(parents=True)
+            (log_dir / "nexium-test.log").write_text(
+                "\\n".join(file_lines) + "\\n", encoding="utf-8"
+            )
+
+            report = AUDIT.audit(root)
+            self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
+            self.assertEqual(report["file_logger_log_count"], 1)
+            self.assertTrue(report["guest_libnx_b_down_observed"])
+            self.assertTrue(report["guest_libnx_b_up_observed_after_down_marker"])
+
     def test_complete_guest_and_host_roundtrip_passes(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

@@ -119,6 +119,26 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE43_GUEST_DPAD:-0}" == "1" ]]; then
     echo "STAGE43: add DPad Up and Right source-authentic guest readback pulses"
     python3 "$SELF/scripts/apply_macos_guest_dpad_probe.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE44_GUEST_STICK_X:-0}" == "1" ]]; then
+    echo "STAGE44: opt-in left X axis and authentic original InputSnapshot observation"
+    python3 "$SELF/scripts/apply_macos_guest_left_stick_x.py" "$SRC"
+fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE45_GUEST_STICK_Y:-0}" == "1" ]]; then
+    echo "STAGE45: exercise LeftY inversion through original SDL3 and guest libnx"
+    python3 "$SELF/scripts/apply_macos_guest_left_stick_y.py" "$SRC"
+fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE46_GUEST_RIGHT_X:-0}" == "1" ]]; then
+    echo "STAGE46: opt-in original SDL3 right X to genuine guest libnx"
+    python3 "$SELF/scripts/apply_macos_guest_right_stick_x.py" "$SRC"
+fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE47_GUEST_RIGHT_Y:-0}" == "1" ]]; then
+    echo "STAGE47: opt-in original SDL3 right Y sign to guest libnx"
+    python3 "$SELF/scripts/apply_macos_guest_right_stick_y.py" "$SRC"
+fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE48_DUAL_STICK:-0}" == "1" ]]; then
+    echo "STAGE48: opt-in simultaneous source-authentic SDL3 four-axis guest test"
+    python3 "$SELF/scripts/apply_macos_guest_dual_stick.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

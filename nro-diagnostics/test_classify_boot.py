@@ -135,6 +135,27 @@ class ClassificationTests(unittest.TestCase):
             self.assertTrue(m["guest_boot_context_failure"])
             self.assertNotIn("/private/data/", str(m))
 
+    def test_boot_error_excerpt_preserves_cause_without_home_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "boot.log").write_text(
+                "Boot failed: failed to parse NRO at /Users/runner/private/demo.nro: missing loader symbol\\n"
+            )
+            flags = stage.marker_flags(root / "missing-console.log", root)
+            self.assertEqual(len(flags["guest_boot_error_excerpt"]), 1)
+            summary = flags["guest_boot_error_excerpt"][0]
+            self.assertIn("missing loader symbol", summary)
+            self.assertNotIn("/Users/runner", summary)
+            self.assertNotIn("private/demo.nro", summary)
+            self.assertIn("<local-path>", summary)
+
+    def test_boot_error_secret_value_redacted(self):
+        summary = stage.scrub_public_boot_error(
+            "failed: token=example123 /private/tmp/secrets.json")
+        self.assertIn("token=<redacted>", summary)
+        self.assertNotIn("example123", summary)
+        self.assertNotIn("secrets.json", summary)
+
     def test_late_failed_load_marker_must_override_auto_loaded_marker(self):
         report = stage.classify(BASE, GUEST, EXPECTED,
                                 {**FLAGS, "auto_loaded_nro_log_marker": True,

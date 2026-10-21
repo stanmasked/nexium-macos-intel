@@ -43,6 +43,31 @@ class Stage43ImageTests(unittest.TestCase):
             output=stage.evaluate_pixels(path)
             self.assertFalse(output["spatially_nonuniform"])
 
+    def test_two_tone_pixels_not_overclaimed_as_complex_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"two-tone.png"
+            image=Image.new("RGB",(640,480),(0,0,0))
+            image.paste((255,255,255),(320,0,640,480))
+            image.save(path,"PNG")
+            output=stage.evaluate_pixels(path)
+            self.assertGreater(output["sampled_luminance_stddev"],5)
+            self.assertEqual(output["sampled_unique_rgb_colors"],2)
+            self.assertFalse(output["spatially_nonuniform"])
+
+    def test_four_color_blocks_qualify_as_nonuniform_not_gameplay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"four-blocks.png"
+            image=Image.new("RGB",(640,480),(0,0,0))
+            image.paste((255,0,0),(0,0,320,240))
+            image.paste((0,255,0),(320,0,640,240))
+            image.paste((0,0,255),(0,240,320,480))
+            image.paste((255,255,255),(320,240,640,480))
+            image.save(path,"PNG")
+            result=stage.evaluate_pixels(path)
+            self.assertEqual(result["sampled_unique_rgb_colors"],4)
+            self.assertTrue(result["spatially_nonuniform"])
+            self.assertNotIn("gameplay_verified",result)
+
     def test_invalid_png_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/"broken.png"

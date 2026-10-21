@@ -142,6 +142,10 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE48_DUAL_STICK:-0}" == "1" ]]; then
     echo "STAGE48: opt-in simultaneous source-authentic SDL3 four-axis guest test"
     python3 "$SELF/scripts/apply_macos_guest_dual_stick.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE52_DEADZONE_JITTER:-0}" == "1" ]]; then
+    echo "STAGE52: opt-in low-amplitude original four-axis analog deadzone jitter"
+    python3 "$SELF/scripts/apply_macos_guest_deadzone_jitter.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

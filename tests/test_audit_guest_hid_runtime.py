@@ -10,27 +10,30 @@ AUDIT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AUDIT)
 
 
-def fixture(root: Path, *, guest_up=True, mapping=True, status="exited_zero_unverified"):
+def fixture(root: Path, *, guest_up=True, mapping=True, include_trace=True, status="exited_zero_unverified"):
     report = {
         "status": status,
         "exit_code": 0 if status == "exited_zero_unverified" else 1 if status == "exited_nonzero" else None,
     }
     (root / "smoke_result.json").write_text(json.dumps(report), encoding="utf-8")
     mapping_lines = (
-        "svcMapSharedMemory handle=0x1 addr=0x1000 size=0x40000 perm=0x3\\n"
-        "recognized as HID shared memory\\n"
+        "svcMapSharedMemory handle=0x1 addr=0x1000 size=0x40000 perm=0x3\n"
+        "recognized as HID shared memory\n"
     ) if mapping else ""
-    up = "OutputDebugString: STAGE40_GUEST_HID_B_UP\\n" if guest_up else ""
+    up = "OutputDebugString: STAGE40_GUEST_HID_B_UP\n" if guest_up else ""
+    trace_lines = (
+        "[hid-publish] npad=[0x2, 0x0]\n"
+        "[hid-publish] npad=[0x0, 0x0]\n"
+    ) if include_trace else ""
     log = (
         mapping_lines
-        + "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE\\n"
-        + "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE\\n"
-        + "[hid-publish] npad=[0x2, 0x0]\\n"
-        + "[hid-publish] npad=[0x0, 0x0]\\n"
-        + "OutputDebugString: STAGE40_GUEST_HID_PROBE_START\\n"
-        + "OutputDebugString: STAGE40_GUEST_HID_B_DOWN\\n"
+        + "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE\n"
+        + "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE\n"
+        + trace_lines
+        + "OutputDebugString: STAGE40_GUEST_HID_PROBE_START\n"
+        + "OutputDebugString: STAGE40_GUEST_HID_B_DOWN\n"
         + up
-        + ("OutputDebugString: STAGE40_GUEST_HID_PRESS_RELEASE_PASS\\n" if guest_up else "")
+        + ("OutputDebugString: STAGE40_GUEST_HID_PRESS_RELEASE_PASS\n" if guest_up else "")
     )
     (root / "nexium-console.log").write_text(log, encoding="utf-8")
 
@@ -46,6 +49,14 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
             self.assertTrue(report["serialized_npad_b_release_after_press_observed"])
             self.assertFalse(report["gameplay_verified"])
             self.assertFalse(report["real_switch_verified"])
+
+    def test_guest_readback_passes_if_optional_host_trace_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, include_trace=False)
+            report = AUDIT.audit(root)
+            self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
+            self.assertFalse(report["serialized_npad_trace_roundtrip_observed"])
 
     def test_missing_guest_release_fails(self):
         with tempfile.TemporaryDirectory() as td:

@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -69,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -876,6 +876,170 @@ jobs:
             stage29-reports/stage29-input-contrast.json
           if-no-files-found: warn
 
+  prewinit-input-ab:
+    name: Stage32 genuine Intel SDL3 pre-winit controller-preserving A/B
+    if: github.head_ref == 'work/intel-stage32-sdl3-prewinit-initialization'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download same freshly compiled Intel NeXium Rustarmic executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage32-bundle
+      - name: Verify actual x86_64 native Mach-O, prepare scoped window helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          BIN="$(find stage32-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage32-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage32-window" \
+            scripts/nexium_window_id.swift
+
+      - name: Record genuine control, preinitialized input, and bypassed GUI processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage32-bin")"
+          for mode in ctor-normal ctor-preinitialized full-preinitialized full-no-input host-minimal; do
+            case "$mode" in
+              ctor-normal)
+                preinit=0; skip=0; ctor=1; minimal=0 ;;
+              ctor-preinitialized)
+                preinit=1; skip=0; ctor=1; minimal=0 ;;
+              full-preinitialized)
+                preinit=1; skip=0; ctor=0; minimal=0 ;;
+              full-no-input)
+                preinit=0; skip=1; ctor=0; minimal=0 ;;
+              host-minimal)
+                preinit=0; skip=1; ctor=0; minimal=1 ;;
+            esac
+            echo "Stage32 actual process: $mode (no NRO or audio)"
+            env NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+              NEXIUM_MACOS_HORIZON_CTOR_ONLY="$ctor" \
+              NEXIUM_MACOS_FULL_INIT_MINIMAL_APP="$minimal" \
+              NEXIUM_MACOS_SKIP_SDL3_INPUT="$skip" \
+              NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT="$preinit" \
+              NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+              python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                --output "stage32-report/$mode" --seconds 12 \
+                --window-helper "$RUNNER_TEMP/stage32-window" || rc=$?
+            # Crash inside a real pre-winit SDL3 initializer is a legitimate
+            # diagnostic result, not a CI result to relabel as "success".
+            unset rc
+          done
+
+      - name: Validate five source-bound original process receipts without inferring controller function
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage32-report')
+          modes=('ctor-normal','ctor-preinitialized','full-preinitialized',
+                 'full-no-input','host-minimal')
+          digest=None
+          receipts={}
+          for mode in modes:
+              p=root/mode/'gui_process_probe.json'
+              assert p.is_file(), 'missing genuine process evidence: '+mode
+              d=json.loads(p.read_text())
+              assert d['probe']=='no_nro_gui_process_only'
+              assert d['nro_verified'] is False and d['gameplay_verified'] is False
+              assert d['gui_verified'] is False
+              assert d['outcome'] in ('exited_nonzero','exited_zero_unverified',
+                                       'alive_without_gui_verification')
+              if digest is None: digest=d['emulator_sha256']
+              assert digest==d['emulator_sha256'],'not same compiled Mach-O'
+              raw=(root/mode/'nexium-stdout-stderr.log').read_text(errors='replace')
+              checks=(
+                'STAGE32_PREINPUT_BEGIN_BEFORE_WINIT',
+                'STAGE32_PREINPUT_CREATED_SOME',
+                'STAGE32_PREINPUT_CREATED_NONE',
+                'STAGE32_PREINPUT_DONE_BEFORE_WINIT',
+                'STAGE32_TAKE_PREINITIALIZED_INPUT',
+                'STAGE32_TAKE_SOME',
+                'STAGE32_TAKE_NONE',
+                'STAGE26_HORIZON_CTOR_ENTERED',
+                'STAGE26_HORIZON_CTOR_RETURNED',
+                'STAGE29_SDL3_INPUT_ENABLED',
+                'STAGE29_SDL3_INPUT_SKIPPED',
+                'STAGE25_HOST_INIT_MINIMAL_APP_ENTERED',
+              )
+              markers={k:k in raw for k in checks}
+              if mode in ('ctor-preinitialized','full-preinitialized'):
+                  assert markers['STAGE32_PREINPUT_BEGIN_BEFORE_WINIT'],\
+                    'preinit mode never entered pre-winit source'
+              else:
+                  assert not any(markers[k] for k in checks if k.startswith('STAGE32_')),\
+                    'preinit markers leaked into control'
+              if mode=='host-minimal':
+                  assert markers['STAGE25_HOST_INIT_MINIMAL_APP_ENTERED']
+                  assert not markers['STAGE26_HORIZON_CTOR_ENTERED']
+              if mode=='full-no-input':
+                  assert markers['STAGE29_SDL3_INPUT_SKIPPED']
+                  assert not markers['STAGE26_HORIZON_CTOR_ENTERED']
+              if mode=='ctor-normal':
+                  assert markers['STAGE26_HORIZON_CTOR_ENTERED']
+                  assert not markers['STAGE32_PREINPUT_BEGIN_BEFORE_WINIT']
+              if markers['STAGE32_TAKE_SOME']:
+                  assert markers['STAGE32_PREINPUT_CREATED_SOME'],\
+                    'claimed actual InputBackend without successful creation'
+              assert not (markers['STAGE32_PREINPUT_CREATED_SOME'] and
+                          markers['STAGE32_PREINPUT_CREATED_NONE'])
+              assert not (markers['STAGE32_TAKE_SOME'] and
+                          markers['STAGE32_TAKE_NONE'])
+              receipts[mode]={
+                 'outcome':d['outcome'],
+                 'exit_signal':d.get('exit_signal'),
+                 'alive_at_12_second_deadline':d['alive_at_deadline'],
+                 'process_owned_visible_window':d.get('window_found'),
+                 'static_source_markers':markers,
+                 'actual_sdl3_controller_input_reused_before_winit':
+                   markers['STAGE32_PREINPUT_CREATED_SOME'] and
+                   markers['STAGE32_TAKE_SOME'],
+                 'winit_reentrant_event_panic_observed':
+                   'tried to handle event while another event is currently being handled'
+                   in raw,
+              }
+          out={'schema':'nexium-stage32-prewinit-sdl3-preserving/v1',
+               'result':'FIVE_ACTUAL_INTEL_MAC_GUI_PROCESS_PATHS_CLASSIFIED',
+               'same_native_executable_sha256':digest,'variants':receipts,
+               'nro_supplied':False,'guest_game_verified':False,
+               'controller_button_press_verified':False,
+               'frame_pixel_correctness_verified':False,
+               'physical_nintendo_switch_sound_verified':False,
+               'root_cause_proven':False,
+               'original_console_uploaded':False}
+          (root/'stage32-original-five-mode-contrast.json').write_text(
+             json.dumps(out,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(out,sort_keys=True))
+          PY
+          echo 'Stage32: five native Intel traces classified; controller usability still requires input test.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only five sanitized receipts and original marker decision audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage32-sdl3-prewinit-controls
+          path: |
+            stage32-report/ctor-normal/gui_process_probe.json
+            stage32-report/ctor-preinitialized/gui_process_probe.json
+            stage32-report/full-preinitialized/gui_process_probe.json
+            stage32-report/full-no-input/gui_process_probe.json
+            stage32-report/host-minimal/gui_process_probe.json
+            stage32-report/stage32-original-five-mode-contrast.json
+          if-no-files-found: warn
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
@@ -899,6 +1063,7 @@ jobs:
       NEXIUM_EXPERIMENT_HORIZON_CTOR_ONLY: '1'
       NEXIUM_EXPERIMENT_HORIZON_CTOR_PHASE_TRACE: '1'
       NEXIUM_EXPERIMENT_SDL3_INPUT_ABLATION: '1'
+      NEXIUM_EXPERIMENT_SDL3_PREWINIT: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

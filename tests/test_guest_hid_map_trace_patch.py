@@ -25,8 +25,7 @@ def fixture():
         }
         if let Some(cpu) = cpu_mut() {
             unsafe {
-                if let Err(e) =
-                    cpu.map_host(region.base, region.size, region.perm, region.host_ptr)
+                if let Err(e) = cpu.map_host(region.base, region.size, region.perm, region.host_ptr)
                 {
                     log::warn!("failed to map HID shmem in CPU: {}", e);
                 }

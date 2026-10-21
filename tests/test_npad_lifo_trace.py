@@ -73,6 +73,36 @@ class Stage38NpadLifoTests(unittest.TestCase):
             self.assertFalse(result["guest_npad_shared_memory_verified"])
             self.assertFalse(result["nintendo_game_nro_supplied"])
 
+    def test_no_guest_tick_without_nro_is_classified_not_claimed_as_success(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_root(root, full="\n".join([
+                "STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED",
+                "STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED",
+                "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE",
+                "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE",
+            ]))
+            result = stage.audit(root)
+            self.assertEqual(result["result"], "NO_NPAD_TICK_OBSERVED_NO_NRO")
+            self.assertFalse(result["hid_publish_samples_observed_any_mode"])
+            self.assertFalse(result["source_bound_synthetic_b_serialized_npad_lifo_round_trip_positive"])
+            self.assertFalse(result["nintendo_game_nro_supplied"])
+
+    def test_guest_tick_without_round_trip_remains_unconfirmed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_root(root, full="\n".join([
+                "STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED",
+                "STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED",
+                "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE",
+                "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE",
+                sample("0, 0, 0, 0, 0, 0"),
+            ]))
+            result = stage.audit(root)
+            self.assertEqual(result["result"], "NPAD_LIFO_TRACE_OBSERVED_B_ROUND_TRIP_NOT_CONFIRMED")
+            self.assertTrue(result["hid_publish_samples_observed_any_mode"])
+            self.assertFalse(result["source_bound_synthetic_b_serialized_npad_lifo_round_trip_positive"])
+
     def test_audit_fails_closed_without_serialized_press(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

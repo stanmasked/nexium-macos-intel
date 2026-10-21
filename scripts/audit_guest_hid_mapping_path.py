@@ -65,8 +65,12 @@ def audit(root: Path) -> dict:
     has_host_ptr = "kernel.hid_mapped_host_ptr = Some(region.host_ptr as usize);" in map_svc
     has_binding = "hid.bind_mapped_host(region.host_ptr);" in map_svc
     has_cpu_mapping = "cpu.map_host(region.base, region.size, region.perm, region.host_ptr)" in map_svc
-    has_zero_handle_warning = 'if handle == 0 {' in map_svc and "return" not in between(
+    zero_handle_branch = between(
         map_svc, 'if handle == 0 {', "if size as usize == crate::hid_state::HID_SHMEM_SIZE {"
+    )
+    has_zero_handle_warning = (
+        'if handle == 0 {' in map_svc
+        and re.search(r"\\breturn\\b", zero_handle_branch) is None
     )
     size_gate_ignores_handle = has_size_gate and "handle" not in between(
         map_svc,

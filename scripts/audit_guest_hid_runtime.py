@@ -62,34 +62,38 @@ def audit(report_dir: Path) -> dict:
             file_logger_chunks.append(log_path.read_text(encoding="utf-8", errors="replace"))
         except OSError as error:
             raise ValueError("could not read isolated NeXium file logger output") from error
-    evidence = "\n".join([console, *file_logger_chunks])
+    guest_evidence = "\n".join(file_logger_chunks)
 
-    guest = {marker: marker in evidence for marker in GUEST_MARKERS}
-    host = {marker: marker in evidence for marker in HOST_MARKERS}
-    samples = npad_samples(evidence)
+    # Guest SVC markers, boot milestones, mapping records, and HID publication
+    # traces must come from NeXium's own per-run FileLogger. Host bridge markers
+    # are emitted with eprintln! and therefore belong to the captured console.
+    # Do not let a matching string in stdout/stderr stand in for guest execution.
+    guest = {marker: marker in guest_evidence for marker in GUEST_MARKERS}
+    host = {marker: marker in console for marker in HOST_MARKERS}
+    samples = npad_samples(guest_evidence)
     pressed = [i for i, values in enumerate(samples) if any(v & B_BIT for v in values)]
     released_after = any(
         all((value & B_BIT) == 0 for value in samples[j])
         for i in pressed for j in range(i + 1, len(samples))
     )
-    mapping_call = "svcMapSharedMemory" in evidence
-    hid_mapping_success = "recognized as HID shared memory" in evidence
-    nro_autoload_observed = "Auto-loaded NRO:" in evidence
-    guest_boot_started_observed = "Booting NRO:" in evidence
-    guest_boot_context_ready_observed = "cpu memory null policy:" in evidence
-    guest_boot_failed_observed = "Boot failed:" in evidence
-    guest_output_debug_svc_observed = "svcOutputDebugString" in evidence
+    mapping_call = "svcMapSharedMemory" in guest_evidence
+    hid_mapping_success = "recognized as HID shared memory" in guest_evidence
+    nro_autoload_observed = "Auto-loaded NRO:" in guest_evidence
+    guest_boot_started_observed = "Booting NRO:" in guest_evidence
+    guest_boot_context_ready_observed = "cpu memory null policy:" in guest_evidence
+    guest_boot_failed_observed = "Boot failed:" in guest_evidence
+    guest_output_debug_svc_observed = "svcOutputDebugString" in guest_evidence
     process_status = smoke.get("status", "missing")
     process_outcome_acceptable = (
         process_status == "exited_zero_unverified" and smoke.get("exit_code") == 0
     ) or process_status == "timeout_alive_unverified"
-    guest_down_at = evidence.find(GUEST_MARKERS[1])
-    guest_up_at = evidence.find(GUEST_MARKERS[2])
-    guest_pass_at = evidence.find(GUEST_MARKERS[3])
+    guest_down_at = guest_evidence.find(GUEST_MARKERS[1])
+    guest_up_at = guest_evidence.find(GUEST_MARKERS[2])
+    guest_pass_at = guest_evidence.find(GUEST_MARKERS[3])
     guest_edges_ordered = guest_down_at >= 0 and guest_up_at > guest_down_at
     guest_pass_after_edges = guest_edges_ordered and guest_pass_at > guest_up_at
-    host_press_at = evidence.find(HOST_MARKERS[0])
-    host_release_at = evidence.find(HOST_MARKERS[1])
+    host_press_at = console.find(HOST_MARKERS[0])
+    host_release_at = console.find(HOST_MARKERS[1])
     host_edges_ordered = host_press_at >= 0 and host_release_at > host_press_at
 
     result = {
@@ -105,6 +109,7 @@ def audit(report_dir: Path) -> dict:
             and guest_boot_context_ready_observed
             and not guest_boot_failed_observed
             and guest_output_debug_svc_observed
+            and len(file_logger_paths) > 0
             and process_outcome_acceptable
         ),
         "guest_libnx_b_down_observed": guest[GUEST_MARKERS[1]],

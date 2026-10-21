@@ -78,6 +78,27 @@ class Stage41NoVirtualGuestControlTests(unittest.TestCase):
             self.assertFalse(r["negative_guest_b_markers_absent"])
             self.assertFalse(r["no_virtual_guest_control_passed"])
 
+    def test_orphan_guest_b_up_marker_rejects_negative(self):
+        with tempfile.TemporaryDirectory() as td:
+            report_dir, positive, log = fixture(Path(td))
+            with log.open("a", encoding="utf-8") as stream:
+                stream.write("OutputDebugString: STAGE40_GUEST_HID_B_UP\\n")
+            r = audit_no_virtual(report_dir, positive)
+            self.assertFalse(r["negative_guest_b_markers_absent"])
+            self.assertFalse(r["no_virtual_guest_control_passed"])
+
+    def test_guest_end_marker_before_start_rejects_negative(self):
+        with tempfile.TemporaryDirectory() as td:
+            report_dir, positive, log = fixture(Path(td))
+            text = log.read_text(encoding="utf-8")
+            marker = "OutputDebugString: STAGE40_GUEST_HID_PROBE_END_WITHOUT_ROUNDTRIP\\n"
+            text = text.replace(marker, "")
+            text = marker + text
+            log.write_text(text, encoding="utf-8")
+            r = audit_no_virtual(report_dir, positive)
+            self.assertFalse(r["negative_guest_probe_exited_without_b_observed"])
+            self.assertFalse(r["no_virtual_guest_control_passed"])
+
     def test_missing_guest_end_marker_rejects_negative(self):
         with tempfile.TemporaryDirectory() as td:
             report_dir, positive, log = fixture(Path(td))

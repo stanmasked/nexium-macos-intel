@@ -1,0 +1,43 @@
+name: Public NRO segment layout versus pinned NeXium parser
+
+on:
+  pull_request:
+    paths:
+      - 'nro-diagnostics/**'
+      - '.github/workflows/public-nro-layout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  header-arithmetic:
+    name: Intel public NRO0 offset and bounds inspection without execution
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Segment arithmetic regression tests
+        run: python3 -m unittest discover -s nro-diagnostics -p 'test_inspect_layout.py' -v
+      - name: Fetch previously compiled public NRO only
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-clean-homebrew-nro
+          repository: ${{ github.repository }}
+          run-id: 39508041890
+          github-token: ${{ github.token }}
+          path: public-nro
+      - name: Inspect raw full-file offsets versus loader's 16-byte slice
+        run: |
+          python3 nro-diagnostics/inspect_layout.py \
+            --nro public-nro/nexium_clean_smoke.nro \
+            --report nro-structure-report.json
+          cat nro-structure-report.json >> "$GITHUB_STEP_SUMMARY"
+          echo 'This is structural NRO0 analysis, not NRO execution or gameplay.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload JSON segment structure only, never raw NRO or keys
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-public-clean-nro-segment-offsets
+          path: nro-structure-report.json
+          if-no-files-found: error

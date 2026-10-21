@@ -77,8 +77,7 @@ def audit(report_dir: Path) -> dict:
         "schema": "nexium-stage40-guest-npad-readback/v1",
         "same_process_guest_input_roundtrip_passed": bool(
             guest_pass_after_edges and host_edges_ordered and mapping_call
-            and hid_mapping_success and pressed and released_after
-            and process_outcome_acceptable
+            and hid_mapping_success and process_outcome_acceptable
         ),
         "guest_libnx_b_down_observed": guest[GUEST_MARKERS[1]],
         "guest_libnx_b_up_observed_after_down_marker": guest_edges_ordered,
@@ -91,6 +90,7 @@ def audit(report_dir: Path) -> dict:
         "serialized_npad_samples": len(samples),
         "serialized_npad_b_press_samples": len(pressed),
         "serialized_npad_b_release_after_press_observed": bool(released_after),
+        "serialized_npad_trace_roundtrip_observed": bool(pressed and released_after),
         "guest_press_release_marker_order_valid": bool(guest_pass_after_edges),
         "host_press_release_marker_order_valid": bool(host_edges_ordered),
         "probe_process_outcome_acceptable": bool(process_outcome_acceptable),

@@ -27,7 +27,7 @@ NRO_SIZE = 299064
 NRO_NAME = "vandal-hearts-prototype.nro"
 SOURCE_GAME_RUN = 39501847103
 SOURCE_MAC_RUN = 39588444239
-MODES = ("original-homebrew-nro", "no-guest-control")
+MODES = ("original-homebrew-nro", "rustarmic-homebrew-nro", "no-guest-control")
 
 
 def digest(path: Path) -> str:
@@ -60,8 +60,9 @@ def sanitize(mode: str, state: dict) -> dict:
     return {
         "mode":mode,
         "source_original_neXium_sha256":EMULATOR_SHA,
-        "source_original_guest_nro_sha256":NRO_SHA if mode==MODES[0] else None,
-        "exact_command_line_nro_argument_supplied":mode==MODES[0],
+        "source_original_guest_nro_sha256":NRO_SHA if mode!=MODES[2] else None,
+        "exact_command_line_nro_argument_supplied":mode!=MODES[2],
+        "original_requested_cpu_backend":("rustarmic" if mode==MODES[1] else "dynarmic"),
         "process_alive_at_12s":bool(state.get("alive_at_deadline",False)),
         "process_exit_signal":state.get("exit_signal"),
         "process_exited_nonzero":bool(state.get("exited_nonzero",False)),
@@ -174,9 +175,10 @@ def run_mode(exe: Path, nro: Path, mode: str, seconds: int, window_helper: Path)
             "NEXIUM_MACOS_HORIZON_CTOR_ONLY":"0",
             "NEXIUM_MACOS_SKIP_SDL3_INPUT":"0",
             "NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT":"1",
+            "NEXIUM_CPU_BACKEND":"rustarmic" if mode==MODES[1] else "dynarmic",
             "RUST_BACKTRACE":"0",
         })
-        argv=[str(exe)]+([str(nro)] if mode==MODES[0] else [])
+        argv=[str(exe)]+([str(nro)] if mode!=MODES[2] else [])
         private=root/"console-private.txt"
         with private.open("wb") as log:
             proc=subprocess.Popen(argv,stdin=subprocess.DEVNULL, stdout=log,
@@ -230,7 +232,7 @@ def main(argv=None) -> int:
         data={m:run_mode(exe,nro,m,args.seconds,args.window_helper) for m in MODES}
         result={
             "schema":"nexium-stage36-original-vh-homebrew-cli-nro/v1",
-            "result":"TWO_AUTHENTIC_NATIVE_MAC_GUI_PROCESS_PATHS_RECORDED",
+            "result":"THREE_AUTHENTIC_NATIVE_MAC_GUI_CPU_BACKEND_PATHS_RECORDED",
             "source_mac_intel_ci_run":SOURCE_MAC_RUN,
             "source_original_game_nro_ci_run":SOURCE_GAME_RUN,
             "source_guest_nro_is_diagnostic_homebrew_not_commercial_rom":True,

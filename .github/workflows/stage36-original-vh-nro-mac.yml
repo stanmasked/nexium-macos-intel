@@ -1,0 +1,119 @@
+name: Stage36 original Vandal Hearts homebrew NRO in Intel NeXium
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage36-original-vh-nro-mac.yml'
+      - 'scripts/stage36_original_nro_mac_probe.py'
+      - 'tests/test_stage36_original_nro_mac_probe.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: stage36-original-vh-nro-intel-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  mac-original-homebrew-guest:
+    name: Authentic original Vandal Hearts libnx diagnostic NRO boot attempt in Intel GUI
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prove actual x86_64 macOS and exact source tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$(uname -s)" = Darwin
+          python3 -m py_compile scripts/stage36_original_nro_mac_probe.py
+          python3 -m unittest discover -s tests \
+            -p test_stage36_original_nro_mac_probe.py -v
+
+      - name: Download exact already-verified original Stage32 Intel NeXium binary
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ github.repository }}
+          run-id: 39588444239
+          name: nexium-macos-intel-rustarmic-probe
+          github-token: ${{ github.token }}
+          path: stage36-original-intel
+
+      - name: Download only public original Stage371 Vandal Hearts diagnostic homebrew NRO
+        uses: actions/download-artifact@v4
+        with:
+          repository: stanmasked/vandal-hearts-switch-remaster
+          run-id: 39501847103
+          name: stage371-same-run-nro
+          github-token: ${{ github.token }}
+          path: stage36-original-stage371-homebrew
+
+      - name: Verify BOTH exact original files and provenance, no substitution
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage36-original-intel -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="$(find stage36-original-stage371-homebrew -type f -name vandal-hearts-prototype.nro -print -quit)"
+          test -n "$BIN"
+          test -n "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(shasum -a 256 "$BIN" | awk '{print $1}')" = \
+            4d40b18bb52b5a498f0efb1d00812643bc4062e18c6e27a4d2af6b208787be93
+          test "$(shasum -a 256 "$NRO" | awk '{print $1}')" = \
+            cfc49a8ac8dcfe4704e697c1bea8fc750ea32d498c2942176c2ca9b9cbcae71b
+          test "$(stat -f '%z' "$NRO")" = 299064
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage36-intel-original-binary"
+          printf '%s\n' "$NRO" > "$RUNNER_TEMP/stage36-game-original-nro"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage36-own-window" \
+            scripts/nexium_window_id.swift
+          echo 'Stage36 pinned exact original guest homebrew and original SDL3-preserving Intel emulator.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Observe real original guest homebrew auto-load versus no-guest negative control
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/stage36_original_nro_mac_probe.py \
+            --exe "$(cat "$RUNNER_TEMP/stage36-intel-original-binary")" \
+            --nro "$(cat "$RUNNER_TEMP/stage36-game-original-nro")" \
+            --window-helper "$RUNNER_TEMP/stage36-own-window" \
+            --output stage36-source-bound-results/stage36-original-homebrew-mac.json \
+            --seconds 12
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('stage36-source-bound-results/stage36-original-homebrew-mac.json')
+          d=json.loads(p.read_text())
+          assert d['schema']=='nexium-stage36-original-vh-homebrew-cli-nro/v1'
+          assert d['source_mac_intel_ci_run']==39588444239
+          assert d['source_original_game_nro_ci_run']==39501847103
+          assert d['source_guest_nro_is_diagnostic_homebrew_not_commercial_rom']
+          assert d['guest_boot_success_not_implied_by_process_survival']
+          for name in ('original-homebrew-nro','no-guest-control'):
+              v=d['modes'][name]
+              assert v['source_original_neXium_sha256']== \
+                 '4d40b18bb52b5a498f0efb1d00812643bc4062e18c6e27a4d2af6b208787be93'
+              assert not v['complete_guest_boot_verified']
+              assert not v['actual_gameplay_verified']
+              assert not v['private_console_uploaded']
+          assert not list(Path('stage36-source-bound-results').rglob('*.nro'))
+          assert not list(Path('stage36-source-bound-results').rglob('*.png'))
+          print('STAGE36_ORIGINAL_INTEL_GUEST_EVIDENCE_RECORDED',
+                'auto_load_logged=',d['modes']['original-homebrew-nro']['source_nro_auto_load_log_marker_observed'],
+                'guest_diagnostic_files=',d['modes']['original-homebrew-nro']['source_guest_sd_diagnostic_file_count'],
+                'process_survived=',d['modes']['original-homebrew-nro']['process_alive_at_12s'])
+          PY
+          echo 'Stage36 original signed-source diagnostic NRO command-line probe: process survival is not guest boot evidence.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only source-bound guest-startup decision receipt, never game binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage36-original-vh-homebrew-intel-guest-startup-receipt
+          path: stage36-source-bound-results/stage36-original-homebrew-mac.json
+          if-no-files-found: warn
+          retention-days: 60

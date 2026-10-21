@@ -2954,7 +2954,7 @@ jobs:
 
 
   stage53-guest-deadzone-threshold-nro:
-    name: Stage53 build guest analog deadzone jitter NRO
+    name: Stage53 build guest analog deadzone threshold NRO
     if: github.head_ref == 'work/intel-stage53-deadzone-threshold'
     runs-on: ubuntu-latest
     container:
@@ -2990,8 +2990,8 @@ jobs:
           path = Path("stage53-guest-probe/nexium-guest-deadzone-threshold-probe.nro")
           data = path.read_bytes()
           if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
-              raise SystemExit("STAGE53_GUEST_MIXED_DPAD_DUAL_STICK_NRO_INVALID")
-          print(f"STAGE53_GUEST_MIXED_DPAD_DUAL_STICK_NRO_READY bytes={len(data)}")
+              raise SystemExit("STAGE53_GUEST_DEADZONE_THRESHOLD_NRO_INVALID")
+          print(f"STAGE53_GUEST_DEADZONE_THRESHOLD_NRO_READY bytes={len(data)}")
           PY
       - name: Upload diagnostic NRO
         uses: actions/upload-artifact@v4
@@ -3004,7 +3004,7 @@ jobs:
 
 
   stage53-guest-deadzone-threshold-readback:
-    name: Stage53 native Intel guest analog deadzone jitter
+    name: Stage53 native Intel guest analog deadzone threshold
     if: github.head_ref == 'work/intel-stage53-deadzone-threshold'
     needs: [intel-build, stage53-guest-deadzone-threshold-nro]
     runs-on: macos-15-intel
@@ -3034,7 +3034,7 @@ jobs:
           test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
           chmod 755 "$BIN"
           printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage53-exe"
-      - name: Run guest original four-axis low-amplitude deadzone jitter
+      - name: Run guest original below/above default analog deadzone
         shell: bash
         run: |
           set -euo pipefail

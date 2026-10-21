@@ -1,0 +1,67 @@
+name: Stage44 native Intel SDL3 virtual-controller roundtrip
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "stage44/**"
+      - ".github/workflows/stage44-virtual-sdl3.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-evidence-tests:
+    name: Virtual-controller source-audit regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax and fail-closed audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile stage44/audit_virtual_gamepad.py stage44/test_virtual_gamepad.py
+          python3 -m unittest discover -s stage44 -p 'test_*.py' -v
+
+  native-virtual-gamepad:
+    name: Real Intel Mac virtual SDL3 input, two AppKit variants
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require native Intel
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+      - name: Install standalone external SDL3, not NeXium pinned SDL3
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install pkgconf sdl3
+          export PKG_CONFIG_PATH="$(brew --prefix sdl3)/lib/pkgconfig"
+          pkg-config --modversion sdl3
+      - name: Compile only virtual gamepad test executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PKG_CONFIG_PATH="$(brew --prefix sdl3)/lib/pkgconfig"
+          xcrun clang++ -std=c++17 -fobjc-arc -x objective-c++ stage44/virtual_gamepad.mm             -framework AppKit -framework Foundation             $(pkg-config --cflags --libs sdl3) -o "$RUNNER_TEMP/stage44-virtual-pad"
+          test "$(xcrun lipo -archs "$RUNNER_TEMP/stage44-virtual-pad")" = x86_64
+      - name: Execute four native processes and retain only marker audit JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 stage44/audit_virtual_gamepad.py             --binary "$RUNNER_TEMP/stage44-virtual-pad"             --output stage44-evidence/virtual-gamepad.json
+          echo 'Stage44 tests synthetic SDL3 virtual-controller button/axis readback, not physical input or NeXium.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload only whitelisted native virtual-input evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage44-intel-virtual-controller-readback
+          path: stage44-evidence/virtual-gamepad.json
+          if-no-files-found: warn
+          retention-days: 30

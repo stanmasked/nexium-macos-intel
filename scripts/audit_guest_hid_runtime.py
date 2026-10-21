@@ -62,7 +62,7 @@ def audit(report_dir: Path) -> dict:
             file_logger_chunks.append(log_path.read_text(encoding="utf-8", errors="replace"))
         except OSError as error:
             raise ValueError("could not read isolated NeXium file logger output") from error
-    evidence = "\\n".join([console, *file_logger_chunks])
+    evidence = "\n".join([console, *file_logger_chunks])
 
     guest = {marker: marker in evidence for marker in GUEST_MARKERS}
     host = {marker: marker in evidence for marker in HOST_MARKERS}

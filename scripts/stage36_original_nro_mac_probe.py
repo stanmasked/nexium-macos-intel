@@ -83,6 +83,23 @@ def sanitize(mode: str, state: dict) -> dict:
     }
 
 
+def collect_private_source_evidence(root: Path, console: Path) -> dict:
+    """Read real Nexium data_root logs and guest SD; return only nonprivate booleans/counts."""
+    text_parts=[console.read_text(encoding="utf-8",errors="replace")]
+    logs=root/"nexium-data"/"logs"
+    if logs.is_dir():
+        text_parts.extend(f.read_text(encoding="utf-8",errors="replace")
+                          for f in sorted(logs.glob("nexium-*.log")) if f.is_file())
+    text="\n".join(text_parts)
+    guest_root=root/"nexium-data"/"sdmc"/"switch"/"vandal-hearts-remake"
+    found=sum(1 for f in guest_root.rglob("*") if f.is_file() and f.stat().st_size>0)
+    return {
+        "auto_loaded_nro":"Auto-loaded NRO:" in text,
+        "failed_load_nro":"Failed to load NRO:" in text,
+        "guest_files":found,
+    }
+
+
 def run_mode(exe: Path, nro: Path, mode: str, seconds: int, window_helper: Path) -> dict:
     with tempfile.TemporaryDirectory(prefix="stage36-original-vh-homebrew-") as temp:
         root=Path(temp)
@@ -128,27 +145,13 @@ def run_mode(exe: Path, nro: Path, mode: str, seconds: int, window_helper: Path)
                     except subprocess.TimeoutExpired:
                         proc.kill()
                         proc.wait(timeout=5)
-        # NeXium FileLogger writes to the private data root, not stdout.
-        # Read both private console AND actual app-owned log files.
-        raw_parts=[private.read_text(encoding="utf-8",errors="replace")]
-        logs=root/"nexium-data"/"logs"
-        if logs.is_dir():
-            raw_parts.extend(p.read_text(encoding="utf-8",errors="replace")
-                             for p in sorted(logs.glob("nexium-*.log")) if p.is_file())
-        raw="\n".join(raw_parts)
-        # Do not echo arbitrary local paths or device information.
-        # Original guest files reside in exact NeXium SDL root/sdmc/switch.
-        guest_root=root/"nexium-data"/"sdmc"/"switch"/"vandal-hearts-remake"
-        probe_files=[p for p in guest_root.rglob("*")
-                     if p.is_file() and p.stat().st_size>0]
+        original=collect_private_source_evidence(root,private)
         state={
             "alive_at_deadline":alive,
             "window_found":own,
             "exit_signal":("SIGABRT" if status==-signal.SIGABRT else None),
             "exited_nonzero":status is not None and status!=0,
-            "auto_loaded_nro":"Auto-loaded NRO:" in raw,
-            "failed_load_nro":"Failed to load NRO:" in raw,
-            "guest_files":len(probe_files),
+            **original,
         }
         return sanitize(mode,state)
 

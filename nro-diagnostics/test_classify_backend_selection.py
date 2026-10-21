@@ -69,6 +69,33 @@ class ClassifierTests(unittest.TestCase):
             self.assertTrue(result["guest_boot_thread_entered"])
             self.assertFalse(result["rustarmic_unavailable"])
 
+    def test_owned_window_metadata_not_guest_execution(self):
+        d, r = trial(), trial()
+        r["window_capture"] = {
+            "requested": True, "status": "window_frames_unverified",
+            "frames": 3, "unique_hashes": 2,
+        }
+        summary = m.classify(d, r, {"sha256": m.EXPECTED_PUBLIC_NRO}, {}, {})
+        observed = summary["variants"]["forced_rustarmic"]["pid_owned_window"]
+        self.assertEqual(observed["unique_hashes"], 2)
+        self.assertTrue(observed["may_show_gui_without_any_guest_rendering"])
+        self.assertFalse(summary["actual_guest_instructions_verified"])
+        self.assertFalse(summary["pixel_content_correctness_verified"])
+
+    def test_window_hash_invariants_are_fail_closed(self):
+        for invalid in (
+            {"frames": 2, "unique_hashes": 3},
+            {"frames": -1, "unique_hashes": 0},
+            {"frames": True, "unique_hashes": 1},
+            {"frames": "3", "unique_hashes": 0},
+        ):
+            d, r = trial(), trial()
+            r["window_capture"] = invalid
+            with self.subTest(capture=invalid), self.assertRaisesRegex(
+                ValueError, "PID-owned window"
+            ):
+                m.classify(d, r, {"sha256": m.EXPECTED_PUBLIC_NRO}, {}, {})
+
     def test_nonnumeric_flags_rejected(self):
         d, r = trial(), trial()
         with self.assertRaisesRegex(ValueError, "booleans"):

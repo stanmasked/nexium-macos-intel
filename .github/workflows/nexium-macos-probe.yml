@@ -37,7 +37,7 @@ jobs:
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
           mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -48,6 +48,11 @@ jobs:
           grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+          python3 scripts/apply_macos_hid_host_bridge_trace.py "$BASE"
+          python3 scripts/apply_macos_hid_host_bridge_trace.py "$BASE"
+          grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
+          grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
+          test "$(grep -c 'hid.update_input(nexium_core::hid_state::ControllerInput' "$BASE/nexium-gui/src/app.rs")" = 1
 
   mig-intel:
     name: Intel macOS Mach header generation
@@ -78,7 +83,7 @@ jobs:
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
           mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -89,6 +94,11 @@ jobs:
           grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+          python3 scripts/apply_macos_hid_host_bridge_trace.py "$BASE"
+          python3 scripts/apply_macos_hid_host_bridge_trace.py "$BASE"
+          grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
+          grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
+          test "$(grep -c 'hid.update_input(nexium_core::hid_state::ControllerInput' "$BASE/nexium-gui/src/app.rs")" = 1
 
       - name: Verify native-only window capture helper type checks
         run: xcrun swiftc -typecheck scripts/nexium_window_id.swift

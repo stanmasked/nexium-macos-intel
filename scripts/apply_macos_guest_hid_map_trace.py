@@ -73,13 +73,11 @@ def patch_source(original: str) -> str:
 '''
     source = replace_once(source, bind, bound_trace, "host bind trace")
 
-    cpu_result = '''                if let Err(e) =
-                    cpu.map_host(region.base, region.size, region.perm, region.host_ptr)
+    cpu_result = '''                if let Err(e) = cpu.map_host(region.base, region.size, region.perm, region.host_ptr)
                 {
                     log::warn!("failed to map HID shmem in CPU: {}", e);
                 }'''
-    cpu_trace = f'''                if let Err(e) =
-                    cpu.map_host(region.base, region.size, region.perm, region.host_ptr)
+    cpu_trace = f'''                if let Err(e) = cpu.map_host(region.base, region.size, region.perm, region.host_ptr)
                 {{
                     if {ENV} {{
                         eprintln!("STAGE40_HID_SHARED_MEMORY_CPU_MAP_FAILED");

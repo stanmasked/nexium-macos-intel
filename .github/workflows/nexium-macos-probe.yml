@@ -1621,6 +1621,8 @@ jobs:
           BIN="$(cat "$RUNNER_TEMP/stage40-exe")"
           # Stage40 uses a Rustarmic-only build; the GUI otherwise defaults
           # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
           env NEXIUM_CPU_BACKEND=rustarmic \
             NEXIUM_MACOS_NO_AUDIO=1 \
             NEXIUM_MACOS_MINIMAL_EFRAME=0 \
@@ -1633,7 +1635,6 @@ jobs:
             NEXIUM_MACOS_GUEST_HID_PROBE=1 \
             NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
             NEXIUM_HID_TRACE=1 \
-            # Keep SVC diagnostics enabled without verbose unrelated graphics dumps.
             NEXIUM_DIAG=lite \
             NEXIUM_LOG_LEVEL=debug \
             python3 scripts/nro_smoke_test.py \

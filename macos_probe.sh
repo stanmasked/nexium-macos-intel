@@ -83,6 +83,10 @@ if [[ "${NEXIUM_EXPERIMENT_HORIZON_CTOR_ONLY:-0}" == "1" ]]; then
     echo "STAGE26_CONSTRUCTOR_ONLY: retain HorizonApp but suppress its eframe UI"
     python3 "$SELF/scripts/apply_macos_horizonapp_ctor_only.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_HORIZON_CTOR_PHASE_TRACE:-0}" == "1" ]]; then
+    echo "STAGE28_CONSTRUCTOR_PHASES: guarded HorizonApp::new phase markers"
+    python3 "$SELF/scripts/apply_macos_horizon_ctor_phase_trace.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

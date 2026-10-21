@@ -41,7 +41,7 @@ class Stage36OriginalHomebrew(unittest.TestCase):
         self.assertFalse(d["complete_guest_boot_verified"])
 
     def test_control_does_not_pretend_guest_arg(self):
-        d=stage.sanitize(stage.MODES[1],{"alive_at_deadline":True})
+        d=stage.sanitize(stage.MODES[2],{"alive_at_deadline":True})
         self.assertIsNone(d["source_original_guest_nro_sha256"])
         self.assertFalse(d["exact_command_line_nro_argument_supplied"])
 
@@ -177,10 +177,21 @@ class Stage36OriginalHomebrew(unittest.TestCase):
         self.assertNotIn("user",error.lower())
         self.assertEqual(stage.boot_failure_category("normal startup"),"NO_BOOT_ERROR_OBSERVED")
 
+    def test_guest_backend_a_b_preserves_exact_original_nro(self):
+        standard=stage.sanitize(stage.MODES[0],{"boot_failed":True})
+        rust=stage.sanitize(stage.MODES[1],{"cpu_memory_policy":True})
+        self.assertEqual(standard["original_requested_cpu_backend"],"dynarmic")
+        self.assertEqual(rust["original_requested_cpu_backend"],"rustarmic")
+        self.assertTrue(rust["exact_command_line_nro_argument_supplied"])
+        self.assertEqual(rust["source_original_guest_nro_sha256"],stage.NRO_SHA)
+        self.assertFalse(rust["guest_cpu_instructions_verified"])
+        self.assertFalse(rust["complete_guest_boot_verified"])
+
     def test_source_modes_are_distinct_and_not_commercial_game(self):
-        self.assertEqual(len(set(stage.MODES)),2)
+        self.assertEqual(len(set(stage.MODES)),3)
         self.assertEqual(stage.MODES[0],"original-homebrew-nro")
-        self.assertEqual(stage.MODES[1],"no-guest-control")
+        self.assertEqual(stage.MODES[1],"rustarmic-homebrew-nro")
+        self.assertEqual(stage.MODES[2],"no-guest-control")
 
 if __name__=="__main__":
     unittest.main()

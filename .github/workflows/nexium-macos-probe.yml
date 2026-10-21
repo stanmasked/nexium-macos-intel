@@ -676,13 +676,21 @@ jobs:
               assert digest==d['emulator_sha256'],'different executable used'
               console=(root/name/'nexium-stdout-stderr.log').read_text(errors='replace')
               found=[s for s in stages if prefix+s in console]
-              if found:
-                  assert found==list(stages[:len(found)]), 'phase trace skipped a checkpoint'
+              # Every trial below explicitly sets NEXIUM_MACOS_NO_AUDIO=1.
+              # Stage21 places checkpoint 01 *inside* the conditional UI
+              # audio initializer, so it is correctly NOT emitted here.
+              # Checkpoint 02 is outside that conditional. Still enforce
+              # a strict ordered prefix of all actually executable phases.
+              mandatory=tuple(s for s in stages if s!='01_BEFORE_UI_AUDIO')
+              assert '01_BEFORE_UI_AUDIO' not in found, 'audio-skip branch unexpectedly executed'
+              assert found==list(mandatory[:len(found)]), (
+                  'constructor phase trace out of order or skipped non-audio checkpoint: '
+                  + repr(found))
               entered='STAGE26_HORIZON_CTOR_ENTERED' in console
               returned='STAGE26_HORIZON_CTOR_RETURNED' in console
               if name=='constructor-only':
                   assert entered,'constructor-only path did not enter original HorizonApp'
-                  assert not returned or len(found)==len(stages),'returned before checkpoints'
+                  assert not returned or len(found)==len(mandatory),'returned before checkpoints'
               else:
                   assert not entered and not returned,'unexpected constructor-only marker'
               if name=='full-init-minimal':
@@ -706,6 +714,8 @@ jobs:
                    'single_compiled_binary_sha256':digest,
                    'variants':seen,'nro_or_game_executed':False,
                    'rendered_pixels_verified':False,'speaker_sound_verified':False,
+                   'audio_disabled_in_every_trial':True,
+                   'audio_init_marker_01_intentionally_omitted':True,
                    'diagnostic_only_not_a_causal_fix':True}
           (root/'stage28-phase-audit.json').write_text(
               json.dumps(summary,sort_keys=True,indent=2)+'\n')

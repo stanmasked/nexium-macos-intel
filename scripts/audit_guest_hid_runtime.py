@@ -74,6 +74,11 @@ def audit(report_dir: Path) -> dict:
     )
     mapping_call = "svcMapSharedMemory" in evidence
     hid_mapping_success = "recognized as HID shared memory" in evidence
+    nro_autoload_observed = "Auto-loaded NRO:" in evidence
+    guest_boot_started_observed = "Booting NRO:" in evidence
+    guest_boot_context_ready_observed = "cpu memory null policy:" in evidence
+    guest_boot_failed_observed = "Boot failed:" in evidence
+    guest_output_debug_svc_observed = "svcOutputDebugString" in evidence
     process_status = smoke.get("status", "missing")
     process_outcome_acceptable = (
         process_status == "exited_zero_unverified" and smoke.get("exit_code") == 0
@@ -101,6 +106,11 @@ def audit(report_dir: Path) -> dict:
         "host_original_hid_b_release_observed": host[HOST_MARKERS[1]],
         "guest_hid_map_svc_observed": mapping_call,
         "guest_hid_map_success_marker_observed": hid_mapping_success,
+        "nro_autoload_observed": nro_autoload_observed,
+        "guest_boot_started_observed": guest_boot_started_observed,
+        "guest_boot_context_ready_observed": guest_boot_context_ready_observed,
+        "guest_boot_failed_observed": guest_boot_failed_observed,
+        "guest_output_debug_svc_observed": guest_output_debug_svc_observed,
         "file_logger_log_count": len(file_logger_paths),
         "serialized_npad_samples": len(samples),
         "serialized_npad_b_press_samples": len(pressed),

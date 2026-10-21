@@ -1,0 +1,91 @@
+name: Stage27 owned Intel minimal NeXium window screenshot evidence
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage27-intel-window-pixels.yml'
+      - 'scripts/stage27_minimal_window_pixels.py'
+      - 'tests/test_stage27_minimal_window_pixels.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: stage27-minimal-window-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  scoped-window:
+    name: Intel macOS verified Stage25 binary process-owned window PNG attempt
+    runs-on: macos-15-intel
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit-test reporting privacy and assert real physical Intel macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          python3 -m py_compile scripts/stage27_minimal_window_pixels.py
+          python3 -m unittest discover -s tests \
+            -p test_stage27_minimal_window_pixels.py -v
+          xcrun swiftc -typecheck scripts/nexium_window_id.swift
+
+      - name: Download unchanged original Stage25 built Intel NeXium artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          repository: ${{ github.repository }}
+          run-id: 39514962640
+          github-token: ${{ github.token }}
+          path: stage27-original-stage25-bundle
+
+      - name: Verify binary pin, physical x86_64 and source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage27-original-stage25-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          test "$(shasum -a 256 "$BIN" | awk '{print $1}')" = \
+            38f66e29623995835af8f35409d802e929e084774e40727223de7b3bf9f5e5ad
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage27-original-neXium"
+          echo 'Pinned genuine Stage25 NeXium x86_64 Mach-O verified; no ROM/NRO.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attempt only own PID minimal GUI window capture, raw image discarded
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage27-original-neXium")"
+          python3 scripts/stage27_minimal_window_pixels.py \
+            --exe "$BIN" --output stage27-report --seconds 8
+          test -f stage27-report/stage27-window-pixel-receipt.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('stage27-report/stage27-window-pixel-receipt.json')
+          d=json.loads(p.read_text())
+          assert d['original_stage25_binary_verified'] is True
+          assert d['original_pngs_uploaded'] is False
+          assert d['other_windows_captured'] is False
+          assert d['nro_supplied'] is False
+          assert d['gameplay_verified'] is False
+          assert not list(Path('stage27-report').glob('*.png'))
+          print('STAGE27_WINDOW_RECEIPT:',d['capture_status'],
+                'valid=',d['valid_png_count'])
+          PY
+          echo 'Stage27: window-only PNG attempt classified; no raw PNG uploaded, no NRO/game.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish compact sanitized digest and dimension JSON, never image bytes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage27-original-intel-nexium-window-png-attempt
+          path: stage27-report/stage27-window-pixel-receipt.json
+          if-no-files-found: warn
+          retention-days: 60

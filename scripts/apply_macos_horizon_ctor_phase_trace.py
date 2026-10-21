@@ -39,8 +39,10 @@ def emitted(label: str) -> str:
 def patch_source(data: str) -> str:
     expected=[MARKER+name for name,_ in PHASES]
     if MARKER in data:
-        if all(data.count(marker+'");')==1 for marker in expected) and (
-            data.count(MARKER)==len(PHASES)):
+        # Match each complete inserted block instead of a suffix-only marker.
+        # The source can contain neighboring inserted statements and whitespace.
+        if all(data.count(emitted(name)) == 1 for name, _ in PHASES) and (
+            data.count(MARKER) == len(PHASES)):
             return data
         raise RuntimeError("partial Stage28 markers or source mismatch")
     if data.count(START)!=1 or data.count(END)!=1:

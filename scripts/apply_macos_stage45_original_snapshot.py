@@ -53,7 +53,11 @@ INPUT_METHOD = '''impl InputBackend {
         // settings after testing so the later GUI behaves normally.
         let saved_selected = self.selected_id;
         let saved_preferred = self.preferred.take();
+        let saved_motion_enabled = self.motion_enabled;
         self.pad = None;
+        // Do not let motion ranking select an unrelated physical controller
+        // during this strictly synthetic test, even on a developer Mac.
+        self.motion_enabled = false;
         self.selected_id = Some(connection.id());
         self.open_failure = None;
         let cfg = ControllerConfig::default();
@@ -107,6 +111,7 @@ INPUT_METHOD = '''impl InputBackend {
         self.pad = None;
         self.selected_id = saved_selected;
         self.preferred = saved_preferred;
+        self.motion_enabled = saved_motion_enabled;
         self.open_failure = None;
         drop(virtual_pad);
         drop(connection);

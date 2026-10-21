@@ -879,7 +879,7 @@ jobs:
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
-    if: github.head_ref != 'work/intel-stage13-private-window-evidence'
+    if: github.head_ref != 'work/intel-stage13-private-window-evidence' && github.head_ref != 'work/intel-stage37-sdl3-original-replay'
     name: Native Intel build (${{ matrix.backend }}, experimental)
     # Intel compiler-rt preflight itself now reruns all syntax and fixture tests;
     # do not stall macOS builds on GitHub's independent Ubuntu runner queue.

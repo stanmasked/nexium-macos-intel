@@ -20,13 +20,20 @@ def fixture(root: Path, *, guest_up=True, mapping=True, include_trace=True, stat
         "svcMapSharedMemory handle=0x1 addr=0x1000 size=0x40000 perm=0x3\n"
         "recognized as HID shared memory\n"
     ) if mapping else ""
+    boot_lines = (
+        "Auto-loaded NRO: nexium-guest-hid-probe.nro\n"
+        "Booting NRO: nexium-guest-hid-probe.nro\n"
+        "cpu memory null policy: enabled\n"
+        "svcOutputDebugString (X0=str_ptr, X1=str_len)\n"
+    )
     up = "OutputDebugString: STAGE40_GUEST_HID_B_UP\n" if guest_up else ""
     trace_lines = (
         "[hid-publish] npad=[0x2, 0x0]\n"
         "[hid-publish] npad=[0x0, 0x0]\n"
     ) if include_trace else ""
     log = (
-        mapping_lines
+        boot_lines
+        + mapping_lines
         + "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE\n"
         + "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE\n"
         + trace_lines
@@ -50,6 +57,10 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
                 if (
                     "svcMapSharedMemory" in line
                     or "recognized as HID shared memory" in line
+                    or "Auto-loaded NRO:" in line
+                    or "Booting NRO:" in line
+                    or "cpu memory null policy:" in line
+                    or "svcOutputDebugString" in line
                     or "[hid-publish]" in line
                     or "OutputDebugString:" in line
                 )
@@ -67,6 +78,11 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
             self.assertEqual(report["file_logger_log_count"], 1)
             self.assertTrue(report["guest_libnx_b_down_observed"])
             self.assertTrue(report["guest_libnx_b_up_observed_after_down_marker"])
+            self.assertTrue(report["nro_autoload_observed"])
+            self.assertTrue(report["guest_boot_started_observed"])
+            self.assertTrue(report["guest_boot_context_ready_observed"])
+            self.assertTrue(report["guest_output_debug_svc_observed"])
+            self.assertFalse(report["guest_boot_failed_observed"])
 
     def test_complete_guest_and_host_roundtrip_passes(self):
         with tempfile.TemporaryDirectory() as td:

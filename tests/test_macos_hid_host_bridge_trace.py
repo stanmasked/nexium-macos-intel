@@ -73,7 +73,7 @@ class Stage37HostBridgeTests(unittest.TestCase):
             stage.patch_source(SOURCE.replace("self.last_input.to_npad()","self.last_input.other()"))
 
     def test_reject_double_source_path_or_partial_marker(self):
-        with self.assertRaisesRegex(RuntimeError,"not unique"):
+        with self.assertRaisesRegex(RuntimeError,"merge no longer pinned"):
             stage.patch_source(SOURCE.replace("let mut buttons = kb_buttons | gp_buttons;",
                 "let mut buttons = kb_buttons | gp_buttons;\n        let mut buttons = kb_buttons | gp_buttons;"))
         with self.assertRaisesRegex(RuntimeError,"partial/extra"):

@@ -3130,7 +3130,7 @@ jobs:
             --guest-nro stage53-probe/nexium-guest-deadzone-threshold-probe.nro \
             --guest-receipt stage53-evidence/stage53-guest-deadzone-threshold.json
       - name: Upload only sanitized exact-build proof manifest
-        if: always() && (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || github.head_ref == 'work/intel-stage56-proof-file-formats'))
+        if: success() && (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || github.head_ref == 'work/intel-stage56-proof-file-formats'))
         uses: actions/upload-artifact@v4
         with:
           name: stage54-exact-intel-controller-proof-manifest

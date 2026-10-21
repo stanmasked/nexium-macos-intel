@@ -231,7 +231,7 @@ def main(argv=None) -> int:
         validate_source(exe,nro)
         data={m:run_mode(exe,nro,m,args.seconds,args.window_helper) for m in MODES}
         result={
-            "schema":"nexium-stage36-original-vh-homebrew-cli-nro/v1",
+            "schema":"nexium-stage36-original-vh-homebrew-cli-nro/v2",
             "result":"THREE_AUTHENTIC_NATIVE_MAC_GUI_CPU_BACKEND_PATHS_RECORDED",
             "source_mac_intel_ci_run":SOURCE_MAC_RUN,
             "source_original_game_nro_ci_run":SOURCE_GAME_RUN,

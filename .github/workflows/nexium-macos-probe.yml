@@ -58,6 +58,12 @@ jobs:
           python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
           grep -q 'STAGE38_SDL3_INPUT_04_BEFORE_INPUT_STRUCT' "$BASE/nexium-gui/src/input.rs"
           grep -q 'STAGE39_SDL3_STOP_BEFORE_STRUCT' "$BASE/nexium-gui/src/input.rs"
+          # Stage45: parse the actual pinned Rust source with the virtual
+          # input method inserted. This catches unclosed 'impl' delimiters
+          # before the expensive 15+ minute Rustarmic Intel compilation.
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts"); from apply_macos_stage45_original_snapshot import patch_input; p=Path(sys.argv[1]); p.write_text(patch_input(p.read_text("utf-8")), encoding="utf-8")' "$BASE/nexium-gui/src/input.rs"
+          rustfmt --edition 2021 --emit stdout "$BASE/nexium-gui/src/input.rs" >/dev/null
+          echo "STAGE45_ACTUAL_PINNED_RUSTFMT_PARSE_OK"
 
   mig-intel:
     name: Intel macOS Mach header generation
@@ -109,6 +115,12 @@ jobs:
           python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
           grep -q 'STAGE38_SDL3_INPUT_04_BEFORE_INPUT_STRUCT' "$BASE/nexium-gui/src/input.rs"
           grep -q 'STAGE39_SDL3_STOP_BEFORE_STRUCT' "$BASE/nexium-gui/src/input.rs"
+          # Stage45: parse the actual pinned Rust source with the virtual
+          # input method inserted. This catches unclosed 'impl' delimiters
+          # before the expensive 15+ minute Rustarmic Intel compilation.
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts"); from apply_macos_stage45_original_snapshot import patch_input; p=Path(sys.argv[1]); p.write_text(patch_input(p.read_text("utf-8")), encoding="utf-8")' "$BASE/nexium-gui/src/input.rs"
+          rustfmt --edition 2021 --emit stdout "$BASE/nexium-gui/src/input.rs" >/dev/null
+          echo "STAGE45_ACTUAL_PINNED_RUSTFMT_PARSE_OK"
 
       - name: Verify native-only window capture helper type checks
         run: xcrun swiftc -typecheck scripts/nexium_window_id.swift

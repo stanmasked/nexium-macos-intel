@@ -1,0 +1,74 @@
+name: Stage41 standalone Intel SDL3 Gamepad and AppKit control
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "stage41/**"
+      - ".github/workflows/stage41-standalone-sdl3.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-audit-tests:
+    name: Sixteen fail-closed SDL3 audit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax and all source-bound receipt tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile stage41/audit_standalone_sdl3.py stage41/test_standalone_sdl3.py
+          python3 -m unittest discover -s stage41 -p 'test_*.py' -v
+
+  native-intel-sdl3:
+    name: Genuine Intel Mac standalone system SDL3 with and without AppKit
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require real Intel macOS not Rosetta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+      - name: Install external system SDL3, intentionally not NeXium pinned static SDL
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install pkgconf sdl3
+          export PKG_CONFIG_PATH="$(brew --prefix sdl3)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          echo "Standalone SDL3 version: $(pkg-config --modversion sdl3)" >> "$GITHUB_STEP_SUMMARY"
+          echo 'This package version is independent of the exact SDL3 statically built into NeXium.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Build one x86_64 Objective-C++/AppKit SDL3 executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PKG_CONFIG_PATH="$(brew --prefix sdl3)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          read -r -a SDL_FLAGS <<< "$(pkg-config --cflags --libs sdl3)"
+          xcrun clang++ -std=c++17 -fobjc-arc -x objective-c++ \
+            stage41/standalone_sdl3.mm -framework AppKit -framework Foundation \
+            "${SDL_FLAGS[@]}" -o "$RUNNER_TEMP/stage41-standalone-sdl3"
+          test "$(xcrun lipo -archs "$RUNNER_TEMP/stage41-standalone-sdl3")" = x86_64
+      - name: Execute two native processes per AppKit mode and whitelist only evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 stage41/audit_standalone_sdl3.py \
+            --binary "$RUNNER_TEMP/stage41-standalone-sdl3" \
+            --output stage41-evidence/standalone-sdl3.json
+          echo 'Four native process outcomes recorded with strict source checkpoint validation.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'A standalone result does not validate NeXium gamepad function or root causality.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload only sanitized stage41 JSON (never raw stderr, screenshots or NRO)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage41-intel-standalone-sdl3-appkit-evidence
+          path: stage41-evidence/standalone-sdl3.json
+          if-no-files-found: warn
+          retention-days: 30

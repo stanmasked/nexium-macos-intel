@@ -1,0 +1,105 @@
+name: Native Intel public NRO CPU backend selection A-B
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'nro-diagnostics/**'
+      - '.github/workflows/public-nro-cpu-selection.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  choose-compiled-backend:
+    name: Native Intel clean NRO with explicit Rustarmic versus Dynarmic
+    runs-on: macos-15-intel
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate strict public-only CPU boot classifier
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s nro-diagnostics -p test_classify_backend_selection.py -v
+      - name: Download previously verified public libnx NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-clean-homebrew-nro
+          repository: stanmasked/nexium-macos-intel
+          run-id: 39508041890
+          github-token: ${{ github.token }}
+          path: public-nro
+      - name: Download exact Stage33 native Intel Rustarmic NeXium
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          repository: stanmasked/nexium-macos-intel
+          run-id: 39520408795
+          github-token: ${{ github.token }}
+          path: pinned-intel-emulator
+      - name: Verify exact public payload, x86_64 architecture and source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          BIN="$(find pinned-intel-emulator -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage34-intel-bin"
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path("public-nro")
+          data=(root/"nexium_clean_smoke.nro").read_bytes()
+          receipt=json.loads((root/"nro_build_receipt.json").read_text())
+          assert len(data)>=144 and data[0x10:0x14]==b"NRO0"
+          assert receipt["sha256"]=="2a1faf864eac55b033b2fcf8f385f2246a897a88b0b2d2f535dc0439e4dbf9d3"
+          assert hashlib.sha256(data).hexdigest()==receipt["sha256"]
+          print("STAGE34_PUBLIC_NRO_SHA256_OK")
+          PY
+      - name: Diagnostic negative control requests unavailable Dynarmic backend
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage34-intel-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_SKIP_SDL_INPUT=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 NEXIUM_CPU_BACKEND=dynarmic \
+            python3 scripts/nro_smoke_test.py --exe "$BIN" \
+              --nro public-nro/nexium_clean_smoke.nro \
+              --output stage34-report/dynarmic --seconds 14 --snapshot-ms 1200
+      - name: Retry same verified public NRO using compiled Rustarmic backend
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage34-intel-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_SKIP_SDL_INPUT=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 NEXIUM_CPU_BACKEND=rustarmic \
+            python3 scripts/nro_smoke_test.py --exe "$BIN" \
+              --nro public-nro/nexium_clean_smoke.nro \
+              --output stage34-report/rustarmic --seconds 20 --snapshot-ms 1200 \
+              --capture-window
+      - name: Require measured identical binary and publish bounded stage evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 nro-diagnostics/classify_backend_selection.py \
+            --root stage34-report \
+            --receipt public-nro/nro_build_receipt.json \
+            --output stage34-report/stage34-cpu-selection.json
+          cat stage34-report/stage34-cpu-selection.json >> "$GITHUB_STEP_SUMMARY"
+          echo "CI verifies only CPU selection, NRO boot logs and process observations." >> "$GITHUB_STEP_SUMMARY"
+          echo "Captured PNGs are never uploaded. PID-owned window hashes are only a host-window observation, not proof of guest-drawn pixels." >> "$GITHUB_STEP_SUMMARY"
+          echo "Guest execution, graphics frames, controller and audio remain unverified without separate evidence." >> "$GITHUB_STEP_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain only public diagnostic metadata, never keys, logs or screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage34-public-nro-rustarmic-vs-dynarmic
+          path: |
+            stage34-report/stage34-cpu-selection.json
+            stage34-report/dynarmic/smoke_result.json
+            stage34-report/rustarmic/smoke_result.json
+          if-no-files-found: warn

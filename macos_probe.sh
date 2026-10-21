@@ -107,6 +107,10 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE37_HID_BRIDGE:-0}" == "1" ]]; then
     echo "STAGE37: genuine original mapped virtual Switch B -> host HidState after update_input"
     python3 "$SELF/scripts/apply_macos_hid_host_bridge_trace.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE40_GUEST_HID_MAP_TRACE:-0}" == "1" ]]; then
+    echo "STAGE40: opt-in pointer-free guest HID SVC map/unmap markers"
+    python3 "$SELF/scripts/apply_macos_guest_hid_map_trace.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

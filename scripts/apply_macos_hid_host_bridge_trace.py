@@ -51,7 +51,7 @@ INSERT=r'''            // Stage37 research only. Actual guest HID state and orig
 
 def patch_source(original: str) -> str:
     if MARKER in original:
-        if original.count(INSERT)==1 and original.count(MARKER)==5:
+        if original.count(INSERT)==1 and original.count(MARKER)==4:
             return original
         raise RuntimeError("Stage37 partial/extra HID evidence markers")
     if original.count(ANCHOR)!=1:

@@ -72,6 +72,13 @@ class Stage43DpadSourcePatchTests(unittest.TestCase):
         self.assertIn(STAGE43_DPAD_PULSES, output)
         self.assertEqual(output.count("NEXIUM_MACOS_GUEST_DPAD_PROBE"), 2)
 
+    def test_sdl_virtual_button_bits_map_to_dense_raw_slots(self):
+        self.assertIn("1u32 | (1u32 << 11) | (1u32 << 14)", STAGE43_MASK)
+        self.assertIn("SDL_SetJoystickVirtualButton(ptr, 1, up_down)", STAGE43_DPAD_PULSES)
+        self.assertIn("SDL_SetJoystickVirtualButton(ptr, 2, right_down)", STAGE43_DPAD_PULSES)
+        self.assertNotIn("SDL_SetJoystickVirtualButton(ptr, 11,", STAGE43_DPAD_PULSES)
+        self.assertNotIn("SDL_SetJoystickVirtualButton(ptr, 14,", STAGE43_DPAD_PULSES)
+
     def test_patch_is_idempotent(self):
         output = patch_source(original_stage42_source())
         self.assertEqual(output, patch_source(output))

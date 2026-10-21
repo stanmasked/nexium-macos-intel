@@ -1,0 +1,47 @@
+name: NeXium Stage41 sandboxed synthetic SD path guard
+on:
+  pull_request:
+    paths:
+      - 'patches/stage41_sdmc_guard.rs'
+      - 'scripts/apply_stage41_sdmc_guard.py'
+      - 'tests/test_stage41_sdmc_guard.py'
+      - '.github/workflows/stage41-sdmc-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-guard-and-upstream-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test strict private-path policy in real Rust
+        run: |
+          set -euo pipefail
+          rustc --edition=2021 --test patches/stage41_sdmc_guard.rs -o /tmp/heman-stage41-path-tests
+          /tmp/heman-stage41-path-tests --nocapture
+      - name: Check patch contract and caller propagation
+        run: |
+          python3 -m unittest discover -s tests -p 'test_stage41_sdmc_guard.py' -v
+          python3 -m py_compile scripts/apply_stage41_sdmc_guard.py
+      - name: Patch exactly pinned upstream NeXium source, twice
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          mkdir -p "$RUNNER_TEMP/nexium-kernel/src"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/nexium-kernel/src/fs_host.rs" \
+            --output "$RUNNER_TEMP/nexium-kernel/src/fs_host.rs"
+          python3 scripts/apply_stage41_sdmc_guard.py "$RUNNER_TEMP"
+          cp "$RUNNER_TEMP/nexium-kernel/src/fs_host.rs" "$RUNNER_TEMP/fs_host.once.rs"
+          python3 scripts/apply_stage41_sdmc_guard.py "$RUNNER_TEMP"
+          cmp "$RUNNER_TEMP/nexium-kernel/src/fs_host.rs" "$RUNNER_TEMP/fs_host.once.rs"
+          grep -q 'STAGE41_PRIVATE_SD_PATH_GUARD' "$RUNNER_TEMP/nexium-kernel/src/fs_host.rs"
+          grep -q 'stage41_guest_sd_path' "$RUNNER_TEMP/nexium-kernel/src/fs_host.rs"
+      - name: State honest scope
+        run: |
+          echo 'STAGE41_SD_PRIVATE_PATH_POLICY_TESTED_ONLY'
+          echo 'NO_REAL_FS_IPC_NO_DEVICE_OR_COLD_BOOT_DURABILITY_PROOF'

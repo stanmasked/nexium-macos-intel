@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -69,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -724,6 +724,158 @@ jobs:
             stage28-report/stage28-phase-audit.json
           if-no-files-found: warn
 
+  sdl3-input-contrast:
+    name: Stage29 authentic Intel SDL3 InputBackend ctor ablation
+    if: github.head_ref == 'work/intel-stage29-sdl3-input-ablation'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download one native Intel NeXium Rustarmic binary
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage29-bundle
+      - name: Validate actual x86_64 Mach-O and compile own-window helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          BIN="$(find stage29-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage29-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage29-window-helper" \
+            scripts/nexium_window_id.swift
+      - name: Original HorizonApp ctor and SDL3 InputBackend enabled
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage29-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage29-reports/ctor-input-enabled --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage29-window-helper"
+      - name: Same HorizonApp ctor, only SDL3 InputBackend disabled
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage29-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage29-reports/ctor-input-skipped --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage29-window-helper"
+      - name: Original HorizonApp UI with only SDL3 InputBackend disabled
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage29-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage29-reports/full-input-skipped --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage29-window-helper"
+      - name: Full host init without HorizonApp ctor (negative control)
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage29-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=1 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage29-reports/full-init-minimal --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage29-window-helper"
+      - name: Classify all genuine processes, including real aborted constructors
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage29-reports')
+          names=('ctor-input-enabled','ctor-input-skipped',
+                 'full-input-skipped','full-init-minimal')
+          result={}
+          digest=None
+          for name in names:
+              p=root/name/'gui_process_probe.json'
+              assert p.is_file(), 'missing authentic process receipt: '+name
+              row=json.loads(p.read_text())
+              assert row['probe']=='no_nro_gui_process_only'
+              assert row['nro_verified'] is False and row['gameplay_verified'] is False
+              assert row['gui_verified'] is False
+              assert row['outcome'] in ('exited_nonzero',
+                                      'exited_zero_unverified',
+                                      'alive_without_gui_verification')
+              if digest is None: digest=row['emulator_sha256']
+              assert digest==row['emulator_sha256'],'mixed native binaries'
+              console=(root/name/'nexium-stdout-stderr.log').read_text(errors='replace')
+              entry='STAGE26_HORIZON_CTOR_ENTERED' in console
+              returned='STAGE26_HORIZON_CTOR_RETURNED' in console
+              skipped='STAGE29_SDL3_INPUT_SKIPPED' in console
+              enabled='STAGE29_SDL3_INPUT_ENABLED' in console
+              expect_ctor=name!='full-init-minimal'
+              if expect_ctor: assert entry,'ctor branch never entered'
+              else:
+                  assert not entry and not (skipped or enabled)
+                  assert 'STAGE25_HOST_INIT_MINIMAL_APP_ENTERED' in console
+              assert not(skipped and enabled),'contradictory SDL3 branch markers'
+              if name=='ctor-input-enabled': assert not skipped
+              elif expect_ctor: assert not enabled
+              result[name]={
+                 'outcome':row['outcome'],'exit_signal':row.get('exit_signal'),
+                 'alive_at_deadline':row['alive_at_deadline'],
+                 'window_found':row.get('window_found'),
+                 'ctor_entered':entry,'ctor_returned':returned,
+                 'actual_input_skip_branch_reached':skipped,
+                 'actual_input_enabled_branch_reached':enabled,
+                 'last_stage28_phase_seen':next(
+                    (line.strip() for line in reversed(console.splitlines())
+                     if 'STAGE28_HORIZON_CTOR_PHASE_' in line),None),
+                 'winit_reentrant_panic':
+                    'tried to handle event while another event is currently being handled'
+                    in console,
+              }
+          out={'schema':'nexium-stage29-sdl3-input-ctor-ablation/v1',
+               'result':'FOUR_ACTUAL_NATIVE_INTEL_PROCESS_RECEIPTS_CLASSIFIED',
+               'single_compiled_executable_sha256':digest,'variants':result,
+               'guest_game_nro_supplied':False,'speaker_sound_verified':False,
+               'frame_pixels_verified':False,'root_cause_proven':False}
+          (root/'stage29-input-contrast.json').write_text(
+              json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,sort_keys=True))
+          PY
+          echo 'Stage29: original constructor/SDL input A/B evidence, no NRO.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload sanitized source-bound receipts (no private console logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage29-sdl3-input-contrast
+          path: |
+            stage29-reports/ctor-input-enabled/gui_process_probe.json
+            stage29-reports/ctor-input-skipped/gui_process_probe.json
+            stage29-reports/full-input-skipped/gui_process_probe.json
+            stage29-reports/full-init-minimal/gui_process_probe.json
+            stage29-reports/stage29-input-contrast.json
+          if-no-files-found: warn
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
@@ -746,6 +898,7 @@ jobs:
       NEXIUM_EXPERIMENT_FULL_INIT_MINIMAL_APP: '1'
       NEXIUM_EXPERIMENT_HORIZON_CTOR_ONLY: '1'
       NEXIUM_EXPERIMENT_HORIZON_CTOR_PHASE_TRACE: '1'
+      NEXIUM_EXPERIMENT_SDL3_INPUT_ABLATION: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -87,6 +87,10 @@ if [[ "${NEXIUM_EXPERIMENT_HORIZON_CTOR_PHASE_TRACE:-0}" == "1" ]]; then
     echo "STAGE28_CONSTRUCTOR_PHASES: guarded HorizonApp::new phase markers"
     python3 "$SELF/scripts/apply_macos_horizon_ctor_phase_trace.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_SDL3_INPUT_ABLATION:-0}" == "1" ]]; then
+    echo "STAGE29_SDL3_INPUT: isolate only native controller initialization"
+    python3 "$SELF/scripts/apply_macos_sdl3_input_ablation.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

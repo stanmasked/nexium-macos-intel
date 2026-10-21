@@ -118,6 +118,7 @@ INPUT_METHOD = '''impl InputBackend {
         }
         passed
     }
+}
 
 '''
 

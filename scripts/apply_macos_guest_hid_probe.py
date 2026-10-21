@@ -19,8 +19,8 @@ NEW_DOWN = """let hold_ticks = if std::env::var_os("NEXIUM_MACOS_GUEST_HID_PROBE
                 12
             };
             let down = n >= 1 && n < hold_ticks;"""
-OLD_RELEASE = 'else if n == 12 { eprintln!("STAGE36_VIRTUAL_SYNTHETIC_RELEASE_SENT"); }'
-NEW_RELEASE = 'else if n == hold_ticks { eprintln!("STAGE36_VIRTUAL_SYNTHETIC_RELEASE_SENT"); }'
+OLD_RELEASE = "else if n == 12 {"
+NEW_RELEASE = "else if n == hold_ticks {"
 
 
 def patch_source(source: str) -> str:

@@ -23,6 +23,8 @@ SUPPORT = r'''// Stage36: synthetic SDL3 gamepad is NEVER enabled in a productio
 thread_local! {
     static STAGE36_VIRTUAL_PAD: std::cell::Cell<*mut sdl3::sys::joystick::SDL_Joystick> =
         const { std::cell::Cell::new(std::ptr::null_mut()) };
+    static STAGE36_VIRTUAL_ID: std::cell::Cell<u32> =
+        const { std::cell::Cell::new(0) };
     static STAGE36_VIRTUAL_TICKS: std::cell::Cell<u32> =
         const { std::cell::Cell::new(0) };
     static STAGE36_VIRTUAL_SEEN_PRESS: std::cell::Cell<bool> =
@@ -55,6 +57,7 @@ fn stage36_make_virtual_gamepad() {
         return;
     }
     STAGE36_VIRTUAL_PAD.with(|p| p.set(ptr));
+    STAGE36_VIRTUAL_ID.with(|value| value.set(id.0));
     eprintln!("STAGE36_VIRTUAL_ATTACHED_AND_OPENED");
 }
 
@@ -125,7 +128,12 @@ OBSERVE = r'''        #[cfg(target_os = "macos")]
         if std::env::var("NEXIUM_MACOS_VIRTUAL_BUTTON_TEST")
             .ok().as_deref() == Some("1")
         {
-            stage36_observe_synthetic_snapshot(snap.connected, snap.buttons);
+            let virtual_pad_is_the_selected_source =
+                STAGE36_VIRTUAL_ID.with(|id| id.get() != 0 &&
+                    self.pad.as_ref().and_then(|pad| pad.id().ok())
+                        .map(raw_joystick_id) == Some(id.get()));
+            stage36_observe_synthetic_snapshot(
+                snap.connected && virtual_pad_is_the_selected_source, snap.buttons);
         }
 '''
 

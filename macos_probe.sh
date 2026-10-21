@@ -103,6 +103,10 @@ if [[ "${NEXIUM_EXPERIMENT_VIRTUAL_INPUT_SNAPSHOT:-0}" == "1" ]]; then
     echo "STAGE36: opt-in synthetic SDL3 virtual gamepad; original InputSnapshot readback"
     python3 "$SELF/scripts/apply_macos_virtual_input_snapshot.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE37_HID_BRIDGE:-0}" == "1" ]]; then
+    echo "STAGE37: genuine original mapped virtual Switch B -> host HidState after update_input"
+    python3 "$SELF/scripts/apply_macos_hid_host_bridge_trace.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

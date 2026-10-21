@@ -78,7 +78,8 @@ jobs:
             NEXIUM_MACOS_MINIMAL_EFRAME=0 NEXIUM_CPU_BACKEND=rustarmic \
             python3 scripts/nro_smoke_test.py --exe "$BIN" \
               --nro public-nro/nexium_clean_smoke.nro \
-              --output stage34-report/rustarmic --seconds 20 --snapshot-ms 1200
+              --output stage34-report/rustarmic --seconds 20 --snapshot-ms 1200 \
+              --capture-window
       - name: Require measured identical binary and publish bounded stage evidence
         if: always()
         shell: bash
@@ -90,7 +91,8 @@ jobs:
             --output stage34-report/stage34-cpu-selection.json
           cat stage34-report/stage34-cpu-selection.json >> "$GITHUB_STEP_SUMMARY"
           echo "CI verifies only CPU selection, NRO boot logs and process observations." >> "$GITHUB_STEP_SUMMARY"
-          echo "Guest execution, graphics frames, controller and audio remain unverified without separate evidence." >> "$GITHUB_STEP_SUMMARY"
+          echo "Captured PNGs are never uploaded. PID-owned window hashes are only a host-window observation, not proof of guest-drawn pixels." >> "$GITHUB_STEP_SUMMARY"
+          echo "Guest execution, graphics frames, controller and audio remain unverified without separate evidence." >> "$GITHUB_STEP_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
       - name: Retain only public diagnostic metadata, never keys, logs or screenshots
         if: always()
         uses: actions/upload-artifact@v4

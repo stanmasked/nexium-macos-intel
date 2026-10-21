@@ -2680,7 +2680,7 @@ jobs:
 
   stage50-guest-mixed-dpad-dual-stick-nro:
     name: Stage50 build guest dual stick analog diagnostic NRO
-    if: github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick'
+    if: github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick' || github.head_ref == 'work/intel-stage51-controller-profile'
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:latest
@@ -2730,7 +2730,7 @@ jobs:
 
   stage50-guest-mixed-dpad-dual-stick-readback:
     name: Stage50 native Intel guest dual stick analog readback
-    if: github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick'
+    if: github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick' || github.head_ref == 'work/intel-stage51-controller-profile'
     needs: [intel-build, stage50-guest-mixed-dpad-dual-stick-nro]
     runs-on: macos-15-intel
     timeout-minutes: 16
@@ -2869,7 +2869,25 @@ jobs:
       - name: Experimental Intel NeXium build
         id: build
         continue-on-error: true
-        run: bash ./macos_probe.sh
+        env:
+          # Explicit profile opt-in, never enabled by default or on main.
+          NEXIUM_INTEL_INPUT_PROFILE: ${{ github.head_ref == 'work/intel-stage51-controller-profile' && 'controller-diagnostics-v1' || 'off' }}
+        run: |
+          set -euo pipefail
+          if [[ "$NEXIUM_INTEL_INPUT_PROFILE" == "controller-diagnostics-v1" ]]; then
+            # The legacy CI job supplies per-stage 0s to all unlisted branches.
+            # Unset these legacy selectors and let the *branch-independent*
+            # explicit diagnostics profile choose its full source patch chain.
+            unset NEXIUM_EXPERIMENT_STAGE40_GUEST_HID
+            unset NEXIUM_EXPERIMENT_STAGE42_GUEST_AB
+            unset NEXIUM_EXPERIMENT_STAGE43_GUEST_DPAD
+            unset NEXIUM_EXPERIMENT_STAGE44_GUEST_STICK_X
+            unset NEXIUM_EXPERIMENT_STAGE45_GUEST_STICK_Y
+            unset NEXIUM_EXPERIMENT_STAGE46_GUEST_RIGHT_X
+            unset NEXIUM_EXPERIMENT_STAGE47_GUEST_RIGHT_Y
+            unset NEXIUM_EXPERIMENT_STAGE48_DUAL_STICK
+          fi
+          bash ./macos_probe.sh
       - name: Retain evidence, even on failure
         if: always()
         uses: actions/upload-artifact@v4

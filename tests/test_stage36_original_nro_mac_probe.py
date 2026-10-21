@@ -69,6 +69,44 @@ class Stage36OriginalHomebrew(unittest.TestCase):
             self.assertEqual(stage.digest(path),stage.digest(path))
             self.assertEqual(len(stage.digest(path)),64)
 
+    def test_genuine_nexium_file_logger_is_read_not_just_stdout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            console=root/"console.txt"
+            console.write_text("private stdout without loader marker")
+            log=root/"nexium-data"/"logs"/"nexium-20261021-000000.log"
+            log.parent.mkdir(parents=True)
+            log.write_text("2026 INFO Auto-loaded NRO: original-homebrew")
+            evidence=stage.collect_private_source_evidence(root,console)
+            self.assertTrue(evidence["auto_loaded_nro"])
+            self.assertFalse(evidence["failed_load_nro"])
+            self.assertEqual(evidence["guest_files"],0)
+
+    def test_exact_nexium_sdmc_path_and_no_private_data_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            console=root/"private.log"
+            console.write_text("")
+            guest=root/"nexium-data"/"sdmc"/"switch"/"vandal-hearts-remake"
+            guest.mkdir(parents=True)
+            (guest/"probe-receipt.csv").write_text("original diagnostic data")
+            (guest/"empty.csv").write_text("")
+            d=stage.collect_private_source_evidence(root,console)
+            self.assertEqual(d["guest_files"],1)
+            self.assertNotIn("diagnostic data",str(d))
+            self.assertNotIn(str(root),str(d))
+
+    def test_false_guest_loader_marker_outside_exact_log_scope_is_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            console=root/"console.txt"
+            console.write_text("")
+            decoy=root/"nexium-data"/"other"
+            decoy.mkdir(parents=True)
+            (decoy/"nexium-20261021.log").write_text("Auto-loaded NRO: forged")
+            evidence=stage.collect_private_source_evidence(root,console)
+            self.assertFalse(evidence["auto_loaded_nro"])
+
     def test_source_modes_are_distinct_and_not_commercial_game(self):
         self.assertEqual(len(set(stage.MODES)),2)
         self.assertEqual(stage.MODES[0],"original-homebrew-nro")

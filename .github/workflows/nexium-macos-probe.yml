@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py scripts/audit_sdl3_cutpoints.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -69,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py scripts/audit_sdl3_cutpoints.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -1043,86 +1043,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          import re
-          root=Path("stage39-report")
-          modes=("no-input","before-hints","before-init","before-gamepad",
-                 "before-rumble","before-struct","full")
-          cut=("hints","init","gamepad","rumble","struct")
-          phases=("00_ENTRY","01_BEFORE_SDL_INIT","02_BEFORE_GAMEPAD_SUBSYSTEM",
-                  "03_BEFORE_RUMBLE","04_BEFORE_INPUT_STRUCT")
-          rows={}
-          hashes=[]
-          for mode in modes:
-              base=root/mode
-              receipt=json.loads((base/"gui_process_probe.json").read_text())
-              assert receipt["probe"]=="no_nro_gui_process_only"
-              assert all(receipt[k] is False for k in ("nro_verified","gameplay_verified","gui_verified"))
-              hashes.append(receipt["emulator_sha256"])
-              log=(base/"nexium-stdout-stderr.log").read_bytes()[:350000].decode("utf-8","replace")
-              emitted=re.findall(r"^STAGE38_SDL3_INPUT_([A-Z0-9_]+)\s*$",log,re.M)
-              stops=re.findall(r"^STAGE39_SDL3_STOP_BEFORE_([A-Z]+)\s*$",log,re.M)
-              enabled=bool(re.search(r"^STAGE29_SDL3_INPUT_ENABLED\s*$",log,re.M))
-              skipped=bool(re.search(r"^STAGE29_SDL3_INPUT_SKIPPED\s*$",log,re.M))
-              assert emitted == list(phases[:len(emitted)]), "source markers reordered/duplicated"
-              if mode=="no-input":
-                  assert skipped and not enabled and not emitted and not stops
-              elif mode=="full":
-                  assert enabled and not skipped and not stops and emitted
-              else:
-                  assert enabled and not skipped
-                  ix=cut.index(mode.removeprefix("before-"))
-                  assert stops in ([],[cut[ix].upper()]), "unexpected cutpoint execution"
-                  assert len(emitted)<=ix+1, "ran beyond cutpoint"
-                  if stops:
-                      assert emitted==list(phases[:ix+1]), "cutpoint and trace disagree"
-                  if receipt["alive_at_deadline"]:
-                      assert stops, "survived despite not reaching requested cutpoint"
-              rows[mode]={
-                  "outcome":receipt["outcome"],
-                  "exit_signal":receipt.get("exit_signal"),
-                  "alive_at_deadline":receipt["alive_at_deadline"],
-                  "own_window_found":receipt.get("window_found",False),
-                  "observed_prior_subphases":emitted,
-                  "requested_cutpoint":mode if mode.startswith("before-") else None,
-                  "cutpoint_reached":bool(stops),
-                  "winit_reentrant_panic":
-                      "tried to handle event while another event is currently being handled" in log,
-              }
-          assert len(set(hashes))==1,"not the identical executable"
-          assert len(hashes[0])==64 and re.fullmatch(r"[0-9a-f]{64}",hashes[0])
-          assert rows["no-input"]["alive_at_deadline"],"known safe negative control regressed"
-          report={
-              "schema":"nexium-stage39-intel-sdl3-cutpoint-contrast/v1",
-              "single_native_x86_64_macho_sha256":hashes[0],
-              "real_process_count":len(rows),
-              "variants":rows,
-              "early_return_may_run_sdl_destructors":True,
-              "isolates_control_flow_not_native_causality":True,
-              "root_cause_verified":False,
-              "gameplay_verified":False,
-              "game_pixels_verified":False,
-              "controller_input_verified":False,
-          }
-          root.mkdir(exist_ok=True)
-          (root/"stage39-cutpoints.json").write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
-          print(json.dumps(report,sort_keys=True))
-          PY
+          python3 scripts/audit_sdl3_cutpoints.py \
+            --reports stage39-report \
+            --output stage39-report/stage39-cutpoints.json
       - name: Save only sanitized evidence, not runtime logs or screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nexium-intel-stage39-sdl3-cutpoint-receipts
           path: |
-            stage39-report/no-input/gui_process_probe.json
-            stage39-report/before-hints/gui_process_probe.json
-            stage39-report/before-init/gui_process_probe.json
-            stage39-report/before-gamepad/gui_process_probe.json
-            stage39-report/before-rumble/gui_process_probe.json
-            stage39-report/before-struct/gui_process_probe.json
-            stage39-report/full/gui_process_probe.json
             stage39-report/stage39-cutpoints.json
           if-no-files-found: warn
 

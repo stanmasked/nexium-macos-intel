@@ -140,7 +140,11 @@ class Stage50MixedDigitalAnalogAuditTests(unittest.TestCase):
                 guest.read_text().replace("npad=[0x2002, 0x2002]", "npad=[0x6002, 0x6002]"),
                 encoding="utf-8",
             )
-            self.assertFalse(audit(root)["same_process_guest_mixed_digital_analog_passed"])
+            receipt = audit(root)
+            self.assertFalse(receipt["same_process_guest_mixed_digital_analog_passed"])
+            self.assertTrue(
+                receipt["original_npad_opposite_directions_same_sample_observed"]
+            )
 
     def test_guest_spurious_button_marker_rejected(self):
         with tempfile.TemporaryDirectory() as td:

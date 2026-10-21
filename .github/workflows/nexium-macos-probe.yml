@@ -1363,7 +1363,7 @@ jobs:
 
   hid-host-original-bridge:
     name: Stage37/38 original synthetic Switch B to host HID and NPad LIFO
-    if: github.head_ref == 'work/intel-stage37-synthetic-guest-hid-path' || github.head_ref == 'work/intel-stage38-npad-lifo-buffer' || github.head_ref == 'work/intel-stage39-guest-hid-map-audit'
+    if: github.head_ref == 'work/intel-stage37-synthetic-guest-hid-path' || github.head_ref == 'work/intel-stage38-npad-lifo-buffer'
     needs: intel-build
     runs-on: macos-15-intel
     timeout-minutes: 20
@@ -1536,7 +1536,7 @@ jobs:
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
-    if: github.head_ref != 'work/intel-stage13-private-window-evidence'
+    if: github.head_ref != 'work/intel-stage13-private-window-evidence' && github.head_ref != 'work/intel-stage39-guest-hid-map-audit'
     name: Native Intel build (${{ matrix.backend }}, experimental)
     # Intel compiler-rt preflight itself now reruns all syntax and fixture tests;
     # do not stall macOS builds on GitHub's independent Ubuntu runner queue.

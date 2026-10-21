@@ -50,27 +50,41 @@ def audit(report_dir: Path) -> dict:
     smoke = json.loads(report_path.read_text(encoding="utf-8"))
     console = console_path.read_text(encoding="utf-8", errors="replace")
 
-    guest = {marker: marker in console for marker in GUEST_MARKERS}
-    host = {marker: marker in console for marker in HOST_MARKERS}
-    samples = npad_samples(console)
+    # NeXium's pinned FileLogger writes guest SVC OutputDebugString records
+    # to NEXIUM_DATA_ROOT/logs, not necessarily to the captured stdout/stderr.
+    # The smoke harness sets NEXIUM_DATA_ROOT to report_dir/data-root, so only
+    # read logs from this isolated run; never search a user-wide log directory.
+    file_logger_dir = report_dir / "data-root" / "logs"
+    file_logger_paths = sorted(file_logger_dir.glob("nexium-*.log")) if file_logger_dir.is_dir() else []
+    file_logger_chunks = []
+    for log_path in file_logger_paths:
+        try:
+            file_logger_chunks.append(log_path.read_text(encoding="utf-8", errors="replace"))
+        except OSError as error:
+            raise ValueError("could not read isolated NeXium file logger output") from error
+    evidence = "\\n".join([console, *file_logger_chunks])
+
+    guest = {marker: marker in evidence for marker in GUEST_MARKERS}
+    host = {marker: marker in evidence for marker in HOST_MARKERS}
+    samples = npad_samples(evidence)
     pressed = [i for i, values in enumerate(samples) if any(v & B_BIT for v in values)]
     released_after = any(
         all((value & B_BIT) == 0 for value in samples[j])
         for i in pressed for j in range(i + 1, len(samples))
     )
-    mapping_call = "svcMapSharedMemory" in console
-    hid_mapping_success = "recognized as HID shared memory" in console
+    mapping_call = "svcMapSharedMemory" in evidence
+    hid_mapping_success = "recognized as HID shared memory" in evidence
     process_status = smoke.get("status", "missing")
     process_outcome_acceptable = (
         process_status == "exited_zero_unverified" and smoke.get("exit_code") == 0
     ) or process_status == "timeout_alive_unverified"
-    guest_down_at = console.find(GUEST_MARKERS[1])
-    guest_up_at = console.find(GUEST_MARKERS[2])
-    guest_pass_at = console.find(GUEST_MARKERS[3])
+    guest_down_at = evidence.find(GUEST_MARKERS[1])
+    guest_up_at = evidence.find(GUEST_MARKERS[2])
+    guest_pass_at = evidence.find(GUEST_MARKERS[3])
     guest_edges_ordered = guest_down_at >= 0 and guest_up_at > guest_down_at
     guest_pass_after_edges = guest_edges_ordered and guest_pass_at > guest_up_at
-    host_press_at = console.find(HOST_MARKERS[0])
-    host_release_at = console.find(HOST_MARKERS[1])
+    host_press_at = evidence.find(HOST_MARKERS[0])
+    host_release_at = evidence.find(HOST_MARKERS[1])
     host_edges_ordered = host_press_at >= 0 and host_release_at > host_press_at
 
     result = {
@@ -87,6 +101,7 @@ def audit(report_dir: Path) -> dict:
         "host_original_hid_b_release_observed": host[HOST_MARKERS[1]],
         "guest_hid_map_svc_observed": mapping_call,
         "guest_hid_map_success_marker_observed": hid_mapping_success,
+        "file_logger_log_count": len(file_logger_paths),
         "serialized_npad_samples": len(samples),
         "serialized_npad_b_press_samples": len(pressed),
         "serialized_npad_b_release_after_press_observed": bool(released_after),

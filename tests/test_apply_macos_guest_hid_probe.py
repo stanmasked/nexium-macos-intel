@@ -17,7 +17,8 @@ let down = n >= 1 && n < 12;
 class GuestHidLongHoldPatchTests(unittest.TestCase):
     def test_extends_only_the_guest_probe_hold(self):
         result = PATCH.patch_source(FIXTURE)
-        self.assertIn('var_os("NEXIUM_MACOS_GUEST_HID_PROBE")', result)
+        self.assertIn('var("NEXIUM_MACOS_GUEST_HID_PROBE")', result)
+        self.assertIn('.ok().as_deref() == Some("1")', result)
         self.assertIn("900", result)
         self.assertIn("else {\\n                12", result)
         self.assertIn("else if n == hold_ticks", result)

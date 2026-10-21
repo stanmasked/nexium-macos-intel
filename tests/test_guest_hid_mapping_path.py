@@ -77,7 +77,7 @@ if port_name == "IAppletResource" && cmd_id == 0 {
     let h = kernel.handles.create_handle(HandleType::SharedMemory);
     return build_ipc_response_copy(ctx, 0, &[], &[h]);
 }
-if port_name == "mm:u" { return Vec::new(); }
+    if port_name == "mm:u" { return Vec::new(); }
 """
     (root / "nexium-kernel/src/kernel/svc.rs").write_text(svc)
     hid = """

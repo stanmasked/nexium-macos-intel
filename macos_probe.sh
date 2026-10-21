@@ -95,6 +95,10 @@ if [[ "${NEXIUM_EXPERIMENT_SDL3_PREWINIT:-0}" == "1" ]]; then
     echo "STAGE32_PREWINIT: construct and retain real SDL3 input before winit"
     python3 "$SELF/scripts/apply_macos_sdl3_pre_winit.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_INPUT_POLL_MARKERS:-0}" == "1" ]]; then
+    echo "STAGE34_INPUT_POLL: one-time real SDL3 event-loop markers"
+    python3 "$SELF/scripts/apply_macos_input_poll_trace.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

@@ -36,23 +36,52 @@ INSERT = '''            // Stage44 only: left stick negative X, neutral, positiv
 '''
 
 
+
+OBSERVE_ANCHOR = "        snap\n    }\n\n    pub fn first_pressed"
+OBSERVE = '''        // Stage44: inspect the genuine original InputSnapshot, never assign sticks.
+        #[cfg(target_os = "macos")]
+        if std::env::var("NEXIUM_MACOS_GUEST_STICK_X_PROBE")
+            .ok().as_deref() == Some("1")
+        {
+            static STAGE44_OBS_PHASE: std::sync::atomic::AtomicU8 =
+                std::sync::atomic::AtomicU8::new(0);
+            use std::sync::atomic::Ordering;
+            let phase = STAGE44_OBS_PHASE.load(Ordering::Relaxed);
+            let lx = snap.sticks[0];
+            if phase == 0 && lx < -12000 {
+                eprintln!("STAGE44_ORIGINAL_SNAPSHOT_LEFTX_NEGATIVE");
+                STAGE44_OBS_PHASE.store(1, Ordering::Relaxed);
+            } else if phase == 1 && lx > -4000 && lx < 4000 {
+                eprintln!("STAGE44_ORIGINAL_SNAPSHOT_LEFTX_CENTER_AFTER_NEGATIVE");
+                STAGE44_OBS_PHASE.store(2, Ordering::Relaxed);
+            } else if phase == 2 && lx > 12000 {
+                eprintln!("STAGE44_ORIGINAL_SNAPSHOT_LEFTX_POSITIVE");
+                STAGE44_OBS_PHASE.store(3, Ordering::Relaxed);
+            } else if phase == 3 && lx > -4000 && lx < 4000 {
+                eprintln!("STAGE44_ORIGINAL_SNAPSHOT_LEFTX_CENTER_AFTER_POSITIVE");
+                STAGE44_OBS_PHASE.store(4, Ordering::Relaxed);
+            }
+        }
+'''
+
 def patch_source(source: str) -> str:
-    if INSERT in source:
-        if source.count(INSERT) == 1:
+    if INSERT in source or OBSERVE in source:
+        if source.count(INSERT) == 1 and source.count(OBSERVE) == 1:
             return source
-        raise RuntimeError("duplicate Stage44 stick-axis patch")
+        raise RuntimeError("partial/duplicate Stage44 stick-axis patch")
     if "NEXIUM_MACOS_GUEST_STICK_X_PROBE" in source:
         raise RuntimeError("partial or mismatched Stage44 stick patch")
-    if source.count(ANCHOR) != 1:
-        raise RuntimeError("original pinned SDL3 SOUTH/B button anchor absent/ambiguous")
+    if source.count(ANCHOR) != 1 or source.count(OBSERVE_ANCHOR) != 1:
+        raise RuntimeError("pinned SDL3 SOUTH/B or original snapshot anchor absent")
     if source.count("NEXIUM_MACOS_GUEST_DPAD_PROBE") != 2:
         raise RuntimeError("original Stage43 DPad guard missing; wrong patch order")
     if source.count("NEXIUM_MACOS_GUEST_HID_PROBE") != 1:
         raise RuntimeError("original Stage40 long B hold missing")
     if source.count("desc.axis_mask = 0x3fu32;") != 1:
         raise RuntimeError("SDL3 virtual joystick must advertise LeftX axis")
-    return source.replace(ANCHOR, INSERT + ANCHOR, 1)
-
+    stage44 = source.replace(ANCHOR, INSERT + ANCHOR, 1)
+    stage44 = stage44.replace(OBSERVE_ANCHOR, OBSERVE + OBSERVE_ANCHOR, 1)
+    return stage44
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)

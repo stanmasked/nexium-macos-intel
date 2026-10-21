@@ -102,6 +102,39 @@ class ClassificationTests(unittest.TestCase):
             self.assertNotIn("Users", str(flags))
             self.assertNotIn("private", str(flags))
 
+    def test_guest_boot_milestones_remain_uncertified_not_gameplay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "private-data/logs"
+            logs.mkdir(parents=True)
+            (logs / "emu.log").write_text(
+                "Booting NRO: /Users/private/nexium_clean_smoke.nro\n"
+                "cpu memory null policy: strict fault\n"
+                "nexium-nvdrv: Vulkan Renderer initialized\n"
+                "[snapshot] saved /Users/private/test.bmp\n"
+            )
+            m = stage.marker_flags(root / "nexium-console.log", logs)
+            self.assertTrue(m["guest_boot_thread_entered"])
+            self.assertTrue(m["guest_cpu_initialized_log_marker"])
+            self.assertTrue(m["guest_vulkan_renderer_log_marker"])
+            self.assertTrue(m["guest_snapshot_saved_log_marker"])
+            self.assertFalse(m["guest_boot_context_failure"])
+            report = stage.classify(BASE, GUEST, EXPECTED, m)
+            self.assertFalse(report["actual_guest_instructions_verified"])
+            self.assertFalse(report["gameplay_verified"])
+            self.assertNotIn("/Users/private/", str(report))
+
+    def test_guest_boot_failure_reported_without_source_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "emu.log").write_text(
+                "Booting NRO: /private/data/nexium_clean_smoke.nro\n"
+                "Boot failed: loader could not create process\n")
+            m = stage.marker_flags(root / "missing.log", root)
+            self.assertTrue(m["guest_boot_thread_entered"])
+            self.assertTrue(m["guest_boot_context_failure"])
+            self.assertNotIn("/private/data/", str(m))
+
     def test_late_failed_load_marker_must_override_auto_loaded_marker(self):
         report = stage.classify(BASE, GUEST, EXPECTED,
                                 {**FLAGS, "auto_loaded_nro_log_marker": True,

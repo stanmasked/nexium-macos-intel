@@ -37,7 +37,7 @@ jobs:
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
           mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          for file in nexium-gui/src/main.rs nexium-gui/src/input.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -48,6 +48,13 @@ jobs:
           grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+          # Catch original pinned SDL3 source drift before a costly Intel build.
+          python3 scripts/apply_macos_sdl3_subphase_trace.py "$BASE"
+          python3 scripts/apply_macos_sdl3_subphase_trace.py "$BASE"
+          python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
+          python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
+          grep -q 'STAGE38_SDL3_INPUT_04_BEFORE_INPUT_STRUCT' "$BASE/nexium-gui/src/input.rs"
+          grep -q 'STAGE39_SDL3_STOP_BEFORE_STRUCT' "$BASE/nexium-gui/src/input.rs"
 
   mig-intel:
     name: Intel macOS Mach header generation
@@ -78,7 +85,7 @@ jobs:
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
           mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          for file in nexium-gui/src/main.rs nexium-gui/src/input.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -89,6 +96,13 @@ jobs:
           grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+          # Catch original pinned SDL3 source drift before a costly Intel build.
+          python3 scripts/apply_macos_sdl3_subphase_trace.py "$BASE"
+          python3 scripts/apply_macos_sdl3_subphase_trace.py "$BASE"
+          python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
+          python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
+          grep -q 'STAGE38_SDL3_INPUT_04_BEFORE_INPUT_STRUCT' "$BASE/nexium-gui/src/input.rs"
+          grep -q 'STAGE39_SDL3_STOP_BEFORE_STRUCT' "$BASE/nexium-gui/src/input.rs"
 
       - name: Verify native-only window capture helper type checks
         run: xcrun swiftc -typecheck scripts/nexium_window_id.swift

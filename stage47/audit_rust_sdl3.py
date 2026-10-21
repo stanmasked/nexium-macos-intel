@@ -47,6 +47,8 @@ def inspect(mode:str,code:int|None,raw:str,timed_out:bool=False)->dict:
         raise ValueError("invalid, unknown or reordered source checkpoints")
     if code==0 and (timed_out or seq[-1]!="CONTRACT_PASSED"):
         raise ValueError("zero status without actual pressed/released controller contract")
+    if (timed_out or code != 0) and seq[-1]=="CONTRACT_PASSED":
+        raise ValueError("controller contract marker followed by timeout/nonzero process exit")
     return {
         "status":"timeout" if timed_out else ("zero" if code==0 else "nonzero"),
         "exit_signal":f"SIG{-code}" if code is not None and code<0 else None,
@@ -96,8 +98,9 @@ def main(argv=None):
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(report,sort_keys=True,indent=2)+"\n","utf-8")
     print(json.dumps(report,sort_keys=True))
-    if not all(x["actual_rust_contract_passed"] for x in outcomes.values()):
-        raise ValueError("one or more authentic Rust SDL3 virtual input roundtrips failed")
+    if not all(x["status"]=="zero" and x["actual_rust_contract_passed"]
+               for x in outcomes.values()):
+        raise ValueError("one or more authentic Rust SDL3 virtual input roundtrips did not exit cleanly")
     return 0
 
 if __name__=="__main__":

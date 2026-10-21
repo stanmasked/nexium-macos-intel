@@ -9,6 +9,22 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
+import re
+
+
+def scrub_public_boot_error(raw: str) -> str:
+    """Small useful boot error excerpt without runner-local paths or secrets."""
+    summary = raw.splitlines()[0][:500]
+    summary = re.sub(
+        r"/(?:Users|private|tmp|var|Volumes|opt|home)/[^\s,;)]*",
+        "<local-path>", summary, flags=re.IGNORECASE,
+    )
+    summary = re.sub(
+        r"(?i)\b(token|password|secret|private_key)\s*[:=]\s*[^\s,;]+",
+        r"\1=<redacted>", summary,
+    )
+    summary = re.sub(r"(?i)\b[0-9a-f]{32,}\b", "<hash>", summary)
+    return summary[:240]
 
 
 def marker_flags(console: Path, data_logs: Path) -> dict:
@@ -23,7 +39,12 @@ def marker_flags(console: Path, data_logs: Path) -> dict:
         except OSError:
             continue
     text = "\n".join(lines)
+    boot_errors = [
+        scrub_public_boot_error(line.partition("Boot failed:")[2].strip())
+        for line in lines if "Boot failed:" in line
+    ]
     return {
+        "guest_boot_error_excerpt": boot_errors[:3],
         "auto_loaded_nro_log_marker": "Auto-loaded NRO:" in text,
         "nro_load_error_log_marker": "Failed to load NRO:" in text,
         "boot_command_log_marker": "Boot: NRO=" in text,

@@ -2543,7 +2543,7 @@ jobs:
 
   stage48-guest-dual-stick-combined-nro:
     name: Stage48 build guest dual stick analog diagnostic NRO
-    if: github.head_ref == 'work/intel-stage48-dual-stick-combined'
+    if: github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration'
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:latest
@@ -2593,7 +2593,7 @@ jobs:
 
   stage48-guest-dual-stick-combined-readback:
     name: Stage48 native Intel guest dual stick analog readback
-    if: github.head_ref == 'work/intel-stage48-dual-stick-combined'
+    if: github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration'
     needs: [intel-build, stage48-guest-dual-stick-combined-nro]
     runs-on: macos-15-intel
     timeout-minutes: 16
@@ -2705,14 +2705,14 @@ jobs:
       NEXIUM_EXPERIMENT_INPUT_POLL_MARKERS: '1'
       NEXIUM_EXPERIMENT_VIRTUAL_INPUT_SNAPSHOT: '1'
       NEXIUM_EXPERIMENT_STAGE37_HID_BRIDGE: '1'
-      NEXIUM_EXPERIMENT_STAGE40_GUEST_HID: ${{ (github.head_ref == 'work/intel-stage40-guest-npad-readback' || github.head_ref == 'work/intel-stage42-guest-ab-chord' || github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined') && '1' || '0' }}
-      NEXIUM_EXPERIMENT_STAGE42_GUEST_AB: ${{ (github.head_ref == 'work/intel-stage42-guest-ab-chord' || github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined') && '1' || '0' }}
-      NEXIUM_EXPERIMENT_STAGE43_GUEST_DPAD: ${{ (github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined') && '1' || '0' }}
-      NEXIUM_EXPERIMENT_STAGE44_GUEST_STICK_X: ${{ (github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined') && '1' || '0' }}
-      NEXIUM_EXPERIMENT_STAGE45_GUEST_STICK_Y: ${{ (github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined') && '1' || '0' }}
-      NEXIUM_EXPERIMENT_STAGE46_GUEST_RIGHT_X: ${{ (github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined') && '1' || '0' }}
-      NEXIUM_EXPERIMENT_STAGE47_GUEST_RIGHT_Y: ${{ (github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined') && '1' || '0' }}
-      NEXIUM_EXPERIMENT_STAGE48_DUAL_STICK: ${{ github.head_ref == 'work/intel-stage48-dual-stick-combined' && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE40_GUEST_HID: ${{ (github.head_ref == 'work/intel-stage40-guest-npad-readback' || github.head_ref == 'work/intel-stage42-guest-ab-chord' || github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE42_GUEST_AB: ${{ (github.head_ref == 'work/intel-stage42-guest-ab-chord' || github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE43_GUEST_DPAD: ${{ (github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE44_GUEST_STICK_X: ${{ (github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE45_GUEST_STICK_Y: ${{ (github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE46_GUEST_RIGHT_X: ${{ (github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE47_GUEST_RIGHT_Y: ${{ (github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE48_DUAL_STICK: ${{ (github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration') && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -91,6 +91,10 @@ if [[ "${NEXIUM_EXPERIMENT_SDL3_INPUT_ABLATION:-0}" == "1" ]]; then
     echo "STAGE29_SDL3_INPUT: isolate only native controller initialization"
     python3 "$SELF/scripts/apply_macos_sdl3_input_ablation.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_SDL3_PREWINIT:-0}" == "1" ]]; then
+    echo "STAGE32_PREWINIT: construct and retain real SDL3 input before winit"
+    python3 "$SELF/scripts/apply_macos_sdl3_pre_winit.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

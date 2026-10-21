@@ -76,6 +76,12 @@ def sanitize(mode: str, state: dict) -> dict:
             bool(state.get("boot_failed",False)),
         "runner_guest_cpu_context_initialization_observed":
             bool(state.get("cpu_memory_policy",False)),
+        "original_kernel_boot_phases_observed":
+            state.get("kernel_boot_phases",[]),
+        "last_original_kernel_boot_phase_observed":
+            (state.get("kernel_boot_phases",[]) or [None])[-1],
+        "boot_failure_safe_category":
+            state.get("boot_failure_category","NO_BOOT_ERROR_OBSERVED"),
         "source_guest_sd_diagnostic_file_count":
             int(state.get("guest_files",0)),
         "guest_probe_file_content_validated":False,
@@ -87,6 +93,43 @@ def sanitize(mode: str, state: dict) -> dict:
         "private_console_uploaded":False,
         "guest_sd_file_bytes_uploaded":False,
     }
+
+
+# Pinned upstream nexium-kernel::boot::BootContext::new_nro phase texts.
+# Only names are published; no addresses, paths, register values or raw log.
+SOURCE_KERNEL_BOOT_PHASES=(
+    ("00_LOADING_NRO", "Loading NRO from:"),
+    ("01_ADDRESS_SPACE_CREATED", "Creating address space"),
+    ("02_MAPPING_MEMORY", "Mapping memory regions"),
+    ("03_MAPPING_HEAP", "Mapping heap @"),
+    ("04_MAPPING_STACK", "Mapping stack @"),
+    ("05_MAPPING_EXTRAS", "Mapping extras (env+tls+exit_stub+tls_pool)"),
+    ("06_WRITING_NRO", "Writing NRO ("),
+    ("07_INITIALIZING_ENV", "Initializing environment block @"),
+    ("08_INITIALIZING_CPU", "Initializing CPU (backend:"),
+    ("09_CPU_REGISTER_SETUP", "Setting up CPU registers"),
+    ("10_BOOT_CONTEXT_READY", "Boot context ready"),
+)
+
+
+def boot_failure_category(text: str) -> str:
+    """Only a bounded source-relevant enum; NEVER return the error or user path."""
+    errors=[line.split("Boot failed:",1)[1].strip().lower()
+            for line in text.splitlines() if "Boot failed:" in line]
+    if not errors:
+        return "NO_BOOT_ERROR_OBSERVED"
+    reason=errors[-1]
+    if "failed to init cpu" in reason or "cpu backend" in reason or "rustarmic" in reason:
+        return "GUEST_CPU_INITIALIZATION"
+    if any(k in reason for k in ("failed to map", "direct-mapped", "address space", "memory region")):
+        return "GUEST_ADDRESS_MAPPING"
+    if "failed to write nro" in reason or "failed to write" in reason:
+        return "GUEST_MEMORY_WRITE"
+    if any(k in reason for k in ("open ", "mmap ", "not found", "permission denied")):
+        return "SOURCE_NRO_FILE_ACCESS"
+    if any(k in reason for k in ("nro", "segment", "header", "unrecognized file format")):
+        return "NRO_PARSING_OR_FORMAT"
+    return "OTHER_UNCLASSIFIED_BOOT_ERROR"
 
 
 def collect_private_source_evidence(root: Path, console: Path) -> dict:
@@ -105,6 +148,9 @@ def collect_private_source_evidence(root: Path, console: Path) -> dict:
         "booting_nro":"Booting NRO:" in text,
         "boot_failed":"Boot failed:" in text,
         "cpu_memory_policy":"cpu memory null policy:" in text,
+        "kernel_boot_phases":[name for name,marker in SOURCE_KERNEL_BOOT_PHASES
+                              if marker in text],
+        "boot_failure_category":boot_failure_category(text),
         "guest_files":found,
     }
 

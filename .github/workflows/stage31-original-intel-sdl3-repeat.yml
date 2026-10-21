@@ -1,0 +1,121 @@
+name: Stage31 unchanged Intel SDL3 contrast repeatability
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage31-original-intel-sdl3-repeat.yml'
+      - 'scripts/stage31_original_sdl3_replay.py'
+      - 'tests/test_stage31_original_sdl3_replay.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: stage31-authentic-sdl3-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  authentic-sdl3-ab:
+    name: Repeat four native Intel SDL3/HorizonApp variants twice, source-bound
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Real Intel hardware, independent eleven safe-audit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python3 -m py_compile scripts/stage31_original_sdl3_replay.py
+          python3 -m unittest discover -s tests \
+            -p test_stage31_original_sdl3_replay.py -v
+
+      - name: Download same original Stage29 successful compile (not its failed verifier)
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ github.repository }}
+          run-id: 39559370735
+          name: nexium-macos-intel-rustarmic-probe
+          github-token: ${{ github.token }}
+          path: stage31-original-stage29-bundle
+
+      - name: Verify exact original x86_64 NeXium Mach-O and window helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage31-original-stage29-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(shasum -a 256 "$BIN" | awk '{print $1}')" = \
+            dcde8e712eac86966bd66b6510b5d99ab69092adbaa4c67f19a4a3172c44d89b
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage31-original-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage31-window" \
+            scripts/nexium_window_id.swift
+          echo 'Stage31 pinned original Stage29 Intel Mach-O verified.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record eight actual original Intel GUI-process runs, no NRO/audio
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage31-original-bin")"
+          for rep in 1 2; do
+            for mode in ctor-input-enabled ctor-input-skipped full-input-skipped full-init-minimal; do
+              case "$mode" in
+                ctor-input-enabled)
+                  ctor=1; bypass=0; minimal=0 ;;
+                ctor-input-skipped)
+                  ctor=1; bypass=1; minimal=0 ;;
+                full-input-skipped)
+                  ctor=0; bypass=1; minimal=0 ;;
+                full-init-minimal)
+                  ctor=0; bypass=1; minimal=1 ;;
+                *)
+                  echo 'Invalid source-bound mode' >&2
+                  exit 2 ;;
+              esac
+              echo "Stage31: genuine repeat $rep, exact mode $mode"
+              env NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+                NEXIUM_MACOS_HORIZON_CTOR_ONLY="$ctor" \
+                NEXIUM_MACOS_FULL_INIT_MINIMAL_APP="$minimal" \
+                NEXIUM_MACOS_SKIP_SDL3_INPUT="$bypass" \
+                NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+                python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                  --output "stage31-reports/$mode-$rep" --seconds 12 \
+                  --window-helper "$RUNNER_TEMP/stage31-window" || rc=$?
+              # A genuine SIGABRT is an expected negative experiment.
+              # Its original receipt is mandatory and audited below.
+              unset rc
+            done
+          done
+
+      - name: Audit identical executable, truthful input branches and eight source receipts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/stage31_original_sdl3_replay.py \
+            --reports stage31-reports \
+            --output stage31-reports/stage31-genuine-sdl3-repeat-audit.json
+          echo 'Stage31 real eight-process source-bound audit saved; no causal fix claimed.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only eight sanitized process receipts and source-bound marker summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage31-original-stage29-intel-sdl3-repeat-controls
+          path: |
+            stage31-reports/ctor-input-enabled-1/gui_process_probe.json
+            stage31-reports/ctor-input-enabled-2/gui_process_probe.json
+            stage31-reports/ctor-input-skipped-1/gui_process_probe.json
+            stage31-reports/ctor-input-skipped-2/gui_process_probe.json
+            stage31-reports/full-input-skipped-1/gui_process_probe.json
+            stage31-reports/full-input-skipped-2/gui_process_probe.json
+            stage31-reports/full-init-minimal-1/gui_process_probe.json
+            stage31-reports/full-init-minimal-2/gui_process_probe.json
+            stage31-reports/stage31-genuine-sdl3-repeat-audit.json
+          if-no-files-found: warn
+          retention-days: 90

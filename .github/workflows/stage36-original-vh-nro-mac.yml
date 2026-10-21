@@ -88,12 +88,12 @@ jobs:
           from pathlib import Path
           p=Path('stage36-source-bound-results/stage36-original-homebrew-mac.json')
           d=json.loads(p.read_text())
-          assert d['schema']=='nexium-stage36-original-vh-homebrew-cli-nro/v2'
+          assert d['schema']=='nexium-stage36-original-vh-homebrew-cli-nro/v3'
           assert d['source_mac_intel_ci_run']==39588444239
           assert d['source_original_game_nro_ci_run']==39501847103
           assert d['source_guest_nro_is_diagnostic_homebrew_not_commercial_rom']
           assert d['guest_boot_success_not_implied_by_process_survival']
-          for name in ('original-homebrew-nro','rustarmic-homebrew-nro','no-guest-control'):
+          for name in ('original-homebrew-nro','rustarmic-homebrew-nro','rustarmic-svc-trace-nro','no-guest-control'):
               v=d['modes'][name]
               assert v['source_original_neXium_sha256']== \
                  '4d40b18bb52b5a498f0efb1d00812643bc4062e18c6e27a4d2af6b208787be93'
@@ -102,12 +102,13 @@ jobs:
               assert not v['private_console_uploaded']
           assert not list(Path('stage36-source-bound-results').rglob('*.nro'))
           assert not list(Path('stage36-source-bound-results').rglob('*.png'))
-          print('STAGE36_ORIGINAL_INTEL_GUEST_EVIDENCE_RECORDED',
-                'auto_load_logged=',d['modes']['original-homebrew-nro']['source_nro_auto_load_log_marker_observed'],
-                'guest_diagnostic_files=',d['modes']['original-homebrew-nro']['source_guest_sd_diagnostic_file_count'],
-                'process_survived=',d['modes']['original-homebrew-nro']['process_alive_at_12s'])
+          print('STAGE39_ORIGINAL_INTEL_GUEST_SVC_EVIDENCE_RECORDED',
+                'dynarmic_cpu_ready=',d['modes']['original-homebrew-nro']['runner_guest_cpu_context_initialization_observed'],
+                'rustarmic_cpu_ready=',d['modes']['rustarmic-homebrew-nro']['runner_guest_cpu_context_initialization_observed'],
+                'trace_guest_svc_count=',d['modes']['rustarmic-svc-trace-nro']['original_runner_svc_trace_count'],
+                'guest_diagnostic_files=',d['modes']['rustarmic-svc-trace-nro']['source_guest_sd_diagnostic_file_count'])
           PY
-          echo 'Stage38 original-source diagnostic NRO: compare Dynarmic and Rustarmic CPU backend; process survival never implies guest execution.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Stage39 original-source diagnostic NRO: compare CPU backend and real runner SVC trace, without private log export.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload only source-bound guest-startup decision receipt, never game binaries
         if: always()

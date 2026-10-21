@@ -2040,8 +2040,8 @@ jobs:
           path = Path("stage44-guest-probe/nexium-guest-left-stick-x-probe.nro")
           data = path.read_bytes()
           if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
-              raise SystemExit("STAGE43_GUEST_STICK_X_NRO_INVALID")
-          print(f"STAGE43_GUEST_STICK_X_NRO_READY bytes={len(data)}")
+              raise SystemExit("STAGE44_GUEST_STICK_X_NRO_INVALID")
+          print(f"STAGE44_GUEST_STICK_X_NRO_READY bytes={len(data)}")
           PY
       - name: Upload diagnostic NRO
         uses: actions/upload-artifact@v4

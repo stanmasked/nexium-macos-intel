@@ -37,6 +37,8 @@ def summarise_capture(details: dict, binary_hash: str, exited_early: bool) -> di
     frames = details.get("frames") or []
     safe = []
     for frame in frames:
+        if not isinstance(frame, dict):
+            continue
         dims = frame.get("dimensions")
         digest = frame.get("sha256")
         bytecount = frame.get("bytes")

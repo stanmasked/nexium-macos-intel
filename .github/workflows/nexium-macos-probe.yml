@@ -1682,7 +1682,7 @@ jobs:
       NEXIUM_EXPERIMENT_INPUT_POLL_MARKERS: '1'
       NEXIUM_EXPERIMENT_VIRTUAL_INPUT_SNAPSHOT: '1'
       NEXIUM_EXPERIMENT_STAGE37_HID_BRIDGE: '1'
-      NEXIUM_EXPERIMENT_STAGE40_GUEST_HID: @D@{{ github.head_ref == 'work/intel-stage40-guest-npad-readback' && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE40_GUEST_HID: ${{ github.head_ref == 'work/intel-stage40-guest-npad-readback' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

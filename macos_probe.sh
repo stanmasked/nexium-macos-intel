@@ -111,6 +111,10 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE40_GUEST_HID:-0}" == "1" ]]; then
     echo "STAGE40: extend only the synthetic B hold for guest libnx HID readback"
     python3 "$SELF/scripts/apply_macos_guest_hid_probe.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE42_GUEST_AB:-0}" == "1" ]]; then
+    echo "STAGE42: enable opt-in EAST/A pulse nested inside SOUTH/B"
+    python3 "$SELF/scripts/apply_macos_guest_ab_probe.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

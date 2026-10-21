@@ -95,6 +95,10 @@ if [[ "${NEXIUM_EXPERIMENT_SDL3_SUBPHASE_TRACE:-0}" == "1" ]]; then
     echo "STAGE38_SDL3_SUBPHASE: opt-in input.rs SDL construction markers"
     python3 "$SELF/scripts/apply_macos_sdl3_subphase_trace.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_SDL3_CUTPOINT_BISECT:-0}" == "1" ]]; then
+    echo "STAGE39_SDL3_CUTPOINT: per-call optional diagnostic returns, no game"
+    python3 "$SELF/scripts/apply_macos_sdl3_cutpoint_bisect.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

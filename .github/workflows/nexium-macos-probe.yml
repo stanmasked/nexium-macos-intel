@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py scripts/audit_sdl3_cutpoints.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -37,7 +37,7 @@ jobs:
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
           mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          for file in nexium-gui/src/main.rs nexium-gui/src/input.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -48,6 +48,13 @@ jobs:
           grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+          # Catch original pinned SDL3 source drift before a costly Intel build.
+          python3 scripts/apply_macos_sdl3_subphase_trace.py "$BASE"
+          python3 scripts/apply_macos_sdl3_subphase_trace.py "$BASE"
+          python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
+          python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
+          grep -q 'STAGE38_SDL3_INPUT_04_BEFORE_INPUT_STRUCT' "$BASE/nexium-gui/src/input.rs"
+          grep -q 'STAGE39_SDL3_STOP_BEFORE_STRUCT' "$BASE/nexium-gui/src/input.rs"
 
   mig-intel:
     name: Intel macOS Mach header generation
@@ -69,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_subphase_trace.py scripts/apply_macos_sdl3_cutpoint_bisect.py scripts/audit_sdl3_cutpoints.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -78,7 +85,7 @@ jobs:
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
           mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          for file in nexium-gui/src/main.rs nexium-gui/src/input.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -89,6 +96,13 @@ jobs:
           grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
           grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+          # Catch original pinned SDL3 source drift before a costly Intel build.
+          python3 scripts/apply_macos_sdl3_subphase_trace.py "$BASE"
+          python3 scripts/apply_macos_sdl3_subphase_trace.py "$BASE"
+          python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
+          python3 scripts/apply_macos_sdl3_cutpoint_bisect.py "$BASE"
+          grep -q 'STAGE38_SDL3_INPUT_04_BEFORE_INPUT_STRUCT' "$BASE/nexium-gui/src/input.rs"
+          grep -q 'STAGE39_SDL3_STOP_BEFORE_STRUCT' "$BASE/nexium-gui/src/input.rs"
 
       - name: Verify native-only window capture helper type checks
         run: xcrun swiftc -typecheck scripts/nexium_window_id.swift
@@ -987,6 +1001,74 @@ jobs:
             stage38-report/stage38-subphases.json
           if-no-files-found: warn
 
+  sdl3-cutpoint-compare:
+    name: Stage39 seven native Intel SDL3 cutpoint contrasts
+    if: github.head_ref == 'work/intel-stage39-sdl3-cutpoint-bisect'
+    runs-on: macos-15-intel
+    needs: intel-build
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download this run's exact native Rustarmic Intel Mach-O
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage39-binary
+      - name: Validate executable and own-window observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage39-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage39-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage39-window" scripts/nexium_window_id.swift
+      - name: Run seven real processes from exactly one binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage39-bin")"
+          for mode in no-input before-hints before-init before-gamepad before-rumble before-struct full; do
+            skip=0
+            stop=none
+            case "$mode" in
+              no-input) skip=1 ;;
+              before-hints) stop=hints ;;
+              before-init) stop=init ;;
+              before-gamepad) stop=gamepad ;;
+              before-rumble) stop=rumble ;;
+              before-struct) stop=struct ;;
+              full) ;;
+              *) exit 2 ;;
+            esac
+            echo "Stage39 native process: $mode"
+            env NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+              NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+              NEXIUM_MACOS_SKIP_SDL3_INPUT="$skip" \
+              NEXIUM_MACOS_SDL3_SUBPHASE_TRACE=1 \
+              NEXIUM_MACOS_SDL3_STOP_BEFORE="$stop" \
+              python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                --output "stage39-report/$mode" --seconds 12 \
+                --window-helper "$RUNNER_TEMP/stage39-window" || true
+          done
+      - name: Source-bound audit of seven original process receipts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_sdl3_cutpoints.py \
+            --reports stage39-report \
+            --output stage39-report/stage39-cutpoints.json
+      - name: Save only sanitized evidence, not runtime logs or screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage39-sdl3-cutpoint-receipts
+          path: |
+            stage39-report/stage39-cutpoints.json
+          if-no-files-found: warn
+
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
@@ -1011,6 +1093,7 @@ jobs:
       NEXIUM_EXPERIMENT_HORIZON_CTOR_PHASE_TRACE: '1'
       NEXIUM_EXPERIMENT_SDL3_INPUT_ABLATION: '1'
       NEXIUM_EXPERIMENT_SDL3_SUBPHASE_TRACE: '1'
+      NEXIUM_EXPERIMENT_SDL3_CUTPOINT_BISECT: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

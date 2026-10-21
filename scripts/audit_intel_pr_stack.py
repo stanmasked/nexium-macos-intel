@@ -56,13 +56,12 @@ def audit_snapshot(snapshot: dict, *, top_pr: int, expected_head_sha: str,
         num = pr.get("number")
         head, base = pr.get("head"), pr.get("base")
         if (type(num) is not int or num <= 0 or num in by_number
-                or not isinstance(head, str) or not head.startswith("work/")
+                or not isinstance(head, str) or not head
                 or not isinstance(base, str) or not base
                 or head in by_head or head == base
                 or not _hexsha(pr.get("head_sha"))
-                or not _hexsha(pr.get("base_sha"))
-                or pr.get("state") != "open" or pr.get("draft") is not True):
-            raise ValueError("missing, non-draft, duplicate, or invalid PR")
+                or not _hexsha(pr.get("base_sha"))):
+            raise ValueError("duplicate or malformed PR record")
         by_number[num] = pr
         by_head[head] = pr
 
@@ -77,6 +76,9 @@ def audit_snapshot(snapshot: dict, *, top_pr: int, expected_head_sha: str,
     node = head_pr
     while True:
         number = node["number"]
+        if (node["state"] != "open" or node["draft"] is not True
+                or not node["head"].startswith("work/")):
+            raise ValueError("an ancestor is not an open Draft research PR")
         if number in seen:
             raise ValueError("cycle in stacked PR ancestry")
         seen.add(number)

@@ -76,7 +76,7 @@ class Stage38NpadLifoTests(unittest.TestCase):
     def test_no_guest_tick_without_nro_is_classified_not_claimed_as_success(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            make_root(root, full="\\n".join([
+            make_root(root, full="\n".join([
                 "STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED",
                 "STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED",
                 "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE",
@@ -91,7 +91,7 @@ class Stage38NpadLifoTests(unittest.TestCase):
     def test_guest_tick_without_round_trip_remains_unconfirmed(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            make_root(root, full="\\n".join([
+            make_root(root, full="\n".join([
                 "STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED",
                 "STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED",
                 "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE",

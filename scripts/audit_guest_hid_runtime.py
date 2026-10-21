@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Stage40: fail-closed audit of guest-visible libnx B press/release.
+
+Raw emulator logs and snapshots stay local to the runner. The emitted JSON
+contains only booleans, counts, and the probe process outcome.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import re
+import sys
+
+NPAD_TRACE = re.compile(r"\[hid-publish\].*?npad=\[([0-9a-fA-FxX,\s]+)\]")
+B_BIT = 1 << 1
+
+GUEST_MARKERS = (
+    "STAGE40_GUEST_HID_PROBE_START",
+    "STAGE40_GUEST_HID_B_DOWN",
+    "STAGE40_GUEST_HID_B_UP",
+    "STAGE40_GUEST_HID_PRESS_RELEASE_PASS",
+)
+HOST_MARKERS = (
+    "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE",
+    "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE",
+)
+
+
+def npad_samples(console: str) -> list[list[int]]:
+    samples = []
+    for line in console.splitlines():
+        match = NPAD_TRACE.search(line)
+        if not match:
+            continue
+        try:
+            samples.append([int(value.strip(), 16)
+                            for value in match.group(1).split(",")
+                            if value.strip()])
+        except ValueError:
+            continue
+    return samples
+
+
+def audit(report_dir: Path) -> dict:
+    report_path = report_dir / "smoke_result.json"
+    console_path = report_dir / "nexium-console.log"
+    if not report_path.is_file() or not console_path.is_file():
+        raise ValueError("missing NRO smoke receipt or local emulator console log")
+    smoke = json.loads(report_path.read_text(encoding="utf-8"))
+    console = console_path.read_text(encoding="utf-8", errors="replace")
+
+    guest = {marker: marker in console for marker in GUEST_MARKERS}
+    host = {marker: marker in console for marker in HOST_MARKERS}
+    samples = npad_samples(console)
+    pressed = [i for i, values in enumerate(samples) if any(v & B_BIT for v in values)]
+    released_after = any(
+        all((value & B_BIT) == 0 for value in samples[j])
+        for i in pressed for j in range(i + 1, len(samples))
+    )
+    mapping_call = "svcMapSharedMemory" in console
+    hid_mapping_success = "recognized as HID shared memory" in console
+    probe_exit_zero = smoke.get("status") == "exited_zero_unverified" and smoke.get("exit_code") == 0
+
+    result = {
+        "schema": "nexium-stage40-guest-npad-readback/v1",
+        "same_process_guest_input_roundtrip_passed": bool(
+            all(guest.values()) and all(host.values()) and mapping_call
+            and hid_mapping_success and pressed and released_after and probe_exit_zero
+        ),
+        "guest_libnx_b_down_observed": guest[GUEST_MARKERS[1]],
+        "guest_libnx_b_up_observed_after_down_marker": (
+            guest[GUEST_MARKERS[2]] and guest[GUEST_MARKERS[1]]
+        ),
+        "guest_probe_start_observed": guest[GUEST_MARKERS[0]],
+        "guest_probe_pass_marker_observed": guest[GUEST_MARKERS[3]],
+        "host_original_hid_b_press_observed": host[HOST_MARKERS[0]],
+        "host_original_hid_b_release_observed": host[HOST_MARKERS[1]],
+        "guest_hid_map_svc_observed": mapping_call,
+        "guest_hid_map_success_marker_observed": hid_mapping_success,
+        "serialized_npad_samples": len(samples),
+        "serialized_npad_b_press_samples": len(pressed),
+        "serialized_npad_b_release_after_press_observed": bool(released_after),
+        "probe_exit_zero": bool(probe_exit_zero),
+        "probe_process_status": smoke.get("status", "missing"),
+        "gameplay_verified": False,
+        "physical_controller_verified": False,
+        "real_switch_verified": False,
+        "raw_console_uploaded": False,
+        "frame_images_uploaded": False,
+    }
+    return result
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--report-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args(argv)
+    try:
+        result = audit(args.report_dir)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n",
+                               encoding="utf-8")
+        print(json.dumps(result, sort_keys=True))
+        return 0 if result["same_process_guest_input_roundtrip_passed"] else 2
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print("STAGE40_GUEST_HID_RUNTIME_AUDIT_BLOCKED: " + str(error), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

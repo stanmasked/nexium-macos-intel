@@ -123,6 +123,10 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE44_GUEST_STICK_X:-0}" == "1" ]]; then
     echo "STAGE44: opt-in left X axis and authentic original InputSnapshot observation"
     python3 "$SELF/scripts/apply_macos_guest_left_stick_x.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE45_GUEST_STICK_Y:-0}" == "1" ]]; then
+    echo "STAGE45: exercise LeftY inversion through original SDL3 and guest libnx"
+    python3 "$SELF/scripts/apply_macos_guest_left_stick_y.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

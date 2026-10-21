@@ -156,7 +156,7 @@ def collect_private_source_evidence(root: Path, console: Path) -> dict:
                               if marker in text],
         "boot_failure_category":boot_failure_category(text),
         "runner_svc_count":min(1000000,len(re.findall(
-            r"\\bSVC\\s+0x[0-9a-fA-F]+\\s+\\(count:\\s*[0-9]+\\)",text))),
+            r"\bSVC\s+0x[0-9a-fA-F]+\s+\(count:\s*[0-9]+\)",text))),
         "guest_files":found,
     }
 

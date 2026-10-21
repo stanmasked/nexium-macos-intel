@@ -131,6 +131,10 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE46_GUEST_RIGHT_X:-0}" == "1" ]]; then
     echo "STAGE46: opt-in original SDL3 right X to genuine guest libnx"
     python3 "$SELF/scripts/apply_macos_guest_right_stick_x.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE47_GUEST_RIGHT_Y:-0}" == "1" ]]; then
+    echo "STAGE47: opt-in original SDL3 right Y sign to guest libnx"
+    python3 "$SELF/scripts/apply_macos_guest_right_stick_y.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

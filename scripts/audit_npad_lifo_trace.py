@@ -58,6 +58,15 @@ def analyze_console(console: str) -> dict:
         "original_host_hid_release_marker": STAGE37_RELEASE in markers,
         "guest_npad_shmem_unbound_marker": STAGE37_NO_SHMEM in markers,
         "guest_npad_shmem_present_unverified_marker": STAGE37_SHMEM_UNVERIFIED in markers,
+        "stage40_svc_map_call_seen": "STAGE40_SVC_MAP_SHARED_MEMORY_ENTER" in markers,
+        "stage40_hid_size_match_seen": "STAGE40_SVC_MAP_SIZE_MATCH_HID" in markers,
+        "stage40_hid_size_other_seen": "STAGE40_SVC_MAP_SIZE_OTHER" in markers,
+        "stage40_map_handle_nonzero_seen": "STAGE40_SVC_MAP_HANDLE_NONZERO" in markers,
+        "stage40_map_handle_zero_seen": "STAGE40_SVC_MAP_HANDLE_ZERO" in markers,
+        "stage40_hid_host_region_bound_seen": "STAGE40_HID_SHARED_MEMORY_HOST_BOUND" in markers,
+        "stage40_cpu_map_success_seen": "STAGE40_HID_SHARED_MEMORY_CPU_MAP_OK" in markers,
+        "stage40_cpu_map_failure_seen": "STAGE40_HID_SHARED_MEMORY_CPU_MAP_FAILED" in markers,
+        "stage40_unmap_noop_seen": "STAGE40_SVC_UNMAP_SHARED_MEMORY_NOOP" in markers,
     }
 
 

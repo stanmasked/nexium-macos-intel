@@ -64,13 +64,13 @@ fn svc_map_shared_memory(kernel: &mut Kernel) -> u32 {
 }
 """
     svc += """fn svc_signal_event(kernel: &mut Kernel) -> u32 { SUCCESS }
-fn applet_command_response(_kernel: &mut Kernel, port_name: &str, cmd_id: u32) {}
 fn subsession_service(port_name: &str, cmd_id: u32) -> Option<&'static str> {
     match (port_name, cmd_id) {
         ("hid", 0) => Some("IAppletResource"),
         _ => None,
     }
 }
+fn applet_command_response(_kernel: &mut Kernel, port_name: &str, cmd_id: u32) {}
 """
     svc += """
 if port_name == "IAppletResource" && cmd_id == 0 {
@@ -156,7 +156,7 @@ class GuestHidMapAuditTests(unittest.TestCase):
             sources(root)
             p = root / "nexium-kernel/src/hid_state.rs"
             p.write_text(p.read_text().replace("fn write_npad_lifo_entry() {}", "fn unrelated() {}"))
-            with self.assertRaisesRegex(ValueError, "original source serializes npad lifo"):
+            with self.assertRaisesRegex(ValueError, "original_source_serializes_npad_lifo"):
                 audit.audit(root)
 
     def test_missing_pinned_source_fails_closed(self):

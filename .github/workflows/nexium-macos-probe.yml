@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py scripts/apply_macos_guest_deadzone_jitter.py scripts/audit_guest_deadzone_jitter.py scripts/apply_macos_guest_deadzone_threshold.py scripts/audit_guest_deadzone_threshold.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py scripts/apply_macos_guest_deadzone_jitter.py scripts/audit_guest_deadzone_jitter.py scripts/apply_macos_guest_deadzone_threshold.py scripts/audit_guest_deadzone_threshold.py scripts/audit_intel_controller_proof_manifest.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py scripts/apply_macos_guest_deadzone_jitter.py scripts/audit_guest_deadzone_jitter.py scripts/apply_macos_guest_deadzone_threshold.py scripts/audit_guest_deadzone_threshold.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py scripts/apply_macos_guest_deadzone_jitter.py scripts/audit_guest_deadzone_jitter.py scripts/apply_macos_guest_deadzone_threshold.py scripts/audit_guest_deadzone_threshold.py scripts/audit_intel_controller_proof_manifest.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -2955,7 +2955,7 @@ jobs:
 
   stage53-guest-deadzone-threshold-nro:
     name: Stage53 build guest analog deadzone threshold NRO
-    if: github.head_ref == 'work/intel-stage53-deadzone-threshold'
+    if: github.head_ref == 'work/intel-stage53-deadzone-threshold' || github.head_ref == 'work/intel-stage54-controller-proof-manifest'
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:latest
@@ -3005,7 +3005,7 @@ jobs:
 
   stage53-guest-deadzone-threshold-readback:
     name: Stage53 native Intel guest analog deadzone threshold
-    if: github.head_ref == 'work/intel-stage53-deadzone-threshold'
+    if: github.head_ref == 'work/intel-stage53-deadzone-threshold' || github.head_ref == 'work/intel-stage54-controller-proof-manifest'
     needs: [intel-build, stage53-guest-deadzone-threshold-nro]
     runs-on: macos-15-intel
     timeout-minutes: 16
@@ -3089,6 +3089,32 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Verify exact native Intel plus libnx guest proof triplet
+        if: github.head_ref == 'work/intel-stage54-controller-proof-manifest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Build script source pin must match Stage54's fail-closed contract.
+          grep -Fx 'REVISION="089562567a0a8760dfdd8420e1f57c35159a9219"' macos_probe.sh
+          BIN="$(cat "$RUNNER_TEMP/stage53-exe")"
+          python3 scripts/audit_intel_controller_proof_manifest.py \
+            --intel-binary "$BIN" \
+            --guest-nro stage53-probe/nexium-guest-deadzone-threshold-probe.nro \
+            --guest-receipt stage53-evidence/stage53-guest-deadzone-threshold.json \
+            --source-sha 089562567a0a8760dfdd8420e1f57c35159a9219 \
+            --repository-sha "$GITHUB_SHA" \
+            --github-run-id "$GITHUB_RUN_ID" \
+            --output stage53-evidence/stage54-controller-proof-manifest.json
+      - name: Upload only sanitized exact-build proof manifest
+        if: always() && github.head_ref == 'work/intel-stage54-controller-proof-manifest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage54-exact-intel-controller-proof-manifest
+          path: stage53-evidence/stage54-controller-proof-manifest.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
 
 
 
@@ -3148,9 +3174,9 @@ jobs:
         continue-on-error: true
         env:
           # Explicit profile opt-in, never enabled by default or on main.
-          NEXIUM_INTEL_INPUT_PROFILE: ${{ (github.head_ref == 'work/intel-stage51-controller-profile' || github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' || github.head_ref == 'work/intel-stage53-deadzone-threshold') && 'controller-diagnostics-v1' || 'off' }}
+          NEXIUM_INTEL_INPUT_PROFILE: ${{ (github.head_ref == 'work/intel-stage51-controller-profile' || github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' || github.head_ref == 'work/intel-stage53-deadzone-threshold' || github.head_ref == 'work/intel-stage54-controller-proof-manifest') && 'controller-diagnostics-v1' || 'off' }}
           NEXIUM_EXPERIMENT_STAGE52_DEADZONE_JITTER: ${{ (github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' || github.head_ref == 'work/intel-stage53-deadzone-threshold') && '1' || '0' }}
-          NEXIUM_EXPERIMENT_STAGE53_DEADZONE_THRESHOLD: ${{ github.head_ref == 'work/intel-stage53-deadzone-threshold' && '1' || '0' }}
+          NEXIUM_EXPERIMENT_STAGE53_DEADZONE_THRESHOLD: ${{ (github.head_ref == 'work/intel-stage53-deadzone-threshold' || github.head_ref == 'work/intel-stage54-controller-proof-manifest') && '1' || '0' }}
         run: |
           set -euo pipefail
           if [[ "$NEXIUM_INTEL_INPUT_PROFILE" == "controller-diagnostics-v1" ]]; then

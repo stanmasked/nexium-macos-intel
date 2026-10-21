@@ -2,7 +2,7 @@
 """Stage47 opt-in SDL3 right-Y axis test through the original input pipeline.
 
 Apply after Stage46, preserving the verified X and Y analog paths. SDL gamepad RightY reports negative for up, whereas
-original NeXium InputBackend converts ly=-axis(RightY) before writing HidState.
+original NeXium InputBackend converts ry=-axis(RightY) before writing HidState.
 Do not mutate input snapshots, shared memory or guest state.
 """
 from __future__ import annotations
@@ -43,17 +43,17 @@ OBSERVE = '''        // Read only the original InputSnapshot after dead-zone pro
                 std::sync::atomic::AtomicU8::new(0);
             use std::sync::atomic::Ordering;
             let phase = STAGE47_OBS_PHASE.load(Ordering::Relaxed);
-            let ly = snap.sticks[3];
-            if phase == 0 && ly > 12000 {
+            let ry = snap.sticks[3];
+            if phase == 0 && ry > 12000 {
                 eprintln!("STAGE47_ORIGINAL_SNAPSHOT_RIGHTY_UP_POSITIVE");
                 STAGE47_OBS_PHASE.store(1, Ordering::Relaxed);
-            } else if phase == 1 && ly > -4000 && ly < 4000 {
+            } else if phase == 1 && ry > -4000 && ry < 4000 {
                 eprintln!("STAGE47_ORIGINAL_SNAPSHOT_RIGHTY_CENTER_AFTER_UP");
                 STAGE47_OBS_PHASE.store(2, Ordering::Relaxed);
-            } else if phase == 2 && ly < -12000 {
+            } else if phase == 2 && ry < -12000 {
                 eprintln!("STAGE47_ORIGINAL_SNAPSHOT_RIGHTY_DOWN_NEGATIVE");
                 STAGE47_OBS_PHASE.store(3, Ordering::Relaxed);
-            } else if phase == 3 && ly > -4000 && ly < 4000 {
+            } else if phase == 3 && ry > -4000 && ry < 4000 {
                 eprintln!("STAGE47_ORIGINAL_SNAPSHOT_RIGHTY_CENTER_AFTER_DOWN");
                 STAGE47_OBS_PHASE.store(4, Ordering::Relaxed);
             }
@@ -74,6 +74,8 @@ def patch_source(source: str) -> str:
         raise RuntimeError("Stage44 source observer and axis pulse required")
     if source.count("NEXIUM_MACOS_GUEST_RIGHT_X_PROBE") != 2:
         raise RuntimeError("Stage46 right X predecessor missing")
+    if source.count("NEXIUM_MACOS_GUEST_STICK_Y_PROBE") != 2:
+        raise RuntimeError("Stage45 left Y predecessor missing")
     if source.count("desc.axis_mask = 0x3fu32;") != 1:
         raise RuntimeError("virtual SDL joystick axis mask changed")
     return source.replace(ANCHOR, PULSE + ANCHOR, 1).replace(
@@ -91,11 +93,11 @@ def main(argv=None) -> int:
         after = patch_source(before)
         if before != after:
             path.write_text(after, encoding="utf-8")
-        print("STAGE47_LEFT_Y_PATCH_APPLIED" if before != after
-              else "STAGE47_LEFT_Y_PATCH_ALREADY_APPLIED")
+        print("STAGE47_RIGHT_Y_PATCH_APPLIED" if before != after
+              else "STAGE47_RIGHT_Y_PATCH_ALREADY_APPLIED")
         return 0
     except (OSError, UnicodeError, RuntimeError) as error:
-        print("STAGE47_LEFT_Y_PATCH_BLOCKED: " + type(error).__name__,
+        print("STAGE47_RIGHT_Y_PATCH_BLOCKED: " + type(error).__name__,
               file=sys.stderr)
         return 2
 

@@ -99,6 +99,10 @@ if [[ "${NEXIUM_EXPERIMENT_SDL3_CUTPOINT_BISECT:-0}" == "1" ]]; then
     echo "STAGE39_SDL3_CUTPOINT: per-call optional diagnostic returns, no game"
     python3 "$SELF/scripts/apply_macos_sdl3_cutpoint_bisect.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_SDL3_PREWARM:-0}" == "1" ]]; then
+    echo "STAGE40_SDL3_PREWARM: opt-in main-thread input init before eframe"
+    python3 "$SELF/scripts/apply_macos_sdl3_prewarm.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

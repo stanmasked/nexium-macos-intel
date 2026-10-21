@@ -47,7 +47,7 @@ def audit(root: Path) -> dict:
     map_svc = between(svc, "fn svc_map_shared_memory(", "\nfn svc_unmap_shared_memory(")
     unmap_svc = between(svc, "fn svc_unmap_shared_memory(", "\nfn svc_signal_event(")
     dispatch = between(svc, "pub fn dispatch(kernel:", "\nfn ")
-    tick = between(hid_state, "    fn tick_with_source(", "\n    fn trace_published_input(")
+    tick = between(hid_state, "fn tick_with_source(", "\nfn trace_published_input(")
 
     has_ipc_route = bool(re.search(
         r'\(\s*"hid"\s*,\s*0\s*\)\s*=>\s*Some\("IAppletResource"\)', route

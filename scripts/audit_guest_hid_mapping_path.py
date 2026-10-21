@@ -70,7 +70,7 @@ def audit(root: Path) -> dict:
     )
     has_zero_handle_warning = (
         'if handle == 0 {' in map_svc
-        and re.search(r"\\breturn\\b", zero_handle_branch) is None
+        and re.search(r"\breturn\b", zero_handle_branch) is None
     )
     size_gate_ignores_handle = has_size_gate and "handle" not in between(
         map_svc,

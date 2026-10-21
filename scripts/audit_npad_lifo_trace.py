@@ -114,9 +114,19 @@ def audit(root: Path) -> dict:
         full["serialized_npad_b_press_sample_count"] > 0,
         full["serialized_npad_b_release_after_press"],
     ))
+    samples_observed = any(
+        report["actual_hid_publish_trace_samples"] > 0 for report in reports.values()
+    )
+    if positive:
+        result_status = "SOURCE_BOUND_SYNTHETIC_B_NPAD_LIFO_ROUND_TRIP_POSITIVE"
+    elif not samples_observed:
+        result_status = "NO_NPAD_TICK_OBSERVED_NO_NRO"
+    else:
+        result_status = "NPAD_LIFO_TRACE_OBSERVED_B_ROUND_TRIP_NOT_CONFIRMED"
     return {
         "schema": "nexium-stage38-original-npad-lifo-synthetic-b/v1",
-        "result": "THREE_REAL_INTEL_NPAD_LIFO_PATHS_CLASSIFIED",
+        "result": result_status,
+        "hid_publish_samples_observed_any_mode": samples_observed,
         "same_compiled_intel_macho_sha256": digest,
         "source_bound_synthetic_b_serialized_npad_lifo_round_trip_positive": positive,
         "guest_npad_shared_memory_verified": False,
@@ -141,7 +151,7 @@ def main(argv=None) -> int:
         args.output.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
         # stdout contains only sanitized fields; no raw HID or console data.
         print(json.dumps(result, sort_keys=True))
-        return 0 if result["source_bound_synthetic_b_serialized_npad_lifo_round_trip_positive"] else 1
+        return 0 if result["source_bound_synthetic_b_serialized_npad_lifo_round_trip_positive"] or result["result"] == "NO_NPAD_TICK_OBSERVED_NO_NRO" else 1
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print("STAGE38_NPAD_LIFO_AUDIT_BLOCKED: " + str(error), file=sys.stderr)
         return 2

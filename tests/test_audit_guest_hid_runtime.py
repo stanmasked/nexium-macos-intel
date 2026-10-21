@@ -110,7 +110,7 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
             console_path = root / "nexium-console.log"
             log = console_path.read_text(encoding="utf-8")
             console_path.write_text(
-                log.replace("cpu memory null policy: enabled\\n", ""),
+                log.replace("cpu memory null policy: enabled\n", ""),
                 encoding="utf-8",
             )
             report = AUDIT.audit(root)
@@ -124,7 +124,7 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
             fixture(root)
             console_path = root / "nexium-console.log"
             with console_path.open("a", encoding="utf-8") as stream:
-                stream.write("Boot failed: fixture injected failure\\n")
+                stream.write("Boot failed: fixture injected failure\n")
             report = AUDIT.audit(root)
             self.assertTrue(report["guest_probe_pass_marker_observed"])
             self.assertTrue(report["guest_boot_failed_observed"])
@@ -137,7 +137,7 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
             console_path = root / "nexium-console.log"
             log = console_path.read_text(encoding="utf-8")
             console_path.write_text(
-                log.replace("svcOutputDebugString (X0=str_ptr, X1=str_len)\\n", ""),
+                log.replace("svcOutputDebugString (X0=str_ptr, X1=str_len)\n", ""),
                 encoding="utf-8",
             )
             report = AUDIT.audit(root)

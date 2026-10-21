@@ -124,6 +124,22 @@ class Stage38NpadLifoTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no-NRO"):
                 stage.audit(root)
 
+    def test_stage40_guest_map_markers_are_sanitized_booleans(self):
+        result = stage.analyze_console("\n".join([
+            "STAGE40_SVC_MAP_SHARED_MEMORY_ENTER",
+            "STAGE40_SVC_MAP_SIZE_MATCH_HID",
+            "STAGE40_SVC_MAP_HANDLE_NONZERO",
+            "STAGE40_HID_SHARED_MEMORY_HOST_BOUND",
+            "STAGE40_HID_SHARED_MEMORY_CPU_MAP_OK",
+        ]))
+        self.assertTrue(result["stage40_svc_map_call_seen"])
+        self.assertTrue(result["stage40_hid_size_match_seen"])
+        self.assertTrue(result["stage40_map_handle_nonzero_seen"])
+        self.assertTrue(result["stage40_hid_host_region_bound_seen"])
+        self.assertTrue(result["stage40_cpu_map_success_seen"])
+        self.assertFalse(result["stage40_unmap_noop_seen"])
+        self.assertNotIn("0xDEADBEEF", str(result))
+
     def test_report_contains_no_raw_trace_or_pointer(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

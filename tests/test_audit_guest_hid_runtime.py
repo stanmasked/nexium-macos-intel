@@ -55,11 +55,11 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
                 )
             ]
             host_lines = [line for line in lines if line not in file_lines]
-            console_path.write_text("\\n".join(host_lines) + "\\n", encoding="utf-8")
+            console_path.write_text("\n".join(host_lines) + "\n", encoding="utf-8")
             log_dir = root / "data-root" / "logs"
             log_dir.mkdir(parents=True)
             (log_dir / "nexium-test.log").write_text(
-                "\\n".join(file_lines) + "\\n", encoding="utf-8"
+                "\n".join(file_lines) + "\n", encoding="utf-8"
             )
 
             report = AUDIT.audit(root)

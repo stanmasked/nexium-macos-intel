@@ -115,6 +115,10 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE42_GUEST_AB:-0}" == "1" ]]; then
     echo "STAGE42: enable opt-in EAST/A pulse nested inside SOUTH/B"
     python3 "$SELF/scripts/apply_macos_guest_ab_probe.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE43_GUEST_DPAD:-0}" == "1" ]]; then
+    echo "STAGE43: add DPad Up and Right source-authentic guest readback pulses"
+    python3 "$SELF/scripts/apply_macos_guest_dpad_probe.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

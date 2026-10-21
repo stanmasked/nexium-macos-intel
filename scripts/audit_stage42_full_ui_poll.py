@@ -66,9 +66,15 @@ def classify(mode: str, report: dict, console: str) -> dict:
                 not has("STAGE42_CONTROLLER_CONNECTED"),
                 "disabled input unexpectedly polled")
     else:
-        require(has("STAGE29_SDL3_INPUT_ENABLED") and
-                not has("STAGE29_SDL3_INPUT_SKIPPED"),
-                "SDL3 unexpectedly bypassed")
+        require(not has("STAGE29_SDL3_INPUT_SKIPPED"),
+                "prewarm path unexpectedly bypassed SDL3")
+        # A genuine crash may occur during prewarm, BEFORE the original
+        # HorizonApp constructor ever emits its Stage29 enabled marker.
+        # Do not discard that negative observation or invent a constructor run.
+        if not has("STAGE29_SDL3_INPUT_ENABLED"):
+            require(not alive and has("STAGE40_PREWARM_MAIN_BEFORE_EFRAME")
+                    and not has("STAGE40_PREWARM_CONSTRUCTOR_CONSUMED"),
+                    "missing early SDL3 prewarm crash evidence")
         if alive:
             require(all(has(m) for m in (
                 "STAGE40_PREWARM_MAIN_BEFORE_EFRAME", "STAGE40_PREWARM_MAIN_READY",

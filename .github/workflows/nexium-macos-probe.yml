@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_input_ablation.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_input_ablation.py scripts/apply_nro_fullfile_offset.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -36,8 +36,8 @@ jobs:
           set -euo pipefail
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
-          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src" "$BASE/nexium-loader/src"
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs nexium-loader/src/nro.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -51,6 +51,10 @@ jobs:
           python3 scripts/apply_macos_input_ablation.py "$BASE"
           python3 scripts/apply_macos_input_ablation.py "$BASE"
           grep -q 'STAGE28_SDL_INPUT_SKIPPED' "$BASE/nexium-gui/src/app.rs"
+          python3 scripts/apply_nro_fullfile_offset.py "$BASE"
+          python3 scripts/apply_nro_fullfile_offset.py "$BASE"
+          grep -q 'standard_nro_start' "$BASE/nexium-loader/src/nro.rs"
+          grep -q 'NRO declared image size out of bounds' "$BASE/nexium-loader/src/nro.rs"
 
   mig-intel:
     name: Intel macOS Mach header generation
@@ -72,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_input_ablation.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_input_ablation.py scripts/apply_nro_fullfile_offset.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -80,8 +84,8 @@ jobs:
           set -euo pipefail
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
-          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src" "$BASE/nexium-loader/src"
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs nexium-loader/src/nro.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -95,6 +99,10 @@ jobs:
           python3 scripts/apply_macos_input_ablation.py "$BASE"
           python3 scripts/apply_macos_input_ablation.py "$BASE"
           grep -q 'STAGE28_SDL_INPUT_SKIPPED' "$BASE/nexium-gui/src/app.rs"
+          python3 scripts/apply_nro_fullfile_offset.py "$BASE"
+          python3 scripts/apply_nro_fullfile_offset.py "$BASE"
+          grep -q 'standard_nro_start' "$BASE/nexium-loader/src/nro.rs"
+          grep -q 'NRO declared image size out of bounds' "$BASE/nexium-loader/src/nro.rs"
 
       - name: Verify native-only window capture helper type checks
         run: xcrun swiftc -typecheck scripts/nexium_window_id.swift
@@ -477,6 +485,7 @@ jobs:
       NEXIUM_EXPERIMENT_AUDIO_ABLATION: '1'
       NEXIUM_EXPERIMENT_MINIMAL_EFRAME: '1'
       NEXIUM_EXPERIMENT_SDL_INPUT_ABLATION: '1'
+      NEXIUM_EXPERIMENT_NRO_FULLFILE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

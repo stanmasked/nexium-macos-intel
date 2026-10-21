@@ -103,6 +103,48 @@ class GuestHidRuntimeAuditTests(unittest.TestCase):
             self.assertTrue(report["same_process_guest_input_roundtrip_passed"])
             self.assertFalse(report["serialized_npad_trace_roundtrip_observed"])
 
+    def test_missing_guest_boot_context_fails_even_with_input_markers(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            console_path = root / "nexium-console.log"
+            log = console_path.read_text(encoding="utf-8")
+            console_path.write_text(
+                log.replace("cpu memory null policy: enabled\\n", ""),
+                encoding="utf-8",
+            )
+            report = AUDIT.audit(root)
+            self.assertTrue(report["guest_probe_pass_marker_observed"])
+            self.assertFalse(report["guest_boot_context_ready_observed"])
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_guest_boot_failure_fails_even_with_input_markers(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            console_path = root / "nexium-console.log"
+            with console_path.open("a", encoding="utf-8") as stream:
+                stream.write("Boot failed: fixture injected failure\\n")
+            report = AUDIT.audit(root)
+            self.assertTrue(report["guest_probe_pass_marker_observed"])
+            self.assertTrue(report["guest_boot_failed_observed"])
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
+    def test_missing_guest_svc_handler_fails_even_with_input_markers(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root)
+            console_path = root / "nexium-console.log"
+            log = console_path.read_text(encoding="utf-8")
+            console_path.write_text(
+                log.replace("svcOutputDebugString (X0=str_ptr, X1=str_len)\\n", ""),
+                encoding="utf-8",
+            )
+            report = AUDIT.audit(root)
+            self.assertTrue(report["guest_probe_pass_marker_observed"])
+            self.assertFalse(report["guest_output_debug_svc_observed"])
+            self.assertFalse(report["same_process_guest_input_roundtrip_passed"])
+
     def test_missing_guest_release_fails(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

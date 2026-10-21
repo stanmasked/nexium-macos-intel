@@ -146,6 +146,10 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE52_DEADZONE_JITTER:-0}" == "1" ]]; then
     echo "STAGE52: opt-in low-amplitude original four-axis analog deadzone jitter"
     python3 "$SELF/scripts/apply_macos_guest_deadzone_jitter.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_STAGE53_DEADZONE_THRESHOLD:-0}" == "1" ]]; then
+    echo "STAGE53: probe below/above default analog deadzone in original source"
+    python3 "$SELF/scripts/apply_macos_guest_deadzone_threshold.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

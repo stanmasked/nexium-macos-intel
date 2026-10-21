@@ -64,12 +64,27 @@ def classify(dyn: dict, rust: dict, receipt: dict,
         ("requested_dynarmic", dyn, dyn_markers),
         ("forced_rustarmic", rust, rust_markers),
     ):
+        capture = report.get("window_capture", {})
+        if not isinstance(capture, dict):
+            raise ValueError(name + ": invalid window evidence")
+        frames = capture.get("frames", 0)
+        unique = capture.get("unique_hashes", 0)
+        if (type(frames) is not int or type(unique) is not int or
+                frames < 0 or unique < 0 or unique > frames):
+            raise ValueError(name + ": invalid PID-owned window hash counts")
         variants[name] = {
             "process_status": report["status"],
             "exit_code": report.get("exit_code"),
             "alive_at_deadline": report["status"] == "timeout_alive_unverified",
             "snapshots_observed": len(report.get("snapshots", [])),
             "unique_snapshot_hashes": report.get("unique_frame_hashes", 0),
+            "pid_owned_window": {
+                "capture_requested": bool(capture.get("requested", False)),
+                "capture_status": capture.get("status", "not_requested"),
+                "frames_observed": frames,
+                "unique_hashes": unique,
+                "may_show_gui_without_any_guest_rendering": True,
+            },
             "markers": markers,
         }
     return {
@@ -82,6 +97,7 @@ def classify(dyn: dict, rust: dict, receipt: dict,
             dyn_markers.get("dynarmic_unavailable")
             and not rust_markers.get("dynarmic_unavailable")
         ),
+        "native_window_capture_is_not_gameplay_evidence": True,
         "actual_guest_instructions_verified": False,
         "pixel_content_correctness_verified": False,
         "gameplay_verified": False,

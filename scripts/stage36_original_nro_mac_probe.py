@@ -84,6 +84,8 @@ def sanitize(mode: str, state: dict) -> dict:
             (state.get("kernel_boot_phases",[]) or [None])[-1],
         "boot_failure_safe_category":
             state.get("boot_failure_category","NO_BOOT_ERROR_OBSERVED"),
+        "original_runner_svc_trace_count":int(state.get("runner_svc_count",0)),
+        "source_guest_svc_event_observed":bool(state.get("runner_svc_count",0)>0),
         "source_guest_sd_diagnostic_file_count":
             int(state.get("guest_files",0)),
         "guest_probe_file_content_validated":False,
@@ -153,6 +155,8 @@ def collect_private_source_evidence(root: Path, console: Path) -> dict:
         "kernel_boot_phases":[name for name,marker in SOURCE_KERNEL_BOOT_PHASES
                               if marker in text],
         "boot_failure_category":boot_failure_category(text),
+        "runner_svc_count":min(1000000,len(re.findall(
+            r"\\bSVC\\s+0x[0-9a-fA-F]+\\s+\\(count:\\s*[0-9]+\\)",text))),
         "guest_files":found,
     }
 

@@ -1,0 +1,102 @@
+name: Stage35 original Intel full GUI private scoped PNG evidence
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage35-original-intel-gui-pixels.yml'
+      - 'scripts/stage35_full_gui_window_pixels.py'
+      - 'tests/test_stage35_full_gui_window_pixels.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: stage35-full-original-gui-pixels-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  unchanged-intel-gui:
+    name: Full original HorizonApp SDL3 versus minimal eframe PID-only window capture
+    runs-on: macos-15-intel
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prove real Intel host, privacy and genuine source-receipt tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python3 -m py_compile scripts/stage35_full_gui_window_pixels.py
+          python3 -m unittest discover -s tests \
+            -p test_stage35_full_gui_window_pixels.py -v
+          xcrun swiftc -typecheck scripts/nexium_window_id.swift
+
+      - name: Download ONLY the original Stage32 compiled native Intel NeXium
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          run-id: 39588444239
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: stage35-stage32-original-bundle
+
+      - name: Authenticate immutable original x86_64 Mach-O and SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage35-stage32-original-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(shasum -a 256 "$BIN" | awk '{print $1}')" = \
+            4d40b18bb52b5a498f0efb1d00812643bc4062e18c6e27a4d2af6b208787be93
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage35-original-neXium"
+          echo 'Stage35 original exact Stage32 Rustarmic Intel executable pinned and proven.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture ONLY own PID full GUI and separate minimal window; delete PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage35-original-neXium")"
+          python3 scripts/stage35_full_gui_window_pixels.py \
+            --exe "$BIN" \
+            --output stage35-public/stage35-original-gui-pixels.json \
+            --seconds 8
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("stage35-public/stage35-original-gui-pixels.json")
+          d=json.loads(p.read_text())
+          assert d["source_original_intel_macho_sha256"] == \
+            "4d40b18bb52b5a498f0efb1d00812643bc4062e18c6e27a4d2af6b208787be93"
+          assert d["schema"] == "nexium-stage35-real-intel-gui-window-png/v1"
+          assert d["raw_images_uploaded"] is False
+          assert d["gui_pixel_correctness_verified"] is False
+          assert d["gameplay_verified"] is False
+          for mode in ("full-preinitialized-sdl3","minimal-eframe"):
+              row=d["modes"][mode]
+              assert row["source_native_intel_neXium_sha256"] == d["source_original_intel_macho_sha256"]
+              assert row["raw_pngs_uploaded"] is False
+              assert row["desktop_captured"] is False
+              assert row["vandal_hearts_game_verified"] is False
+              assert row["capture_status"] in ("genuine_pid_owned_window_png","no_window_png")
+          assert not list(Path("stage35-public").rglob("*.png"))
+          print("STAGE35_REAL_ORIGINAL_INTEL_GUI_CAPTURE_CLASSIFIED",
+                "full_window_pngs=",d["modes"]["full-preinitialized-sdl3"]["valid_png_count"],
+                "minimal_pngs=",d["modes"]["minimal-eframe"]["valid_png_count"],
+                "hashes_differ=",d["distinct_captured_window_image_hashes"])
+          PY
+          echo 'Stage35: only own-PID window PNG metadata captured; raw images deleted, no game/NRO claimed.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ONLY sanitized original image dimensions and hashes (never pixels)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage35-unchanged-stage32-intel-full-gui-pid-window-png
+          path: stage35-public/stage35-original-gui-pixels.json
+          if-no-files-found: warn
+          retention-days: 60

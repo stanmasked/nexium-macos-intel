@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -36,8 +36,8 @@ jobs:
           set -euo pipefail
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
-          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src" "$BASE/nexium-kernel/src/kernel"
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs nexium-kernel/src/kernel/svc.rs nexium-kernel/src/hid_state.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -53,6 +53,7 @@ jobs:
           grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
           grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
           test "$(grep -c 'hid.update_input(nexium_core::hid_state::ControllerInput' "$BASE/nexium-gui/src/app.rs")" = 1
+          python3 scripts/audit_guest_hid_mapping_path.py --root "$BASE" --output "$RUNNER_TEMP/stage39-guest-hid-mapping-audit.json"
 
   mig-intel:
     name: Intel macOS Mach header generation
@@ -74,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
-          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py
           python3 scripts/nro_smoke_test.py --help >/dev/null
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify patch anchors on actual pinned NeXium sources
@@ -82,8 +83,8 @@ jobs:
           set -euo pipefail
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           BASE="$RUNNER_TEMP/nexium-pinned"
-          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src"
-          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs; do
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src" "$BASE/nexium-kernel/src/kernel"
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs nexium-kernel/src/kernel/svc.rs nexium-kernel/src/hid_state.rs; do
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
               --output "$BASE/$file"
@@ -99,6 +100,7 @@ jobs:
           grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
           grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
           test "$(grep -c 'hid.update_input(nexium_core::hid_state::ControllerInput' "$BASE/nexium-gui/src/app.rs")" = 1
+          python3 scripts/audit_guest_hid_mapping_path.py --root "$BASE" --output "$RUNNER_TEMP/stage39-guest-hid-mapping-audit.json"
 
       - name: Verify native-only window capture helper type checks
         run: xcrun swiftc -typecheck scripts/nexium_window_id.swift

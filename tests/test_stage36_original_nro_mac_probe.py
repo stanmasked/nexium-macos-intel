@@ -140,6 +140,43 @@ class Stage36OriginalHomebrew(unittest.TestCase):
             evidence=stage.collect_private_source_evidence(root,console)
             self.assertFalse(evidence["auto_loaded_nro"])
 
+    def test_kernel_phase_prefix_and_boot_error_category(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            c=root/"console"
+            c.write_text("")
+            p=root/"nexium-data"/"logs"/"nexium-20261021.log"
+            p.parent.mkdir(parents=True)
+            p.write_text("Loading NRO from: private-file\\n"
+                         "Creating address space\\n"
+                         "Mapping memory regions\\n"
+                         "  Mapping heap @ 0x1234\\n"
+                         "Boot failed: Failed to map heap: OutOfMemory\\n")
+            evidence=stage.collect_private_source_evidence(root,c)
+            self.assertEqual(evidence["boot_failure_category"],"GUEST_ADDRESS_MAPPING")
+            self.assertEqual(evidence["kernel_boot_phases"],
+                             ["00_LOADING_NRO","01_ADDRESS_SPACE_CREATED",
+                              "02_MAPPING_MEMORY","03_MAPPING_HEAP"])
+            receipt=stage.sanitize(stage.MODES[0],evidence)
+            self.assertEqual(receipt["last_original_kernel_boot_phase_observed"],
+                             "03_MAPPING_HEAP")
+            self.assertNotIn("private-file",str(receipt))
+            self.assertNotIn("OutOfMemory",str(receipt))
+
+    def test_cpu_backend_failure_separate_from_real_execution(self):
+        state={"boot_failure_category":stage.boot_failure_category(
+            "Boot failed: Failed to init CPU: unavailable backend"),
+            "kernel_boot_phases":["08_INITIALIZING_CPU"]}
+        result=stage.sanitize(stage.MODES[0],state)
+        self.assertEqual(result["boot_failure_safe_category"],"GUEST_CPU_INITIALIZATION")
+        self.assertFalse(result["guest_cpu_instructions_verified"])
+
+    def test_unknown_error_fails_safe_without_path_leak(self):
+        error=stage.boot_failure_category("Boot failed: secret user home path /Users/user/private")
+        self.assertEqual(error,"OTHER_UNCLASSIFIED_BOOT_ERROR")
+        self.assertNotIn("user",error.lower())
+        self.assertEqual(stage.boot_failure_category("normal startup"),"NO_BOOT_ERROR_OBSERVED")
+
     def test_source_modes_are_distinct_and_not_commercial_game(self):
         self.assertEqual(len(set(stage.MODES)),2)
         self.assertEqual(stage.MODES[0],"original-homebrew-nro")

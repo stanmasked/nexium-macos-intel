@@ -8,6 +8,9 @@ if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "x86_64" ]] ||
 fi
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Explicit source-authentic HID diagnostics can be selected on ANY branch.
+# Defaults to off, and contradictory per-stage environment flags fail closed.
+source "$SELF/scripts/intel_controller_input_profile.sh"
 REVISION="089562567a0a8760dfdd8420e1f57c35159a9219"
 BACKEND="${NEXIUM_CPU_BACKEND:-dynarmic}"
 case "$BACKEND" in

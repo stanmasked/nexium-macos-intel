@@ -1,0 +1,9 @@
+[package]
+name = "nexium-stage47-rust-sdl3-intel"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Exact dependency and feature set used by pinned nexium-gui/Cargo.toml.
+sdl3 = { version = "=0.20.0", default-features = false, features = ["build-from-source-static"] }

@@ -99,6 +99,10 @@ if [[ "${NEXIUM_EXPERIMENT_INPUT_POLL_MARKERS:-0}" == "1" ]]; then
     echo "STAGE34_INPUT_POLL: one-time real SDL3 event-loop markers"
     python3 "$SELF/scripts/apply_macos_input_poll_trace.py" "$SRC"
 fi
+if [[ "${NEXIUM_EXPERIMENT_VIRTUAL_INPUT_SNAPSHOT:-0}" == "1" ]]; then
+    echo "STAGE36: opt-in synthetic SDL3 virtual gamepad; original InputSnapshot readback"
+    python3 "$SELF/scripts/apply_macos_virtual_input_snapshot.py" "$SRC"
+fi
 
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then

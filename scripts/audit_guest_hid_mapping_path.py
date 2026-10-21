@@ -65,6 +65,11 @@ def audit(root: Path) -> dict:
     has_host_ptr = "kernel.hid_mapped_host_ptr = Some(region.host_ptr as usize);" in map_svc
     has_binding = "hid.bind_mapped_host(region.host_ptr);" in map_svc
     has_cpu_mapping = "cpu.map_host(region.base, region.size, region.perm, region.host_ptr)" in map_svc
+    # A missing handle==0 guard is an explicit source-contract change, not
+    # merely a generic missing-anchor parse error. Keep the Stage39 error
+    # classification stable when auditing future upstream revisions.
+    if 'if handle == 0 {' not in map_svc:
+        raise ValueError("expected current size-based mapping/handle-validation behavior changed")
     zero_handle_branch = between(
         map_svc, 'if handle == 0 {', "if size as usize == crate::hid_state::HID_SHMEM_SIZE {"
     )

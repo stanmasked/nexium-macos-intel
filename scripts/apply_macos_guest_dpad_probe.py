@@ -25,20 +25,21 @@ STAGE43_MASK = '''    desc.button_mask = if std::env::var("NEXIUM_MACOS_GUEST_DP
 BUTTON_ANCHOR = "            if !unsafe { SDL_SetJoystickVirtualButton(ptr, 0, down) } {"
 
 STAGE43_DPAD_PULSES = '''            // Stage43: mutually exclusive real SDL3 DPad Up and Right pulses.
-            // Values 11 and 14 are SDL_GAMEPAD_BUTTON_DPAD_UP / DPAD_RIGHT.
+            // SDL virtual gamepad packs advertised buttons densely: SOUTH -> raw0,
+            // DPAD_UP -> raw1, DPAD_RIGHT -> raw2, independent of enum bits.
             if std::env::var("NEXIUM_MACOS_GUEST_DPAD_PROBE")
                 .ok().as_deref() == Some("1")
             {
                 let up_down = n >= 250 && n < 390;
                 let right_down = n >= 520 && n < 660;
-                if !unsafe { SDL_SetJoystickVirtualButton(ptr, 11, up_down) } {
+                if !unsafe { SDL_SetJoystickVirtualButton(ptr, 1, up_down) } {
                     if n == 250 { eprintln!("STAGE43_DPAD_UP_SET_FAILED"); }
                 } else if n == 250 {
                     eprintln!("STAGE43_DPAD_UP_PRESS_SENT");
                 } else if n == 390 {
                     eprintln!("STAGE43_DPAD_UP_RELEASE_SENT");
                 }
-                if !unsafe { SDL_SetJoystickVirtualButton(ptr, 14, right_down) } {
+                if !unsafe { SDL_SetJoystickVirtualButton(ptr, 2, right_down) } {
                     if n == 520 { eprintln!("STAGE43_DPAD_RIGHT_SET_FAILED"); }
                 } else if n == 520 {
                     eprintln!("STAGE43_DPAD_RIGHT_PRESS_SENT");

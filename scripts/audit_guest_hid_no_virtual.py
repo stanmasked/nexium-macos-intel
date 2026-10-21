@@ -35,10 +35,15 @@ def audit_no_virtual(report_dir: Path, positive_receipt: Path) -> dict:
     if len(logs) != 1:
         raise ValueError("Stage41 requires exactly one isolated guest FileLogger")
     guest_text = logs[0].read_text(encoding="utf-8", errors="replace")
-    end_seen = END_MARKER in guest_text
+    start_marker = "OutputDebugString: STAGE40_GUEST_HID_PROBE_START"
+    start_at = guest_text.find(start_marker)
+    end_at = guest_text.find(END_MARKER)
+    # Reject any lone B_UP line too: "up after down" would otherwise be false.
+    # The no-B exit event must be produced after the guest actually started.
+    end_seen = start_at >= 0 and end_at > start_at
     guest_b_absent = not any((
         result["guest_libnx_b_down_observed"],
-        result["guest_libnx_b_up_observed_after_down_marker"],
+        "OutputDebugString: STAGE40_GUEST_HID_B_UP" in guest_text,
         result["guest_probe_pass_marker_observed"],
     ))
     host_b_absent = not any((

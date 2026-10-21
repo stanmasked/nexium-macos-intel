@@ -70,6 +70,12 @@ def sanitize(mode: str, state: dict) -> dict:
             bool(state.get("auto_loaded_nro",False)),
         "source_nro_failure_log_marker_observed":
             bool(state.get("failed_load_nro",False)),
+        "runner_guest_boot_attempt_observed":
+            bool(state.get("booting_nro",False)),
+        "runner_guest_boot_failure_observed":
+            bool(state.get("boot_failed",False)),
+        "runner_guest_cpu_context_initialization_observed":
+            bool(state.get("cpu_memory_policy",False)),
         "source_guest_sd_diagnostic_file_count":
             int(state.get("guest_files",0)),
         "guest_probe_file_content_validated":False,
@@ -96,6 +102,9 @@ def collect_private_source_evidence(root: Path, console: Path) -> dict:
     return {
         "auto_loaded_nro":"Auto-loaded NRO:" in text,
         "failed_load_nro":"Failed to load NRO:" in text,
+        "booting_nro":"Booting NRO:" in text,
+        "boot_failed":"Boot failed:" in text,
+        "cpu_memory_policy":"cpu memory null policy:" in text,
         "guest_files":found,
     }
 

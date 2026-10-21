@@ -18,6 +18,7 @@ class Stage36OriginalHomebrew(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             exe=Path(tmp)/"nexium"
             exe.write_bytes(b"not emulator")
+            exe.chmod(0o755)  # Prove wrong digest, not a missing executable bit.
             game=Path(tmp)/"private-commercial-game.nro"
             game.write_bytes(b"test")
             with self.assertRaisesRegex(ValueError,"not original Stage32"):

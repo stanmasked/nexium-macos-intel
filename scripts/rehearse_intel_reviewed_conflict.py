@@ -226,6 +226,7 @@ def rehearsal(repo: Path, main_sha: str, ordered: list[dict],
         "reviewed_pr60_three_files_applied_locally": resolved_pr60,
         "combined_tree_complete": completed,
         "classification": classifications,
+        "_temporary_commit_sha": current if completed else None,
         "reconciled_source_contracts_verified": completed,
         "main_merge_approved": False,
         "human_integration_review_required": True,
@@ -272,6 +273,8 @@ def main(argv=None) -> int:
             ),
             fetch_missing=True,
         )
+        # Never expose the local-only synthetic commit hash in job logs.
+        result.pop("_temporary_commit_sha", None)
         print(json.dumps(result, sort_keys=True))
         if not result["combined_tree_complete"]:
             print("STAGE61_ADDITIONAL_CONFLICT_REVIEW_REQUIRED", file=sys.stderr)

@@ -25,14 +25,15 @@ class Stage66OwnedWindowEvidenceTests(unittest.TestCase):
         self.folder.mkdir()
         self.smoke = {
             "emulator_sha256": BINARY, "nro_sha256": NRO,
-            "status": "timeout_alive_unverified", "gameplay_verified": False,\n            "emulator_pid": 1234,
+            "status": "timeout_alive_unverified", "gameplay_verified": False,
+            "emulator_pid": 1234,
             "window_capture": {
                 "requested": True, "frames": 0,
                 "unique_hashes": 0, "status": "no_window_frames_unverified",
             },
         }
         self.details = {
-            "capture_type": "macos_pid_owned_window_only",
+            "capture_type": "macos_pid_owned_window_only", "pid": 1234,
             "frames": [], "unique_hashes": 0,
             "status": "no_window_frames_unverified",
         }

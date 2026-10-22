@@ -113,7 +113,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["raw_logs_uploaded"])
 
     def test_last_ipc_request_response_after_request_is_detected(self):
-        data = ('IPC request service="IApplicationDisplayService" cmd=2020 in_data=8\\n'
+        data = ('IPC request service="IApplicationDisplayService" cmd=2020 in_data=8\n'
                 'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
                 'service=IApplicationDisplayService cmd=2020 rc=0')
         result = last_ipc_request_summary(data)
@@ -124,8 +124,8 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertNotIn("2020", json.dumps(result))
 
     def test_last_ipc_request_without_response_is_distinguished(self):
-        data = ('IPC request service="vi:u" cmd=2\\n'
-                'IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=vi:u cmd=2\\n'
+        data = ('IPC request service="vi:u" cmd=2\n'
+                'IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=vi:u cmd=2\n'
                 'IPC request service="IApplicationDisplayService" cmd=2020')
         result = last_ipc_request_summary(data)
         self.assertEqual(result["last_ipc_request_stage"],
@@ -134,9 +134,9 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["last_ipc_request_same_response_seen_before"])
 
     def test_repeated_command_without_second_first_response_is_ambiguous(self):
-        data = ('IPC request service="IApplicationDisplayService" cmd=2020\\n'
+        data = ('IPC request service="IApplicationDisplayService" cmd=2020\n'
                 'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
-                'service=IApplicationDisplayService cmd=2020\\n'
+                'service=IApplicationDisplayService cmd=2020\n'
                 'IPC request service="IApplicationDisplayService" cmd=2020')
         result = last_ipc_request_summary(data)
         self.assertFalse(result["last_ipc_request_response_after_request"])

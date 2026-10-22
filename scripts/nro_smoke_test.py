@@ -87,7 +87,7 @@ def main() -> int:
         "nro_sha256": sha256(nro),
         "emulator_sha256": sha256(exe),
         "duration_limit_seconds": args.seconds,
-        "status": "not_started", "exit_code": None,
+        "status": "not_started", "exit_code": None, "emulator_pid": None,
         "snapshots": [], "unique_frame_hashes": 0,
         "gameplay_verified": False
     }
@@ -100,6 +100,8 @@ def main() -> int:
         try:
             proc = subprocess.Popen([str(exe), str(nro)], stdout=logfile,
                                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
+            # Bind private window evidence to this exact emulator launch.
+            report["emulator_pid"] = proc.pid
             if args.capture_window:
                 observer = Path(__file__).with_name("capture_macos_window.py")
                 report_dir = out / "window-capture"

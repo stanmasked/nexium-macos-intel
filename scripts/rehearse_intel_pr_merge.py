@@ -68,6 +68,32 @@ def ancestor(repo: Path, possible_parent: str, descendant: str) -> bool:
     return ret.returncode == 0
 
 
+def conflicted_filenames(output: str) -> list[str]:
+    """Extract only safe repo-relative conflicted names from Git --name-only.
+
+    Git --write-tree --name-only prints a tree ID on the first line, followed
+    by one conflicting pathname per line until a blank separator. Never expose
+    merge messages, file contents, object IDs, or arbitrary command errors.
+    """
+    lines = output.splitlines()
+    if not lines or not TREE_RE.fullmatch(lines[0]):
+        raise ValueError("Git conflict report missing merge-tree identity")
+    paths = []
+    for line in lines[1:]:
+        if not line:
+            break
+        parts = line.split("/")
+        if (len(paths) >= 64 or len(line) > 512 or not line
+                or line.startswith("/") or "\\x00" in line
+                or any(part in ("", ".", "..") for part in parts)
+                or any(ord(ch) < 32 or ord(ch) == 127 for ch in line)):
+            raise ValueError("untrusted conflict filename")
+        paths.append(line)
+    if not paths or len(paths) != len(set(paths)):
+        raise ValueError("Git conflict report lacks unique filenames")
+    return sorted(paths)
+
+
 def local_merge_chain(repo: Path, main_sha: str, ordered: list[dict],
                       *, fetch_missing: bool = False) -> dict:
     if not valid_sha(main_sha) or not ordered:
@@ -91,10 +117,16 @@ def local_merge_chain(repo: Path, main_sha: str, ordered: list[dict],
         elif ancestor(repo, head, current):
             result = "already_included"
         else:
-            simulation = git(repo, "merge-tree", "--write-tree", current, head)
-            if simulation.returncode != 0:
-                classifications.append({"pr": number, "result": "conflict"})
+            simulation = git(repo, "merge-tree", "--write-tree",
+                             "--name-only", current, head)
+            if simulation.returncode == 1:
+                classifications.append({
+                    "pr": number, "result": "conflict",
+                    "conflicted_files": conflicted_filenames(simulation.stdout),
+                })
                 break
+            if simulation.returncode != 0:
+                raise ValueError("Git merge-tree execution failed")
             tree = simulation.stdout.strip()
             if not TREE_RE.fullmatch(tree):
                 raise ValueError("Git produced an unexpected merge tree")

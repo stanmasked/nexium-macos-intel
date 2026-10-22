@@ -17,7 +17,7 @@ permissions:
 jobs:
   current-head:
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
-    runs-on: ubuntu-latest
+    runs-on: macos-15-intel
     timeout-minutes: 3
     outputs:
       is_current: ${{ steps.freshness.outputs.is_current }}
@@ -38,33 +38,36 @@ jobs:
             echo "is_current=false" >> "$GITHUB_OUTPUT"
             echo "Stage73 revision was superseded; skipping expensive work."
           fi
-
-  compile-public-framebuffer-nro:
+  prepare-public-framebuffer-nro:
     needs: current-head
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 18
-    container:
-      image: devkitpro/devkita64:latest
+    runs-on: macos-15-intel
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Audit exact pinned IPC marker formats before native run
+      - name: Download source-identical Stage71 public libnx NRO seed
+        uses: actions/download-artifact@v4
+        with:
+          name: stage71-public-original-libnx-framebuffer-nro
+          path: stage73-graphics
+          repository: ${{ github.repository }}
+          run-id: 39821434769
+          github-token: ${{ github.token }}
+      - name: Verify pinned source and NRO identity before reuse
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git hash-object probes/nexium_guest_framebuffer_probe.c)" = "1f27a917527277da4dfba255c3f993e2a23c49e9"
+          test "$(shasum -a 256 stage73-graphics/framebuffer.nro | awk '{print $1}')" = "ced9638baad0b421196e99a3e146dd0a64789e55f14aaa70eac02a9ed4e1580a"
           PIN=089562567a0a8760dfdd8420e1f57c35159a9219
           SOURCE="$RUNNER_TEMP/stage73-svc.rs"
           curl --fail --location --silent --show-error --retry 3 \
             "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/nexium-kernel/src/kernel/svc.rs" \
             --output "$SOURCE"
           python3 scripts/audit_stage73_display_ipc_markers.py --source "$SOURCE"
-      - name: Verify public graphics probe source and synthetic binary tests
-        shell: bash
-        run: |
-          set -euo pipefail
           python3 -m py_compile scripts/audit_stage73_display_ipc_markers.py
           python3 -m unittest discover -s tests -p 'test_stage67_graphics_nro_build.py' -v
           python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
@@ -72,44 +75,21 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_stage71_graphics_boot_diagnostics.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_display_ipc_path.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_scoped_ipc_patch.py' -v
-      - name: Compile bounded original guest libnx checkerboard NRO
-        shell: bash
-        run: |
-          set -euo pipefail
-          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
-          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
-          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
-          mkdir -p stage73-graphics
-          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
-            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
-            -ffunction-sections -fdata-sections \
-            -I"$DEVKITPRO/libnx/include" \
-            -specs="$DEVKITPRO/libnx/switch.specs" \
-            -Wl,--gc-sections -pie \
-            probes/nexium_guest_framebuffer_probe.c \
-            -L"$DEVKITPRO/libnx/lib" -lnx \
-            -o stage73-graphics/framebuffer.elf
-          "$DEVKITPRO/tools/bin/nacptool" --create \
-            "NeXium Public Framebuffer" "NeXium Intel Research" "0.1.0" \
-            stage73-graphics/framebuffer.nacp
-          "$DEVKITPRO/tools/bin/elf2nro" \
-            stage73-graphics/framebuffer.elf \
-            stage73-graphics/framebuffer.nro \
-            --nacp=stage73-graphics/framebuffer.nacp
           python3 scripts/audit_guest_framebuffer_build.py \
             --guest-nro stage73-graphics/framebuffer.nro \
             --source probes/nexium_guest_framebuffer_probe.c
-      - name: Transfer only original public graphics NRO
+      - name: Transfer only audited public graphics NRO
         uses: actions/upload-artifact@v4
         with:
           name: stage73-public-original-libnx-framebuffer-nro
           path: stage73-graphics/framebuffer.nro
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
+
 
   integrated-intel-guest-graphics:
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
-    needs: [current-head, compile-public-framebuffer-nro]
+    needs: [current-head, prepare-public-framebuffer-nro]
     runs-on: macos-15-intel
     timeout-minutes: 110
     steps:

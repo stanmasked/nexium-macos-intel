@@ -62,6 +62,39 @@ class Stage65IntegratedGuestTests(unittest.TestCase):
                 repository_sha="a"*40, run_id="1234567", base_env={},
             )
 
+    def test_relative_guest_nro_is_anchored_before_running_from_merged_source(self):
+        # CI provides the NRO relative to checkout, but the NeXium source
+        # is extracted to a different cwd. The guest must see the same file.
+        import os
+        source = self.root / "extracted" / "source"
+        source.mkdir(parents=True)
+        smoke = source / "scripts" / "nro_smoke_test.py"
+        smoke.parent.mkdir()
+        smoke.write_text("# safe local smoke placeholder\\n", encoding="utf-8")
+        binary = self.root / "native-intel"
+        binary.write_bytes(b"Mach-O placeholder")
+        original = Path.cwd()
+        try:
+            os.chdir(self.root)
+            with mock.patch("probe_intel_integrated_guest.subprocess.run") as run:
+                run.return_value.returncode = 2
+                with self.assertRaisesRegex(ValueError, "failed to start"):
+                    run_integrated_guest(
+                        source=source, binary=binary,
+                        guest_nro=Path("probe.nro"),
+                        report_dir=self.root / "report",
+                        repository_sha="a" * 40, run_id="1234567",
+                        base_env={},
+                    )
+                command = run.call_args.args[0]
+                self.assertEqual(Path(command[command.index("--nro") + 1]),
+                                 self.nro)
+                self.assertTrue(Path(command[command.index("--nro") + 1]).is_absolute())
+                self.assertEqual(run.call_args.kwargs["cwd"], source)
+                self.assertTrue(self.nro.exists())
+        finally:
+            os.chdir(original)
+
     def test_guest_probe_env_disables_other_simultaneous_stage_modes(self):
         out = probe_environment({})
         self.assertEqual(out["NEXIUM_CPU_BACKEND"], "rustarmic")

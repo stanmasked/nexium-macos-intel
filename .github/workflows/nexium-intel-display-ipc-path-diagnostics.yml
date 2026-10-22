@@ -29,6 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_stage73_display_ipc_path.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_scoped_ipc_patch.py' -v
           python3 -m unittest discover -s tests -p 'test_stage71_graphics_boot_diagnostics.py' -v
           python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
           python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v

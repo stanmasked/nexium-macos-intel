@@ -48,6 +48,8 @@ EXPECTED_LEVELS = {
 RENDERED_EVIDENCE = {
     "vi_u_service_handle_requested": "SM::GetServiceHandle 'vi:u'",
     "display_service_subsession_returned": "IApplicationDisplayService sub-session handle=",
+    "display_binder_session_cmd_100_request_observed": 'IPC request service="IApplicationDisplayService" cmd=100',
+    "display_binder_session_cmd_103_request_observed": 'IPC request service="IApplicationDisplayService" cmd=103',
     "binder_subsession_returned": "IHOSBinderDriver sub-session handle=",
     "igbp_connect_observed": "IGBP::Connect binder=",
     "igbp_request_buffer_observed": "IGBP::RequestBuffer binder=",

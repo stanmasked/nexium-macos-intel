@@ -43,9 +43,10 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
             "SM::GetServiceHandle 'vi:u' data_off=0x20",
             'IPC request service="vi:u" cmd=2 in_data=0 is_domain=false',
             "→ IApplicationDisplayService sub-session handle=0x101",
+            'IPC request service="IApplicationDisplayService" cmd=100 in_data=0 is_domain=false',
+            "→ IHOSBinderDriver sub-session handle=0x102",
             'IPC request service="IApplicationDisplayService" cmd=2020 in_data=8 is_domain=false',
             "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020 rc=0 response_len=64",
-            "→ IHOSBinderDriver sub-session handle=0x102",
             'IPC request service="IHOSBinderDriver" cmd=0 in_data=8 is_domain=false',
             "IGBP::Connect binder=256 api=1 1280x720",
             "IGBP::RequestBuffer binder=256 slot=0",
@@ -75,32 +76,36 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(3)
         self.assertEqual(self.inspect()["observed_stage"], "vi_u_ipc_request_display_subsession_not_observed")
 
-    def test_display_subsession_without_native_window_request(self):
+    def test_display_subsession_without_binder_session_request(self):
         self.set_through(4)
-        self.assertEqual(self.inspect()["observed_stage"], "display_subsession_created_native_window_request_not_observed")
+        self.assertEqual(self.inspect()["observed_stage"], "display_subsession_binder_session_request_not_observed")
+
+    def test_binder_session_request_without_subsession(self):
+        self.set_through(5)
+        self.assertEqual(self.inspect()["observed_stage"], "display_service_binder_subsession_not_observed")
+
+    def test_binder_subsession_without_native_window_request(self):
+        self.set_through(6)
+        self.assertEqual(self.inspect()["observed_stage"], "binder_subsession_created_native_window_request_not_observed")
 
     def test_native_window_request_without_response(self):
-        self.set_through(5)
+        self.set_through(7)
         self.assertEqual(self.inspect()["observed_stage"], "native_window_request_response_not_observed")
 
-    def test_native_window_response_without_binder_subsession(self):
-        self.set_through(6)
-        self.assertEqual(self.inspect()["observed_stage"], "native_window_response_binder_subsession_not_observed")
-
-    def test_binder_subsession_without_transact(self):
-        self.set_through(7)
-        self.assertEqual(self.inspect()["observed_stage"], "binder_subsession_transact_not_observed")
+    def test_native_window_response_without_binder_transact(self):
+        self.set_through(8)
+        self.assertEqual(self.inspect()["observed_stage"], "native_window_response_binder_transact_not_observed")
 
     def test_binder_transact_without_connect(self):
-        self.set_through(8)
+        self.set_through(9)
         self.assertEqual(self.inspect()["observed_stage"], "binder_transact_igbp_connect_not_observed")
 
     def test_connect_without_request_buffer(self):
-        self.set_through(9)
+        self.set_through(10)
         self.assertEqual(self.inspect()["observed_stage"], "igbp_connect_request_buffer_not_observed")
 
     def test_request_buffer_without_debug_visible_later_marker_is_unverified(self):
-        self.set_through(10)
+        self.set_through(11)
         self.assertEqual(
             self.inspect()["observed_stage"],
             "igbp_request_buffer_observed_later_buffer_operations_unverified_at_debug_level",
@@ -116,7 +121,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertEqual(self.inspect()["observed_stage"], "igbp_dequeue_retry_or_timeout_observed")
 
     def test_out_of_order_queue_marker_does_not_advance_past_connect(self):
-        self.set_through(9)
+        self.set_through(10)
         self.data += "\nIGBP::QueueBuffer binder=256 swap_interval=1 (was None)"
         self.assertEqual(
             self.inspect()["observed_stage"],
@@ -124,7 +129,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         )
 
     def test_response_before_native_window_request_does_not_count(self):
-        self.set_through(4)
+        self.set_through(6)
         self.data += (
             "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
             "service=IApplicationDisplayService cmd=2020 rc=0 response_len=64"
@@ -137,7 +142,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         )
 
     def test_queue_is_not_guest_gpu_proof(self):
-        self.set_through(12)
+        self.set_through(13)
         result = self.inspect()
         self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
         self.assertFalse(result["guest_framebuffer_runtime_completed"])

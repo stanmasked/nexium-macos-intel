@@ -80,6 +80,18 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(4)
         self.assertEqual(self.inspect()["observed_stage"], "display_subsession_binder_or_native_window_request_not_observed")
 
+    def test_native_window_branch_without_binder_session_request(self):
+        self.set_through(4)
+        self.data += (
+            "\\nIPC request service=\\\"IApplicationDisplayService\\\" "
+            "cmd=2020 in_data=8 is_domain=false"
+            "\\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 rc=0 response_len=64"
+        )
+        self.assertEqual(
+            self.inspect()["observed_stage"],
+            "display_subsession_binder_session_request_not_observed",
+        )
     def test_binder_session_request_without_subsession(self):
         self.set_through(5)
         self.assertEqual(self.inspect()["observed_stage"], "display_service_binder_subsession_not_observed")

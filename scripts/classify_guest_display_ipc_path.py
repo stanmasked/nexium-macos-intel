@@ -207,8 +207,10 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                             stage = max(pending_branches)[1]
                         elif binder_session_request is None and native_window_request is None:
                             stage = "display_subsession_binder_or_native_window_request_not_observed"
+                        elif binder_session_request is None:
+                            stage = "display_subsession_binder_session_request_not_observed"
                         elif binder_subsession is None:
-                            stage = "native_window_response_binder_subsession_not_observed"
+                            stage = "display_service_binder_subsession_not_observed"
                         elif native_window_request is None:
                             stage = "binder_subsession_created_native_window_request_not_observed"
                         elif native_window_response is None:

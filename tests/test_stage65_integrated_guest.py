@@ -87,9 +87,11 @@ class Stage65IntegratedGuestTests(unittest.TestCase):
                         base_env={},
                     )
                 command = run.call_args.args[0]
-                self.assertEqual(Path(command[command.index("--nro") + 1]),
-                                 self.nro)
-                self.assertTrue(Path(command[command.index("--nro") + 1]).is_absolute())
+                passed_nro = Path(command[command.index("--nro") + 1])
+                self.assertTrue(passed_nro.is_absolute())
+                # macOS uses /var -> /private/var. Compare actual files,
+                # not their different but equivalent filesystem spellings.
+                self.assertTrue(passed_nro.samefile(self.nro))
                 self.assertEqual(run.call_args.kwargs["cwd"], source)
                 self.assertTrue(self.nro.exists())
         finally:

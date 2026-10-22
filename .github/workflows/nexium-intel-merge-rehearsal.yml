@@ -1,0 +1,45 @@
+name: NeXium Intel read-only virtual PR merge rehearsal
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  local-merge-rehearsal:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage60-local-merge-rehearsal'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Obtain full local Git history without persisting token
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate local synthetic merge and conflict fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage60_local_merge_rehearsal.py' -v
+
+      - name: Rehearse exact stacked PR integration without changing refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --is-shallow-repository)" = false
+          python3 scripts/rehearse_intel_pr_merge.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 62 \
+            --min-depth 29 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo .
+          echo "Stage60 is a local read-only rehearsal; it never approves a main merge."
+      # No artifact upload, no git push, no PR merge, no write permission.

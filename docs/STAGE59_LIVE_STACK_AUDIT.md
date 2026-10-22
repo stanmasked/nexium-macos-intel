@@ -12,7 +12,7 @@ The auditor fetches the current open PRs and `main` head, then follows the
 real head/base branch links all the way from Stage59 PR #61 to bootstrap PR #1.
 Every PR in that connected chain must remain open and Draft.
 
-For each connected PR, the auditor requests GitHub's exact SHA-to-SHA compare
+GitHub's pull-request `base.sha` can reflect a historical comparison snapshot,\nnot the live base branch tip. Before comparison, the collector therefore\nresolves each child's base ref to its **current parent PR head SHA** (or\nthe current `main` SHA), retaining the reported older SHA separately. This\nis essential to detect the three known diverged branches rather than hiding\nthem behind old PR metadata.\n\nFor each connected PR, the auditor requests GitHub's exact SHA-to-SHA compare
 instead of using possibly ambiguous branch names with `/`. It requires:
 - The Stage59 head SHA from the triggering PR event matches the live PR.
 - Ancestry is unique, cycle-free, rooted in PR #1 and reaches the inspected

@@ -241,6 +241,12 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsafe or oversized"):
             inspect_guest_display_ipc_path(self.root, MACHO, NRO)
 
+    def test_symlinked_data_root_rejected(self):
+        real_root = self.root / "outside-data-root"
+        (self.root / "data-root").rename(real_root)
+        (self.root / "data-root").symlink_to(real_root, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "log directory unsafe"):
+            self.inspect()
     def test_symlinked_log_directory_rejected(self):
         real_dir = self.root / "outside-logs"
         self.logdir.rename(real_dir)

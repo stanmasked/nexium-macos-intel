@@ -31,7 +31,7 @@ The stage classifier emits no raw log lines, dynamic service names, command IDs,
 
 ## Validation and next decision
 
-- 32 display-IPC fixtures cover progressive boundaries, the real handler-marker spelling, either order of the Binder-session/native-window branches, missing-branch classification, out-of-order evidence rejection, symlinked log-directory rejection, debug-visible dequeue retry/timeout behavior and last-request/response ordering; 9 additional fixtures validate the exact scoped source patch, original Git blob, native build wiring, symlink rejection and no mutation on mismatch.
+- 33 display-IPC fixtures cover progressive boundaries, the real handler-marker spelling, either order of the Binder-session/native-window branches, missing-branch classification, out-of-order evidence rejection, symlinked data-root/log-directory rejection, debug-visible dequeue retry/timeout behavior and last-request/response ordering; 9 additional fixtures validate the exact scoped source patch, original Git blob, native build wiring, symlink rejection and no mutation on mismatch.
 - The lightweight Stage73 CI audits the exact pinned svc.rs log templates and levels, then covers these fixtures and Stage68/70/71 predecessors.
 - A separate native Intel workflow repeats the exact virtual integration at depth 40 and emits only sanitized Stage71/Stage73 classifications.
 

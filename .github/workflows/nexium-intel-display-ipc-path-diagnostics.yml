@@ -15,7 +15,7 @@ permissions:
 jobs:
   current-head:
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
-    runs-on: macos-15-intel
+    runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
       is_current: ${{ steps.freshness.outputs.is_current }}
@@ -40,7 +40,7 @@ jobs:
   guest-display-ipc-classification:
     needs: current-head
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
-    runs-on: macos-15-intel
+    runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4

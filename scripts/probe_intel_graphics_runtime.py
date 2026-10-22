@@ -55,6 +55,17 @@ FAILURE_MARKERS = (
 GUEST_LOG_MAX = 4 * 1024 * 1024
 EXPECTED_NRO_MAX = 2 * 1024 * 1024
 
+# The guest C source dictates which progress prefix may immediately precede
+# each terminal error. This makes impossible success/failure combinations
+# fail closed rather than merely accepting an ordered *subset* of markers.
+FAILURE_PREFIX_LENGTHS = {
+    "STAGE67_GUEST_WINDOW_UNAVAILABLE": frozenset({1}),
+    "STAGE67_GUEST_FRAMEBUFFER_CREATE_FAILED": frozenset({2}),
+    "STAGE67_GUEST_FRAMEBUFFER_LINEAR_FAILED": frozenset({3}),
+    "STAGE67_GUEST_APPLET_EXIT_BEFORE_FRAMES": frozenset({4, 6, 8}),
+    "STAGE67_GUEST_FRAMEBUFFER_BEGIN_FAILED": frozenset({4, 6, 8}),
+}
+
 
 def source_graphics_audit(report: Path, binary_sha: str, nro_sha: str) -> dict:
     """Verify exact original guest markers, in order, without copying raw logs."""
@@ -101,12 +112,34 @@ def source_graphics_audit(report: Path, binary_sha: str, nro_sha: str) -> dict:
         raise ValueError("successful and failed terminal graphics states overlap")
     if PROGRESS_MARKERS[-1] in positive and smoke.get("status") != "exited_zero_unverified":
         raise ValueError("guest completion marker without successful process exit")
-    if failure and smoke.get("status") == "exited_zero_unverified":
-        raise ValueError("guest reported failure but exited successfully")
+    status = smoke.get("status")
+    if failure:
+        name = failure[0]
+        if len(positive) not in FAILURE_PREFIX_LENGTHS[name]:
+            raise ValueError("guest framebuffer failure impossible at observed API stage")
+        if status != "exited_nonzero":
+            raise ValueError("original guest failure marker without nonzero process exit")
+        classified = "explicit_guest_framebuffer_failure"
+    elif PROGRESS_MARKERS[-1] in positive:
+        if status != "exited_zero_unverified":
+            raise ValueError("original guest success marker without zero process exit")
+        classified = "all_guest_framebuffer_api_calls_returned"
+    elif status == "timeout_alive_unverified":
+        # This is diagnostic only. Never treat a partial prefix as success.
+        classified = "partial_guest_progress_timeout_unverified"
+    else:
+        raise ValueError("guest process exited without an explicit graphics terminal marker")
     return {
         "schema": "nexium-stage68-original-guest-framebuffer-markers/v1",
         "original_libnx_graphics_guest_started": True,
         "original_guest_progress_markers": len(positive),
+        "graphics_guest_runtime_classification": classified,
+        "guest_framebuffer_runtime_completed": (
+            classified == "all_guest_framebuffer_api_calls_returned"
+        ),
+        "guest_runtime_timeout_unverified": (
+            classified == "partial_guest_progress_timeout_unverified"
+        ),
         "last_original_guest_marker": hits[-1],
         "original_guest_failure_marker": failure[0] if failure else None,
         "guest_framebuffer_created_observed":

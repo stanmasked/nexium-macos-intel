@@ -1,0 +1,34 @@
+name: NeXium Intel classify original guest framebuffer terminal states
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guest-framebuffer-state-fixtures:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage70-graphics-guest-state-machine'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Check graphics audit import and syntax
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/probe_intel_graphics_runtime.py
+          python3 -m py_compile tests/test_stage70_guest_framebuffer_states.py
+      - name: Require exact guest graphics success failure and timeout rules
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage65_integrated_guest.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage66_owned_window.py' -v
+          echo "STAGE70_EXACT_GUEST_GRAPHICS_STATE_MACHINE_PASS"
+      # Fixture-only read-only CI. No private logs, NRO/game images or screenshots.

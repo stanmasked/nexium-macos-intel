@@ -116,6 +116,7 @@ def local_merge_chain(repo: Path, main_sha: str, ordered: list[dict],
         "ancestors_checked": len(classifications),
         "merge_tree_complete": complete,
         "classification": classifications,
+        "_temporary_commit_sha": current if complete else None,
         "integration_requires_review": True,
         "main_merge_approved": False,
         "remote_ref_changed": False,
@@ -184,11 +185,13 @@ def main(argv=None) -> int:
         result = local_merge_chain(args.git_repo, snapshot["main_sha"], ordered,
                                    fetch_missing=True)
         if result["merge_tree_complete"]:
-            # Recompute the final synthetic tree SHA without publishing it by
-            # returning it from the runner? Verify source through current tip
-            # only if entire history was fast-forward; otherwise the full
-            # local merge must independently preserve the markers.
-            pass
+            check_reconciled_sources(
+                args.git_repo, result["_temporary_commit_sha"])
+            result["reconciled_sources_preserved"] = True
+        else:
+            result["reconciled_sources_preserved"] = False
+        # The virtual SHA is local-only, never a repository/PR head revision.
+        result.pop("_temporary_commit_sha", None)
         print(json.dumps(result, sort_keys=True))
         if not result["merge_tree_complete"]:
             print("STAGE60_REHEARSAL_CONFLICT_REVIEW_REQUIRED", file=sys.stderr)

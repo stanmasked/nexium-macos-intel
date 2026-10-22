@@ -1,0 +1,120 @@
+name: NeXium Intel run real libnx NRO on reviewed integrated Mach-O
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  build-public-stage53-probe:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage65-integrated-guest-readback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Compile original public diagnostic libnx NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage65-guest
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_deadzone_threshold_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage65-guest/public-original-deadzone.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest Deadzone Probe" "NeXium Intel Research" "0.1.0" \
+            stage65-guest/public-original-deadzone.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage65-guest/public-original-deadzone.elf \
+            stage65-guest/public-original-deadzone.nro \
+            --nacp=stage65-guest/public-original-deadzone.nacp
+          python3 scripts/audit_intel_controller_proof_structure.py --help >/dev/null
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+          sys.path.insert(0,"scripts")
+          from audit_intel_controller_proof_structure import validate_nro
+          assert validate_nro(Path("stage65-guest/public-original-deadzone.nro")) > 128
+          print("STAGE65_PUBLIC_LIBNX_PROBE_VALIDATED")
+          PY
+      - name: Retain only independently compiled public diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage65-public-original-libnx-deadzone-nro
+          path: stage65-guest/public-original-deadzone.nro
+          if-no-files-found: error
+          retention-days: 7
+
+  integrated-intel-guest:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage65-integrated-guest-readback'
+    needs: build-public-stage53-probe
+    runs-on: macos-15-intel
+    timeout-minutes: 110
+    steps:
+      - name: Checkout exact PR source without persisting Git credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage65-public-original-libnx-deadzone-nro
+          path: stage65-guest
+      - name: Require exact native Intel checkout and public NRO
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
+          test -s stage65-guest/public-original-deadzone.nro
+      - name: Test original libnx guest and isolated build safety
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/probe_intel_integrated_guest.py
+          python3 -m unittest discover -s tests -p 'test_stage65_integrated_guest.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage64_integrated_native.py' -v
+      - name: Install native build prerequisites
+        run: |
+          set -euo pipefail
+          brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
+      - name: Build reviewed 34-PR Intel Mach-O then execute original guest NRO
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/probe_intel_integrated_guest.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 67 \
+            --min-depth 34 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo . \
+            --guest-nro stage65-guest/public-original-deadzone.nro
+          echo "Original libnx guest proof is a synthetic controller diagnostic, never a game or physical controller certification."
+      # No raw logs, guest memory, images, or executable are uploaded;
+      # only public source-built NRO is transferred between CI jobs.

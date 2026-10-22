@@ -32,6 +32,29 @@ CANONICAL_MARKERS = (
     "expected current size-based mapping/handle-validation behavior changed",
 )
 
+REVIEWED_PR60_BLOBS = {
+    ".github/workflows/nexium-macos-probe.yml":
+        "f67d32cb789d23cc5b27792068f1e18e5f51da66",
+    "scripts/audit_npad_lifo_trace.py":
+        "4137d95716fe4b1fa0e0f5c1b2267ece1627d51a",
+    "tests/test_npad_lifo_trace.py":
+        "16743d717d20328cfc6dd464133828fb17d23a05",
+}
+REVIEWED_PR60_MARKERS = {
+    ".github/workflows/nexium-macos-probe.yml": (
+        "audio_init_marker_01_intentionally_omitted",
+        "Stage57 validate file-backed Mach-O segment and section bounds",
+    ),
+    "scripts/audit_npad_lifo_trace.py": (
+        "NO_NPAD_TICK_OBSERVED_NO_NRO",
+        "NPAD_LIFO_TRACE_OBSERVED_B_ROUND_TRIP_NOT_CONFIRMED",
+    ),
+    "tests/test_npad_lifo_trace.py": (
+        "test_no_guest_tick_without_nro_is_classified_not_claimed_as_success",
+        "test_guest_tick_without_round_trip_remains_unconfirmed",
+    ),
+}
+
 
 def _index_git(repo: Path, temp_index: Path, *args: str) -> str:
     """Use a disposable alternate index, never the checked-out repository's."""
@@ -83,8 +106,44 @@ def substitute_one_reviewed_blob(
     return result
 
 
+def substitute_reviewed_pr60_blobs(
+    repo: Path, conflicted_tree: str, conflicted_paths: list[str],
+    proposed: dict[str, str]
+) -> str:
+    """Exact Stage58 sources, local temporary Git index, no blanket strategy."""
+    if (not valid_sha(conflicted_tree)
+            or conflicted_paths != sorted(REVIEWED_PR60_BLOBS)
+            or proposed != REVIEWED_PR60_BLOBS):
+        raise ValueError("unexpected Stage58 conflict file set or blob policy")
+    for path, expected in proposed.items():
+        if not valid_sha(expected):
+            raise ValueError("reviewed Stage58 blob malformed")
+        t = git(repo, "cat-file", "-t", expected)
+        data = git(repo, "cat-file", "-p", expected)
+        if t.returncode != 0 or t.stdout.strip() != "blob" or data.returncode != 0:
+            raise ValueError("reviewed Stage58 blob unavailable")
+        if any(marker not in data.stdout
+               for marker in REVIEWED_PR60_MARKERS[path]):
+            raise ValueError("reviewed Stage58 source invariants missing")
+    with tempfile.TemporaryDirectory(prefix="nexium-stage62-index-") as d:
+        idx = Path(d) / "index"
+        _index_git(repo, idx, "read-tree", conflicted_tree)
+        for path, blob in sorted(proposed.items()):
+            _index_git(repo, idx, "update-index", "--add", "--cacheinfo",
+                       "100644," + blob + "," + path)
+        tree = _index_git(repo, idx, "write-tree")
+    if not valid_sha(tree):
+        raise ValueError("invalid reviewed Stage58 merged tree")
+    for path, blob in proposed.items():
+        check = git(repo, "rev-parse", tree + ":" + path)
+        if check.returncode != 0 or check.stdout.strip() != blob:
+            raise ValueError("reviewed Stage58 blob changed in virtual tree")
+    return tree
+
+
 def rehearsal(repo: Path, main_sha: str, ordered: list[dict],
               *, reviewed_blob: str = REVIEWED_BLOB,
+              reviewed_pr60_blobs: dict[str, str] | None = None,
               fetch_missing: bool = False) -> dict:
     if not valid_sha(main_sha) or not ordered or len(ordered) > 100:
         raise ValueError("invalid source tree or ancestor count")
@@ -97,6 +156,7 @@ def rehearsal(repo: Path, main_sha: str, ordered: list[dict],
     classifications = []
     seen = set()
     resolved = False
+    resolved_pr60 = False
     for entry in ordered:
         number, head = entry.get("number"), entry.get("head_sha")
         if (type(number) is not int or number <= 0
@@ -114,19 +174,27 @@ def rehearsal(repo: Path, main_sha: str, ordered: list[dict],
                     "--name-only", current, head)
             if m.returncode == 1:
                 names = conflicted_filenames(m.stdout)
-                if (number != CONFLICT_PR or names != [CONFLICT_FILE]
-                        or resolved):
+                tree_id = m.stdout.splitlines()[0]
+                if number == CONFLICT_PR and names == [CONFLICT_FILE] and not resolved:
+                    tree = substitute_one_reviewed_blob(
+                        repo, tree_id, reviewed_blob, CONFLICT_FILE
+                    )
+                    result = "reviewed_local_resolution"
+                    resolved = True
+                elif (number == 60 and not resolved_pr60
+                      and reviewed_pr60_blobs is not None
+                      and names == sorted(REVIEWED_PR60_BLOBS)):
+                    tree = substitute_reviewed_pr60_blobs(
+                        repo, tree_id, names, reviewed_pr60_blobs
+                    )
+                    result = "reviewed_three_file_resolution"
+                    resolved_pr60 = True
+                else:
                     classifications.append({
                         "pr": number, "result": "conflict",
                         "conflicted_files": names,
                     })
                     break
-                tree_id = m.stdout.splitlines()[0]
-                tree = substitute_one_reviewed_blob(
-                    repo, tree_id, reviewed_blob, CONFLICT_FILE
-                )
-                result = "reviewed_local_resolution"
-                resolved = True
             elif m.returncode == 0:
                 tree = m.stdout.strip()
                 if not valid_sha(tree):
@@ -155,6 +223,7 @@ def rehearsal(repo: Path, main_sha: str, ordered: list[dict],
         "ancestors_checked": len(classifications),
         "approved_reviewed_path": CONFLICT_FILE if resolved else None,
         "reviewed_resolution_applied_locally": resolved,
+        "reviewed_pr60_three_files_applied_locally": resolved_pr60,
         "combined_tree_complete": completed,
         "classification": classifications,
         "reconciled_source_contracts_verified": completed,
@@ -174,6 +243,7 @@ def main(argv=None) -> int:
     ap.add_argument("--min-depth", type=int, default=30)
     ap.add_argument("--git-repo", type=Path, required=True)
     ap.add_argument("--review-pr44-hid-blob", action="store_true")
+    ap.add_argument("--review-pr60-three-blobs", action="store_true")
     args = ap.parse_args(argv)
     try:
         if not args.review_pr44_hid_blob:
@@ -195,14 +265,22 @@ def main(argv=None) -> int:
                 break
             node = heads[node["base"]]
         ordered.reverse()
-        result = rehearsal(args.git_repo, snapshot["main_sha"],
-                           ordered, fetch_missing=True)
+        result = rehearsal(
+            args.git_repo, snapshot["main_sha"], ordered,
+            reviewed_pr60_blobs=(
+                REVIEWED_PR60_BLOBS if args.review_pr60_three_blobs else None
+            ),
+            fetch_missing=True,
+        )
         print(json.dumps(result, sort_keys=True))
         if not result["combined_tree_complete"]:
             print("STAGE61_ADDITIONAL_CONFLICT_REVIEW_REQUIRED", file=sys.stderr)
             return 2
         if not result["reviewed_resolution_applied_locally"]:
             raise ValueError("expected known PR44 conflict not encountered")
+        if (args.review_pr60_three_blobs
+                and not result["reviewed_pr60_three_files_applied_locally"]):
+            raise ValueError("expected Stage58 three-file conflict not encountered")
         print("STAGE61_REHEARSAL_REVIEW_STILL_REQUIRED")
         return 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired):

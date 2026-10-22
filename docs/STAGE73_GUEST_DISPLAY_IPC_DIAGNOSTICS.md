@@ -30,7 +30,7 @@ The stage classifier emits no raw log lines, dynamic service names, command IDs,
 
 ## Validation and next decision
 
-- 18 new adversarial fixtures cover each progressive boundary, wrong executable/NRO identity, invalid smoke status, absent/duplicate/symlinked logs and oversized trace.
+- 24 display-IPC fixtures cover progressive boundaries and last-request/response ordering; 8 additional fixtures validate the exact scoped source patch, original Git blob, symlink rejection and no mutation on mismatch.
 - The lightweight Stage73 CI covers these fixtures and Stage68/70/71 predecessors.
 - A separate native Intel workflow repeats the exact virtual integration at depth 40 and emits only sanitized Stage71/Stage73 classifications.
 

@@ -1,0 +1,44 @@
+name: NeXium Intel audit immutable upstream public VI source risks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-upstream-graphics-source:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage72-pinned-vi-source-audit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify pinned-source auditor and hostile-source fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/audit_intel_pinned_graphics_services.py
+          python3 -m unittest discover -s tests -p 'test_stage72_pinned_vi_source.py' -v
+      - name: Fetch only exact reviewed PUBLIC NeXium upstream source
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/nexium-pinned-public"
+          mkdir -p "$src"
+          git -C "$src" init -q
+          git -C "$src" fetch -q --depth=1 \
+            https://github.com/nexium-emu/nexium.git \
+            089562567a0a8760dfdd8420e1f57c35159a9219
+          git -C "$src" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$src" rev-parse HEAD)" = \
+            089562567a0a8760dfdd8420e1f57c35159a9219
+          python3 scripts/audit_intel_pinned_graphics_services.py \
+            --pinned-upstream-checkout "$src"
+          echo "STAGE72_PINNED_PUBLIC_SOURCE_REVIEW_ONLY_NO_RUNTIME_CAUSE"
+      # No pushes, source changes, screenshot uploads, game files, firmware, keys
+      # or raw emulator guest execution here. Stage71 native CI is separate.

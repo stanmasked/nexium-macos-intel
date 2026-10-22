@@ -15,14 +15,18 @@ permissions:
   actions: read
 
 jobs:
-  current-head:
+  prepare-public-framebuffer-nro:
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 15
     outputs:
       is_current: ${{ steps.freshness.outputs.is_current }}
     steps:
-      - name: Skip expensive diagnostics for a superseded PR revision
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify Stage73 revision is current
         id: freshness
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -33,22 +37,12 @@ jobs:
           actual="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${BRANCH_NAME}" | awk 'NR == 1 {print $1}')"
           if [[ -n "$actual" && "$actual" == "$EXPECTED_HEAD_SHA" ]]; then
             echo "is_current=true" >> "$GITHUB_OUTPUT"
-            echo "Stage73 revision is current."
           else
             echo "is_current=false" >> "$GITHUB_OUTPUT"
             echo "Stage73 revision was superseded; skipping expensive work."
           fi
-  prepare-public-framebuffer-nro:
-    needs: current-head
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
       - name: Download source-identical Stage71 public libnx NRO seed
+        if: steps.freshness.outputs.is_current == 'true'
         uses: actions/download-artifact@v4
         with:
           name: stage71-public-original-libnx-framebuffer-nro
@@ -57,6 +51,7 @@ jobs:
           run-id: 39821434769
           github-token: ${{ github.token }}
       - name: Verify pinned source and NRO identity before reuse
+        if: steps.freshness.outputs.is_current == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -79,6 +74,7 @@ jobs:
             --guest-nro stage73-graphics/framebuffer.nro \
             --source probes/nexium_guest_framebuffer_probe.c
       - name: Transfer only audited public graphics NRO
+        if: steps.freshness.outputs.is_current == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: stage73-public-original-libnx-framebuffer-nro
@@ -88,8 +84,8 @@ jobs:
 
 
   integrated-intel-guest-graphics:
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
-    needs: [current-head, prepare-public-framebuffer-nro]
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.prepare-public-framebuffer-nro.outputs.is_current == 'true'
+    needs: [prepare-public-framebuffer-nro]
     runs-on: macos-15-intel
     timeout-minutes: 110
     steps:

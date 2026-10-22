@@ -1,0 +1,122 @@
+name: NeXium Intel run original public libnx framebuffer on virtual merged emulator
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  compile-public-framebuffer-nro:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage68-live-guest-framebuffer'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify public graphics probe source and synthetic binary tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage67_graphics_nro_build.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
+      - name: Compile bounded original guest libnx checkerboard NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage68-graphics
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_framebuffer_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage68-graphics/framebuffer.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Public Framebuffer" "NeXium Intel Research" "0.1.0" \
+            stage68-graphics/framebuffer.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage68-graphics/framebuffer.elf \
+            stage68-graphics/framebuffer.nro \
+            --nacp=stage68-graphics/framebuffer.nacp
+          python3 scripts/audit_guest_framebuffer_build.py \
+            --guest-nro stage68-graphics/framebuffer.nro \
+            --source probes/nexium_guest_framebuffer_probe.c
+      - name: Transfer only original public graphics NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage68-public-original-libnx-framebuffer-nro
+          path: stage68-graphics/framebuffer.nro
+          if-no-files-found: error
+          retention-days: 7
+
+  integrated-intel-guest-graphics:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage68-live-guest-framebuffer'
+    needs: compile-public-framebuffer-nro
+    runs-on: macos-15-intel
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage68-public-original-libnx-framebuffer-nro
+          path: stage68-graphics
+      - name: Enforce exact Intel host, commit SHA and direct public guest source
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
+          test -s stage68-graphics/framebuffer.nro
+      - name: Validate graphics marker ordering and hostile evidence controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/probe_intel_graphics_runtime.py
+          python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage66_owned_window.py' -v
+      - name: Install native Intel NeXium compilation prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
+      - name: Run real guest framebuffer on exact reviewed 36-PR Intel build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/probe_intel_graphics_runtime.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 70 --min-depth 36 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo . \
+            --guest-nro stage68-graphics/framebuffer.nro \
+            --guest-source probes/nexium_guest_framebuffer_probe.c
+          echo "Framebuffer API return/own-window pixels are diagnostic, not guest GPU verification."
+      # No raw logs, screenshots, private files, integrated Mach-O uploads,
+      # or automatic merges. Runtime evidence is classified locally.

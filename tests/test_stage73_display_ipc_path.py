@@ -39,6 +39,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         stages = [
             'IPC request service="sm:" cmd=1',
             "sm:GetServiceHandle name=vi:u raw=0000000000000000",
+            'IPC request service="vi:u" cmd=2 in_data=0 is_domain=false',
             "→ IApplicationDisplayService sub-session handle=0x101",
             'IPC request service="IApplicationDisplayService" cmd=2020 in_data=8 is_domain=false',
             "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020 rc=0 response_len=64",
@@ -55,48 +56,52 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.data = "Auto-loaded NRO:\nBooting NRO:\n"
         self.assertEqual(self.inspect()["observed_stage"], "ipc_request_markers_not_observed")
 
-    def test_trace_without_vi_handle_request(self):
+    def test_ipc_request_marker_without_vi_handle_request(self):
         self.data = 'IPC request service="sm:" cmd=1'
         self.assertEqual(self.inspect()["observed_stage"], "before_vi_u_service_handle_observed")
 
-    def test_vi_handle_without_display_subsession(self):
+    def test_vi_handle_without_vi_ipc_request(self):
         self.set_through(2)
-        self.assertEqual(self.inspect()["observed_stage"], "vi_u_requested_display_subsession_not_observed")
+        self.assertEqual(self.inspect()["observed_stage"], "vi_u_handle_created_ipc_request_not_observed")
+
+    def test_vi_ipc_request_without_display_subsession(self):
+        self.set_through(3)
+        self.assertEqual(self.inspect()["observed_stage"], "vi_u_ipc_request_display_subsession_not_observed")
 
     def test_display_subsession_without_native_window_request(self):
-        self.set_through(3)
+        self.set_through(4)
         self.assertEqual(self.inspect()["observed_stage"], "display_subsession_created_native_window_request_not_observed")
 
     def test_native_window_request_without_response(self):
-        self.set_through(4)
+        self.set_through(5)
         self.assertEqual(self.inspect()["observed_stage"], "native_window_request_response_not_observed")
 
     def test_native_window_response_without_binder_subsession(self):
-        self.set_through(5)
+        self.set_through(6)
         self.assertEqual(self.inspect()["observed_stage"], "native_window_response_binder_subsession_not_observed")
 
     def test_binder_subsession_without_transact(self):
-        self.set_through(6)
+        self.set_through(7)
         self.assertEqual(self.inspect()["observed_stage"], "binder_subsession_transact_not_observed")
 
     def test_binder_transact_without_connect(self):
-        self.set_through(7)
+        self.set_through(8)
         self.assertEqual(self.inspect()["observed_stage"], "binder_transact_igbp_connect_not_observed")
 
     def test_connect_without_request_buffer(self):
-        self.set_through(8)
+        self.set_through(9)
         self.assertEqual(self.inspect()["observed_stage"], "igbp_connect_request_buffer_not_observed")
 
     def test_request_buffer_without_dequeue(self):
-        self.set_through(9)
+        self.set_through(10)
         self.assertEqual(self.inspect()["observed_stage"], "request_buffer_dequeue_not_observed")
 
     def test_dequeue_without_queue(self):
-        self.set_through(10)
+        self.set_through(11)
         self.assertEqual(self.inspect()["observed_stage"], "dequeue_queue_not_observed")
 
     def test_queue_is_not_guest_gpu_proof(self):
-        self.set_through(11)
+        self.set_through(12)
         result = self.inspect()
         self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
         self.assertFalse(result["guest_framebuffer_runtime_completed"])

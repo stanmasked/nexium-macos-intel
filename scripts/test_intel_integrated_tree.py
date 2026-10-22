@@ -24,7 +24,7 @@ from rehearse_intel_reviewed_conflict import REVIEWED_PR60_BLOBS, rehearsal
 
 MAX_ARCHIVE = 48 * 1024 * 1024
 MAX_MEMBERS = 5000
-TEST_COUNT = re.compile(r"Ran (\d+) tests in ")
+TEST_COUNT = re.compile(r"Ran (\d+) tests? in ")
 EXPECTED_MIN_TESTS = 450
 
 

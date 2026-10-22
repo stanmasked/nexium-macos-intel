@@ -31,8 +31,8 @@ The stage classifier emits no raw log lines, dynamic service names, command IDs,
 
 ## Validation and next decision
 
-- 37 display-IPC fixtures cover progressive boundaries, the real handler-marker spelling, either order of the Binder-session/native-window branches, missing-branch classification, out-of-order evidence rejection, symlinked report/data-root/log-directory rejection, debug-visible dequeue retry/timeout behavior, same-binder BufferQueue correlation and last-request/response ordering; 9 additional fixtures validate the exact scoped source patch, original Git blob, native build wiring, symlink rejection and no mutation on mismatch.
-- The lightweight Stage73 CI audits the exact pinned svc.rs log templates and levels, then covers these fixtures and Stage68/70/71 predecessors.
+- 46 display-IPC fixtures cover progressive boundaries, the real handler-marker spelling, either order of the Binder-session/native-window branches, missing-branch classification, out-of-order evidence rejection, symlinked report/data-root/log-directory rejection, debug-visible dequeue retry/timeout behavior, same-binder BufferQueue correlation and last-request/response ordering; 9 additional fixtures validate the exact scoped source patch, original Git blob, native build wiring, symlink rejection and no mutation on mismatch.
+- The lightweight Stage73 CI audits the exact pinned svc.rs log templates and levels, then covers these fixtures and Stage68/70/71 predecessors. At code revision `74511d9`, the experimental Intel workflow passed the full isolated harness: 609 tests ran, with `OK`; this is source/test validation, not guest GPU certification.
 - A separate native Intel workflow repeats the exact virtual integration at depth 40 and emits only sanitized Stage71/Stage73 classifications.
 
 After the exact native run completes, implement only the first specific missing response/handler demonstrated by the allowlisted marker sequence. Do not treat an IPC request or a framebuffer API call returning as visible guest GPU rendering. All PRs remain Draft and `main` unchanged.

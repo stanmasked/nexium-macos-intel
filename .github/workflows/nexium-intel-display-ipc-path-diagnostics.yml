@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   guest-display-ipc-classification:
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-diagnostics'
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

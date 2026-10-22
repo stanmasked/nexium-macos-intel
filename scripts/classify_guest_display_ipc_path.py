@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Stage73: source-anchored fixed-category original guest display IPC diagnosis.
 
-The trace log remains private on the disposable native Intel runner. This
-module emits only booleans and one allowlisted stage category; it never emits
+The private DEBUG log remains on the disposable native Intel runner. This
+module emits only booleans and allowlisted stage categories; it never emits
 raw service names from a log, command numbers, paths, IPC bytes or screenshots.
 A reached IPC operation is not evidence of correct display or GPU rendering.
 """

@@ -124,36 +124,105 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         raise ValueError("original display IPC log unsafe or oversized")
     data = log.read_text(encoding="utf-8", errors="replace")
     evidence = {name: token in data for name, token in EVIDENCE.items()}
+    # Classify milestones in log order, not by global token presence. A later
+    # marker from a different attempt must not make an earlier stage look complete.
+    def after(marker: str, position: int) -> int | None:
+        found = data.find(marker, position + 1)
+        return found if found >= 0 else None
+
+    def regex_after(pattern: re.Pattern[str], position: int) -> re.Match[str] | None:
+        return pattern.search(data, position + 1)
+
     if not evidence["ipc_request_marker_observed"]:
         stage = "ipc_request_markers_not_observed"
-    elif not evidence["vi_u_service_handle_requested"]:
-        stage = "before_vi_u_service_handle_observed"
-    elif not evidence["vi_u_ipc_request_observed"]:
-        stage = "vi_u_handle_created_ipc_request_not_observed"
-    elif not evidence["display_service_subsession_returned"]:
-        stage = "vi_u_ipc_request_display_subsession_not_observed"
-    elif not (evidence["display_cmd_2020_request_observed"]
-              or evidence["display_cmd_2030_request_observed"]):
-        stage = "display_subsession_created_native_window_request_not_observed"
-    elif not (evidence["display_cmd_2020_response_observed"]
-              or evidence["display_cmd_2030_response_observed"]):
-        stage = "native_window_request_response_not_observed"
-    elif not evidence["binder_subsession_returned"]:
-        stage = "native_window_response_binder_subsession_not_observed"
-    elif not (evidence["binder_cmd_0_request_observed"]
-              or evidence["binder_cmd_3_request_observed"]):
-        stage = "binder_subsession_transact_not_observed"
-    elif not evidence["igbp_connect_observed"]:
-        stage = "binder_transact_igbp_connect_not_observed"
-    elif evidence["igbp_queue_buffer_observed"]:
-        stage = "igbp_queue_observed_not_gpu_proof"
-    elif (evidence["igbp_dequeue_retry_marker_observed"]
-          or evidence["igbp_dequeue_timeout_marker_observed"]):
-        stage = "igbp_dequeue_retry_or_timeout_observed"
-    elif not evidence["igbp_request_buffer_observed"]:
-        stage = "igbp_connect_request_buffer_not_observed"
     else:
-        stage = "igbp_request_buffer_observed_later_buffer_operations_unverified_at_debug_level"
+        sm_request = data.find('IPC request service="sm:" cmd=')
+        if sm_request < 0:
+            stage = "service_manager_request_not_observed"
+        else:
+            vi_handle = after("SM::GetServiceHandle 'vi:u'", sm_request)
+            if vi_handle is None:
+                stage = "before_vi_u_service_handle_observed"
+            else:
+                vi_request = after('IPC request service="vi:u" cmd=', vi_handle)
+                if vi_request is None:
+                    stage = "vi_u_handle_created_ipc_request_not_observed"
+                else:
+                    display_subsession = after(
+                        "IApplicationDisplayService sub-session handle=", vi_request
+                    )
+                    if display_subsession is None:
+                        stage = "vi_u_ipc_request_display_subsession_not_observed"
+                    else:
+                        display_request_pattern = re.compile(
+                            r'IPC request service="IApplicationDisplayService" cmd=(2020|2030)\\b'
+                        )
+                        display_request = regex_after(
+                            display_request_pattern, display_subsession
+                        )
+                        if display_request is None:
+                            stage = "display_subsession_created_native_window_request_not_observed"
+                        else:
+                            display_cmd = display_request.group(1)
+                            display_response_pattern = re.compile(
+                                r"IPC FIRST-OCCURRENCE response \\(compare with RustSwitch\\) "
+                                r"service=IApplicationDisplayService cmd="
+                                + re.escape(display_cmd)
+                                + r"\\b"
+                            )
+                            display_response = regex_after(
+                                display_response_pattern, display_request.start()
+                            )
+                            if display_response is None:
+                                stage = "native_window_request_response_not_observed"
+                            else:
+                                binder_subsession = after(
+                                    "IHOSBinderDriver sub-session handle=",
+                                    display_response.start(),
+                                )
+                                if binder_subsession is None:
+                                    stage = "native_window_response_binder_subsession_not_observed"
+                                else:
+                                    binder_request_pattern = re.compile(
+                                        r'IPC request service="IHOSBinderDriver" cmd=(0|3)\\b'
+                                    )
+                                    binder_request = regex_after(
+                                        binder_request_pattern, binder_subsession
+                                    )
+                                    if binder_request is None:
+                                        stage = "binder_subsession_transact_not_observed"
+                                    else:
+                                        connect = after(
+                                            "IGBP::Connect binder=", binder_request.start()
+                                        )
+                                        if connect is None:
+                                            stage = "binder_transact_igbp_connect_not_observed"
+                                        else:
+                                            request_buffer = after(
+                                                "IGBP::RequestBuffer binder=", connect
+                                            )
+                                            if request_buffer is None:
+                                                stage = "igbp_connect_request_buffer_not_observed"
+                                            else:
+                                                later_operations = [
+                                                    pos for pos in (
+                                                        after("IGBP::QueueBuffer", request_buffer),
+                                                        after("request cannot be re-issued, polling in-SVC", request_buffer),
+                                                        after("IGBP::DequeueBuffer timed out waiting for a released slot", request_buffer),
+                                                    ) if pos is not None
+                                                ]
+                                                if not later_operations:
+                                                    stage = (
+                                                        "igbp_request_buffer_observed_later_buffer_operations_"
+                                                        "unverified_at_debug_level"
+                                                    )
+                                                else:
+                                                    last_operation = max(later_operations)
+                                                    queue_pos = after("IGBP::QueueBuffer", request_buffer)
+                                                    if queue_pos == last_operation:
+                                                        stage = "igbp_queue_observed_not_gpu_proof"
+                                                    else:
+                                                        stage = "igbp_dequeue_retry_or_timeout_observed"
     return {
         "schema": "nexium-stage73-display-ipc-path/v1",
         "observed_stage": stage,

@@ -115,6 +115,27 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.data += "\nIGBP::DequeueBuffer timed out waiting for a released slot binder=256 (free=0 deq=0 queued=0)"
         self.assertEqual(self.inspect()["observed_stage"], "igbp_dequeue_retry_or_timeout_observed")
 
+    def test_out_of_order_queue_marker_does_not_advance_past_connect(self):
+        self.set_through(9)
+        self.data += "\\nIGBP::QueueBuffer binder=256 swap_interval=1 (was None)"
+        self.assertEqual(
+            self.inspect()["observed_stage"],
+            "igbp_connect_request_buffer_not_observed",
+        )
+
+    def test_response_before_native_window_request_does_not_count(self):
+        self.set_through(4)
+        self.data += (
+            "\\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 rc=0 response_len=64"
+            "\\nIPC request service=\\"IApplicationDisplayService\\" "
+            "cmd=2020 in_data=8 is_domain=false"
+        )
+        self.assertEqual(
+            self.inspect()["observed_stage"],
+            "native_window_request_response_not_observed",
+        )
+
     def test_queue_is_not_guest_gpu_proof(self):
         self.set_through(12)
         result = self.inspect()

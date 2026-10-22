@@ -76,9 +76,9 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(3)
         self.assertEqual(self.inspect()["observed_stage"], "vi_u_ipc_request_display_subsession_not_observed")
 
-    def test_display_subsession_without_binder_session_request(self):
+    def test_display_subsession_without_either_followup_branch(self):
         self.set_through(4)
-        self.assertEqual(self.inspect()["observed_stage"], "display_subsession_binder_session_request_not_observed")
+        self.assertEqual(self.inspect()["observed_stage"], "display_subsession_binder_or_native_window_request_not_observed")
 
     def test_binder_session_request_without_subsession(self):
         self.set_through(5)
@@ -94,7 +94,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
 
     def test_native_window_response_without_binder_transact(self):
         self.set_through(8)
-        self.assertEqual(self.inspect()["observed_stage"], "native_window_response_binder_transact_not_observed")
+        self.assertEqual(self.inspect()["observed_stage"], "display_and_native_window_ready_binder_transact_not_observed")
 
     def test_binder_transact_without_connect(self):
         self.set_through(9)
@@ -141,6 +141,14 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
             "native_window_request_response_not_observed",
         )
 
+    def test_native_window_branch_can_precede_binder_session_branch(self):
+        self.set_through(13)
+        lines = self.data.splitlines()
+        # Move native-window request/response ahead of cmd 100 and its session handle.
+        self.data = "\n".join(lines[:4] + lines[6:8] + lines[4:6] + lines[8:])
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertFalse(result["guest_gpu_frames_verified"])
     def test_queue_is_not_guest_gpu_proof(self):
         self.set_through(13)
         result = self.inspect()

@@ -20,9 +20,9 @@ A new parser reads at most one private original FileLogger (bounded at 16 MiB) a
 
 1. service-manager lookup of `vi:u` and the actual `vi:u` IPC request;
 2. creation of an `IApplicationDisplayService` subsession;
-3. the `IApplicationDisplayService` command 100/103 request and corresponding `IHOSBinderDriver` subsession creation;
+3. the independent `IApplicationDisplayService` command 100/103 request and corresponding `IHOSBinderDriver` subsession creation;
 4. the OpenLayer/native-window command 2020/2030 request and its matching first-occurrence response;
-5. the first Binder-driver transaction after the native-window response, then IGBP Connect and RequestBuffer;
+5. the first Binder-driver transaction after **both** branches complete. The Binder-session and native-window branches may occur in either order;
 6. the last allowlisted IPC request, whether its first-occurrence response follows, and ambiguity if the same command was previously answered;
 7. positive DequeueBuffer retry/timeout diagnostics or QueueBuffer evidence. A normal successful DequeueBuffer record is TRACE-only at the current DEBUG log level, so its absence is reported as unverified rather than as proof that dequeue did not occur;
 8. original guest default-window and framebuffer-created markers.
@@ -31,7 +31,7 @@ The stage classifier emits no raw log lines, dynamic service names, command IDs,
 
 ## Validation and next decision
 
-- 29 display-IPC fixtures cover progressive boundaries, the real handler-marker spelling, the source-mapped Binder-session-before-native-window order, out-of-order evidence rejection, debug-visible dequeue retry/timeout behavior and last-request/response ordering; 9 additional fixtures validate the exact scoped source patch, original Git blob, native build wiring, symlink rejection and no mutation on mismatch.
+- 30 display-IPC fixtures cover progressive boundaries, the real handler-marker spelling, either order of the Binder-session/native-window branches, out-of-order evidence rejection, debug-visible dequeue retry/timeout behavior and last-request/response ordering; 9 additional fixtures validate the exact scoped source patch, original Git blob, native build wiring, symlink rejection and no mutation on mismatch.
 - The lightweight Stage73 CI audits the exact pinned svc.rs log templates and levels, then covers these fixtures and Stage68/70/71 predecessors.
 - A separate native Intel workflow repeats the exact virtual integration at depth 40 and emits only sanitized Stage71/Stage73 classifications.
 

@@ -23,6 +23,7 @@ import tarfile
 import tempfile
 
 from audit_guest_framebuffer_build import validate_compiled_public_probe
+from classify_intel_guest_graphics_boot import inspect_original_graphics_boot
 from audit_intel_pr_stack import audit_snapshot, collect_live
 from build_intel_merged_tree import (
     compile_native_intel, compute_virtual_tree, extract_virtual_source,
@@ -236,7 +237,21 @@ def main(argv=None) -> int:
             )
             print("STAGE68_GATE_REAL_INTEL_MACHO_PASS", flush=True)
             binary = work / "nexium" / "target" / "x86_64-apple-darwin" / "release" / "nexium"
-            run_graphics_guest(src, binary, nro, report)
+            try:
+                run_graphics_guest(src, binary, nro, report)
+            finally:
+                # Print ONLY pre-allowlisted original boot category and booleans.
+                # The raw emulator console, FileLogger and PNGs remain private.
+                if (report / "smoke_result.json").is_file():
+                    boot = inspect_original_graphics_boot(
+                        report, intel_binary["native_macho_sha256"],
+                        compiled["nro_sha256"],
+                    )
+                    print("STAGE71_ORIGINAL_GRAPHICS_BOOT_DIAGNOSTIC "
+                          + json.dumps(boot, sort_keys=True), flush=True)
+                else:
+                    print("STAGE71_ORIGINAL_GRAPHICS_SMOKE_RECEIPT_UNAVAILABLE",
+                          flush=True)
             guest = source_graphics_audit(
                 report, intel_binary["native_macho_sha256"], compiled["nro_sha256"]
             )

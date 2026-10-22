@@ -35,15 +35,15 @@ IPC_RESPONSE_PATTERN = re.compile(
 )
 # Correlate BufferQueue evidence by the binder ID printed by the pinned source.
 # Never expose that ID in the sanitized classification result.
-IGBP_CONNECT_PATTERN = re.compile(r"IGBP::Connect binder=(\\d+)\\b")
-IGBP_REQUEST_BUFFER_PATTERN = re.compile(r"IGBP::RequestBuffer binder=(\\d+)\\b")
+IGBP_CONNECT_PATTERN = re.compile(r"IGBP::Connect binder=(\d+)\b")
+IGBP_REQUEST_BUFFER_PATTERN = re.compile(r"IGBP::RequestBuffer binder=(\d+)\b")
 IGBP_DEQUEUE_RETRY_PATTERN = re.compile(
-    r"IGBP::DequeueBuffer binder=(\\d+): request cannot be re-issued, polling in-SVC"
+    r"IGBP::DequeueBuffer binder=(\d+): request cannot be re-issued, polling in-SVC"
 )
 IGBP_DEQUEUE_TIMEOUT_PATTERN = re.compile(
-    r"IGBP::DequeueBuffer timed out waiting for a released slot binder=(\\d+)\\b"
+    r"IGBP::DequeueBuffer timed out waiting for a released slot binder=(\d+)\b"
 )
-IGBP_QUEUE_BUFFER_PATTERN = re.compile(r"IGBP::QueueBuffer binder=(\\d+)\\b")
+IGBP_QUEUE_BUFFER_PATTERN = re.compile(r"IGBP::QueueBuffer binder=(\d+)\b")
 
 
 

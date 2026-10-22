@@ -126,8 +126,8 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
     def test_request_buffer_for_different_binder_does_not_advance_path(self):
         self.set_through(10)
         self.data += (
-            "\\nIGBP::RequestBuffer binder=512 slot=0"
-            "\\nIGBP::QueueBuffer binder=512 swap_interval=1 (was None)"
+            "\nIGBP::RequestBuffer binder=512 slot=0"
+            "\nIGBP::QueueBuffer binder=512 swap_interval=1 (was None)"
         )
         result = self.inspect()
         self.assertEqual(
@@ -139,8 +139,8 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
     def test_interleaved_request_buffer_selects_matching_binder(self):
         self.set_through(10)
         self.data += (
-            "\\nIGBP::RequestBuffer binder=512 slot=0"
-            "\\nIGBP::RequestBuffer binder=256 slot=1"
+            "\nIGBP::RequestBuffer binder=512 slot=0"
+            "\nIGBP::RequestBuffer binder=256 slot=1"
             "\\nIGBP::QueueBuffer binder=256 swap_interval=1 (was None)"
         )
         self.assertEqual(
@@ -150,7 +150,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
 
     def test_queue_for_different_binder_is_not_attributed(self):
         self.set_through(11)
-        self.data += "\\nIGBP::QueueBuffer binder=512 swap_interval=1 (was None)"
+        self.data += "\nIGBP::QueueBuffer binder=512 swap_interval=1 (was None)"
         self.assertEqual(
             self.inspect()["observed_stage"],
             "igbp_request_buffer_other_binder_activity_unverified",

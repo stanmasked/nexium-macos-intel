@@ -87,6 +87,34 @@ class Stage73ScopedIpcPatchTests(unittest.TestCase):
             self.patch("0" * 40)
         self.assertEqual(self.path.read_bytes(), before)
 
+    def test_native_build_applies_scoped_patch_and_binds_receipt_before_cargo(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = (repo_root / "macos_probe.sh").read_text(encoding="utf-8")
+        builder = (repo_root / "scripts" / "build_intel_merged_tree.py").read_text(
+            encoding="utf-8"
+        )
+        call = 'python3 "$SELF/scripts/apply_macos_display_ipc_trace.py"'
+        self.assertEqual(script.count(call), 1)
+        call_at = script.index(call)
+        stage53_patch_at = script.index(
+            'python3 "$SELF/scripts/apply_macos_guest_deadzone_threshold.py"'
+        )
+        rustup_at = script.index("rustup target add x86_64-apple-darwin")
+        cargo_at = script.index("cargo rustc --release --target x86_64-apple-darwin")
+        self.assertLess(stage53_patch_at, call_at)
+        self.assertLess(call_at, rustup_at)
+        self.assertLess(rustup_at, cargo_at)
+        self.assertIn('if [[ "${NEXIUM_DISPLAY_IPC_TRACE:-0}" == "1" ]]; then', script)
+        self.assertIn('--source-root "$SRC"', script[call_at:call_at + 300])
+        self.assertIn('--receipt "$WORK/display-ipc-trace-patch.json"', script[call_at:call_at + 300])
+        self.assertIn(
+            'trace_receipt_path = work_dir / "display-ipc-trace-patch.json"',
+            builder,
+        )
+        self.assertIn(
+            'base_env.get("NEXIUM_DISPLAY_IPC_TRACE") == "1"',
+            builder,
+        )
     def test_receipt_does_not_claim_runtime_or_gpu_success(self):
         report = self.patch()
         self.assertFalse(report.get("guest_gpu_frames_verified", False))

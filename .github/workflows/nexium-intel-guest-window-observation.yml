@@ -1,0 +1,138 @@
+name: NeXium Intel observe owned GUI window from integrated guest
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  build-public-stage53-guest:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage66-guest-window-observation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Build only our public diagnostic libnx NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage66-public
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_deadzone_threshold_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage66-public/threshold.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest Deadzone Probe" "NeXium Intel Research" "0.1.0" \
+            stage66-public/threshold.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage66-public/threshold.elf \
+            stage66-public/threshold.nro \
+            --nacp=stage66-public/threshold.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "scripts")
+          from audit_intel_controller_proof_structure import validate_nro
+          assert validate_nro(Path("stage66-public/threshold.nro")) > 128
+          print("STAGE66_PUBLIC_LIBNX_NRO_VALIDATED")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage66-public-libnx-threshold-nro
+          path: stage66-public/threshold.nro
+          if-no-files-found: error
+          retention-days: 7
+
+  native-intel-gui-observation:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage66-guest-window-observation'
+    needs: build-public-stage53-guest
+    runs-on: macos-15-intel
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage66-public-libnx-threshold-nro
+          path: stage66-public
+      - name: Validate real x86_64 Intel host, exact PR head and input
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
+          test -s stage66-public/threshold.nro
+      - name: Verify window-capture classifier negative and positive controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/observe_intel_integrated_window.py
+          python3 -m unittest discover -s tests -p 'test_stage66_owned_window.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage65_integrated_guest.py' -v
+
+      - name: Inspect only this runner's independent AppKit GUI session
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun swiftc -framework AppKit -framework CoreGraphics \
+            -o "$RUNNER_TEMP/stage66-appkit-control" \
+            scripts/appkit_gui_session_control.swift
+          set +e
+          "$RUNNER_TEMP/stage66-appkit-control" >"$RUNNER_TEMP/stage66-appkit-status" 2>/dev/null
+          status=$?
+          set -e
+          if [[ "$status" = 0 ]] && grep -Eq '^APPKIT_CONTROL_SESSION: own_windows=[0-9]+ own_visible=[1-9][0-9]*$' "$RUNNER_TEMP/stage66-appkit-status"; then
+            echo "STAGE66_RUNNER_APPKIT_VISIBLE_SESSION"
+          else
+            echo "STAGE66_RUNNER_APPKIT_VISIBILITY_UNVERIFIED"
+          fi
+          # Runner session may be headless. This is not a graphics PASS.
+
+      - name: Install macOS NeXium Intel build requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
+
+      - name: Run reviewed 35-PR guest, classify own window without images
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/observe_intel_integrated_window.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 68 \
+            --min-depth 35 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo . \
+            --guest-nro stage66-public/threshold.nro
+          echo "Owned-window observation is not a commercial game or GPU proof."
+      # No screenshot, raw guest log, binary or private artifact upload.

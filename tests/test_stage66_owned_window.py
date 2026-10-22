@@ -25,7 +25,7 @@ class Stage66OwnedWindowEvidenceTests(unittest.TestCase):
         self.folder.mkdir()
         self.smoke = {
             "emulator_sha256": BINARY, "nro_sha256": NRO,
-            "status": "timeout_alive_unverified", "gameplay_verified": False,
+            "status": "timeout_alive_unverified", "gameplay_verified": False,\n            "emulator_pid": 1234,
             "window_capture": {
                 "requested": True, "frames": 0,
                 "unique_hashes": 0, "status": "no_window_frames_unverified",
@@ -165,6 +165,27 @@ class Stage66OwnedWindowEvidenceTests(unittest.TestCase):
         self.details["unique_hashes"] = 99
         self.write()
         with self.assertRaisesRegex(ValueError, "inconsistent"):
+            inspect_gui_evidence(self.root, BINARY, NRO)
+
+    def test_capture_pid_must_match_exact_smoke_process(self):
+        self.add_png(0)
+        self.details["pid"] = 9999
+        self.write()
+        with self.assertRaisesRegex(ValueError, "PID not bound"):
+            inspect_gui_evidence(self.root, BINARY, NRO)
+
+    def test_capture_pid_missing_is_not_accepted(self):
+        self.add_png(0)
+        self.details.pop("pid")
+        self.write()
+        with self.assertRaisesRegex(ValueError, "PID not bound"):
+            inspect_gui_evidence(self.root, BINARY, NRO)
+
+    def test_smoke_pid_must_be_positive_integer(self):
+        self.add_png(0)
+        self.smoke["emulator_pid"] = True
+        self.write()
+        with self.assertRaisesRegex(ValueError, "PID not bound"):
             inspect_gui_evidence(self.root, BINARY, NRO)
 
     def test_smoke_status_nonzero_exit_rejected(self):

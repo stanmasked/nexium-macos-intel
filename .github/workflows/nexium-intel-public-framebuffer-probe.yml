@@ -1,0 +1,56 @@
+name: NeXium Intel build original public libnx framebuffer graphics probe
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-public-graphics-guest:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage67-public-graphics-nro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Prove bounded source/API/marker rejection cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/audit_guest_framebuffer_build.py
+          python3 -m unittest discover -s tests -p 'test_stage67_graphics_nro_build.py' -v
+      - name: Compile libnx's actual public Framebuffer NRO (not execute)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage67-public-graphics
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_framebuffer_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage67-public-graphics/framebuffer-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Framebuffer Probe" "NeXium Intel Research" "0.1.0" \
+            stage67-public-graphics/framebuffer-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage67-public-graphics/framebuffer-probe.elf \
+            stage67-public-graphics/framebuffer-probe.nro \
+            --nacp=stage67-public-graphics/framebuffer-probe.nacp
+          python3 scripts/audit_guest_framebuffer_build.py \
+            --source probes/nexium_guest_framebuffer_probe.c \
+            --guest-nro stage67-public-graphics/framebuffer-probe.nro
+          echo "STAGE67_PUBLIC_LIBNX_GRAPHICS_BUILD_ONLY_NO_RUNTIME_PROOF"
+      # No emulator execution, no window/frame/screenshot proof, no artifacts.

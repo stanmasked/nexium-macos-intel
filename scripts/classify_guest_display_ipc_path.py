@@ -33,6 +33,18 @@ IPC_RESPONSE_PATTERN = re.compile(
     r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
     r"service=(sm:|vi:u|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\d+)"
 )
+# Correlate BufferQueue evidence by the binder ID printed by the pinned source.
+# Never expose that ID in the sanitized classification result.
+IGBP_CONNECT_PATTERN = re.compile(r"IGBP::Connect binder=(\\d+)\\b")
+IGBP_REQUEST_BUFFER_PATTERN = re.compile(r"IGBP::RequestBuffer binder=(\\d+)\\b")
+IGBP_DEQUEUE_RETRY_PATTERN = re.compile(
+    r"IGBP::DequeueBuffer binder=(\\d+): request cannot be re-issued, polling in-SVC"
+)
+IGBP_DEQUEUE_TIMEOUT_PATTERN = re.compile(
+    r"IGBP::DequeueBuffer timed out waiting for a released slot binder=(\\d+)\\b"
+)
+IGBP_QUEUE_BUFFER_PATTERN = re.compile(r"IGBP::QueueBuffer binder=(\\d+)\\b")
+
 
 
 def last_ipc_request_summary(data: str) -> dict:
@@ -234,40 +246,58 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                             if binder_transaction is None:
                                 stage = "display_and_native_window_ready_binder_transact_not_observed"
                             else:
-                                connect = after(
-                                    "IGBP::Connect binder=", binder_transaction.start()
+                                connect_match = regex_after(
+                                    IGBP_CONNECT_PATTERN, binder_transaction.start()
                                 )
-                                if connect is None:
+                                if connect_match is None:
                                     stage = "binder_transact_igbp_connect_not_observed"
                                 else:
-                                    request_buffer = after(
-                                        "IGBP::RequestBuffer binder=", connect
+                                    connect_binder = connect_match.group(1)
+                                    buffer_matches = list(
+                                        IGBP_REQUEST_BUFFER_PATTERN.finditer(
+                                            data, connect_match.end()
+                                        )
                                     )
-                                    if request_buffer is None:
-                                        stage = "igbp_connect_request_buffer_not_observed"
+                                    request_buffer_match = next(
+                                        (match for match in buffer_matches
+                                         if match.group(1) == connect_binder),
+                                        None,
+                                    )
+                                    if request_buffer_match is None:
+                                        if buffer_matches:
+                                            stage = "igbp_connect_request_buffer_binder_mismatch"
+                                        else:
+                                            stage = "igbp_connect_request_buffer_not_observed"
                                     else:
-                                        operation_markers = (
-                                            "IGBP::QueueBuffer",
-                                            "request cannot be re-issued, polling in-SVC",
-                                            "IGBP::DequeueBuffer timed out waiting for a released slot",
+                                        request_buffer = request_buffer_match.end()
+                                        operation_patterns = (
+                                            ("queue", IGBP_QUEUE_BUFFER_PATTERN),
+                                            ("dequeue_retry", IGBP_DEQUEUE_RETRY_PATTERN),
+                                            ("dequeue_timeout", IGBP_DEQUEUE_TIMEOUT_PATTERN),
                                         )
                                         later_operations = []
-                                        for marker in operation_markers:
-                                            offset = request_buffer + 1
-                                            while True:
-                                                found = data.find(marker, offset)
-                                                if found < 0:
-                                                    break
-                                                later_operations.append((found, marker))
-                                                offset = found + len(marker)
+                                        other_binder_operations = []
+                                        for operation_kind, pattern in operation_patterns:
+                                            for match in pattern.finditer(data, request_buffer):
+                                                item = (match.start(), operation_kind)
+                                                if match.group(1) == connect_binder:
+                                                    later_operations.append(item)
+                                                else:
+                                                    other_binder_operations.append(item)
                                         if not later_operations:
-                                            stage = (
-                                                "igbp_request_buffer_observed_later_buffer_operations_"
-                                                "unverified_at_debug_level"
-                                            )
+                                            if other_binder_operations:
+                                                stage = (
+                                                    "igbp_request_buffer_other_binder_activity_"
+                                                    "unverified"
+                                                )
+                                            else:
+                                                stage = (
+                                                    "igbp_request_buffer_observed_later_buffer_operations_"
+                                                    "unverified_at_debug_level"
+                                                )
                                         else:
-                                            _, last_marker = max(later_operations)
-                                            if last_marker == "IGBP::QueueBuffer":
+                                            _, last_operation = max(later_operations)
+                                            if last_operation == "queue":
                                                 stage = "igbp_queue_observed_not_gpu_proof"
                                             else:
                                                 stage = "igbp_dequeue_retry_or_timeout_observed"

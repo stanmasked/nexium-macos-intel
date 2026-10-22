@@ -112,6 +112,11 @@ EVIDENCE = {
 
 def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                    nro_sha: str) -> dict:
+    # The report directory is part of the trust boundary too: rejecting only
+    # linked child files would still allow the entire evidence root to be
+    # redirected to a different directory before the receipt is read.
+    if report.is_symlink() or not report.is_dir():
+        raise ValueError("display IPC report directory unsafe")
     receipt = read_bounded_json(report / "smoke_result.json")
     if receipt.get("emulator_sha256") != macho_sha or receipt.get("nro_sha256") != nro_sha:
         raise ValueError("display IPC receipt binary/NRO mismatch")

@@ -241,6 +241,13 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsafe or oversized"):
             inspect_guest_display_ipc_path(self.root, MACHO, NRO)
 
+    def test_symlinked_report_directory_rejected(self):
+        alias = self.root.with_name(self.root.name + "-alias")
+        alias.symlink_to(self.root, target_is_directory=True)
+        self.addCleanup(alias.unlink)
+        with self.assertRaisesRegex(ValueError, "report directory unsafe"):
+            inspect_guest_display_ipc_path(alias, MACHO, NRO)
+
     def test_symlinked_data_root_rejected(self):
         real_root = self.root / "outside-data-root"
         (self.root / "data-root").rename(real_root)

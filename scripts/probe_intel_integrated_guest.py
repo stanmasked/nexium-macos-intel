@@ -90,6 +90,7 @@ def validate_public_probe(nro: Path) -> int:
 def run_integrated_guest(
     *, source: Path, binary: Path, guest_nro: Path, report_dir: Path,
     repository_sha: str, run_id: str, base_env: dict[str, str],
+    capture_window: bool = False,
 ) -> dict:
     # Check the original path before canonicalizing: symlinked inputs are
     # never accepted. The smoke harness runs from a different working directory
@@ -114,6 +115,12 @@ def run_integrated_guest(
         "--seconds", "80",
         "--snapshot-ms", "5000",
     ]
+    if capture_window is True:
+        # The existing capture helper restricts screenshots to this
+        # NeXium process's own visible window. No desktop capture.
+        command.append("--capture-window")
+    elif capture_window is not False:
+        raise ValueError("window capture selector must be Boolean")
     try:
         run = subprocess.run(
             command, cwd=source, env=env,

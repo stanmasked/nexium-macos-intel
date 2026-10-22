@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 from observe_intel_integrated_window import read_bounded_json
 
@@ -21,6 +22,69 @@ ALLOWED_STATUSES = frozenset({
 
 # These are literal, allowlisted signatures from the pinned public NeXium
 # service-manager/IPC/IGBP source paths. Never print matching log lines.
+IPC_REQUEST_PATTERNS = (
+    ("service_manager", re.compile(r'IPC request service="sm:" cmd=(\\d+)')),
+    ("vi_u", re.compile(r'IPC request service="vi:u" cmd=(\\d+)')),
+    ("display_service", re.compile(r'IPC request service="IApplicationDisplayService" cmd=(\\d+)')),
+    ("binder", re.compile(r'IPC request service="IHOSBinderDriver" cmd=(\\d+)')),
+    ("nvdrv", re.compile(r'IPC request service="nvdrv(?::[ast])?" cmd=(\\d+)')),
+)
+IPC_RESPONSE_PATTERN = re.compile(
+    r"IPC FIRST-OCCURRENCE response \\(compare with RustSwitch\\) "
+    r"service=(sm:|vi:u|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\\d+)"
+)
+
+
+def last_ipc_request_summary(data: str) -> dict:
+    requests = []
+    responses = []
+    for line_no, line in enumerate(data.splitlines()):
+        for service_kind, pattern in IPC_REQUEST_PATTERNS:
+            match = pattern.search(line)
+            if match:
+                requests.append((line_no, service_kind, int(match.group(1))))
+        match = IPC_RESPONSE_PATTERN.search(line)
+        if match:
+            responses.append((line_no, match.group(1), int(match.group(2))))
+    if not requests:
+        return {
+            "last_ipc_request_stage": "no_allowlisted_ipc_request_observed",
+            "last_ipc_request_response_after_request": None,
+            "last_ipc_request_same_response_seen_before": False,
+        }
+    request_line, kind, command = requests[-1]
+    service_name = {
+        "service_manager": "sm:",
+        "vi_u": "vi:u",
+        "display_service": "IApplicationDisplayService",
+        "binder": "IHOSBinderDriver",
+        "nvdrv": None,
+    }[kind]
+    def same_service(response_service: str) -> bool:
+        if kind == "nvdrv":
+            return response_service == "nvdrv" or response_service in ("nvdrv:a", "nvdrv:s", "nvdrv:t")
+        return response_service == service_name
+    matching = [(line_no, service, cmd) for line_no, service, cmd in responses
+                if same_service(service) and cmd == command]
+    response_after = any(line_no > request_line for line_no, _, _ in matching)
+    response_before = any(line_no < request_line for line_no, _, _ in matching)
+    if kind == "display_service" and command in (2020, 2030):
+        stage = "native_window_layer_request_last_observed"
+    else:
+        stage = {
+            "service_manager": "service_manager_request_last_observed",
+            "vi_u": "vi_u_request_last_observed",
+            "display_service": "display_service_request_last_observed",
+            "binder": "binder_transaction_request_last_observed",
+            "nvdrv": "nvdrv_request_last_observed",
+        }[kind]
+    return {
+        "last_ipc_request_stage": stage,
+        "last_ipc_request_response_after_request": response_after,
+        "last_ipc_request_same_response_seen_before": response_before,
+    }
+
+
 EVIDENCE = {
     "ipc_request_marker_observed": 'IPC request service="',
     "vi_u_service_handle_requested": "sm:GetServiceHandle name=vi:u",
@@ -92,6 +156,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         "schema": "nexium-stage73-display-ipc-path/v1",
         "observed_stage": stage,
         "probe_process_status": receipt["status"],
+        **last_ipc_request_summary(data),
         **evidence,
         "guest_framebuffer_runtime_completed": False,
         "guest_gpu_frames_verified": False,

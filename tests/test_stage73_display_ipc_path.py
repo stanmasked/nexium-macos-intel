@@ -8,7 +8,9 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from classify_guest_display_ipc_path import inspect_guest_display_ipc_path, MAX_LOG_BYTES
+from classify_guest_display_ipc_path import (
+    inspect_guest_display_ipc_path, last_ipc_request_summary, MAX_LOG_BYTES,
+)
 
 MACHO, NRO = "a" * 64, "b" * 64
 
@@ -109,6 +111,42 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["commercial_gameplay_verified"])
         self.assertFalse(result["main_merge_approved"])
         self.assertFalse(result["raw_logs_uploaded"])
+
+    def test_last_ipc_request_response_after_request_is_detected(self):
+        data = ('IPC request service="IApplicationDisplayService" cmd=2020 in_data=8\\n'
+                'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+                'service=IApplicationDisplayService cmd=2020 rc=0')
+        result = last_ipc_request_summary(data)
+        self.assertEqual(result["last_ipc_request_stage"],
+                         "native_window_layer_request_last_observed")
+        self.assertTrue(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_same_response_seen_before"])
+        self.assertNotIn("2020", json.dumps(result))
+
+    def test_last_ipc_request_without_response_is_distinguished(self):
+        data = ('IPC request service="vi:u" cmd=2\\n'
+                'IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=vi:u cmd=2\\n'
+                'IPC request service="IApplicationDisplayService" cmd=2020')
+        result = last_ipc_request_summary(data)
+        self.assertEqual(result["last_ipc_request_stage"],
+                         "native_window_layer_request_last_observed")
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_same_response_seen_before"])
+
+    def test_repeated_command_without_second_first_response_is_ambiguous(self):
+        data = ('IPC request service="IApplicationDisplayService" cmd=2020\\n'
+                'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+                'service=IApplicationDisplayService cmd=2020\\n'
+                'IPC request service="IApplicationDisplayService" cmd=2020')
+        result = last_ipc_request_summary(data)
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertTrue(result["last_ipc_request_same_response_seen_before"])
+
+    def test_no_allowlisted_ipc_request_does_not_invent_a_stage(self):
+        result = last_ipc_request_summary("unrelated debug text")
+        self.assertEqual(result["last_ipc_request_stage"],
+                         "no_allowlisted_ipc_request_observed")
+        self.assertIsNone(result["last_ipc_request_response_after_request"])
 
     def test_wrong_native_binary_digest_rejected(self):
         self.write_log()

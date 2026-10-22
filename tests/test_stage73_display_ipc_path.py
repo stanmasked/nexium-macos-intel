@@ -160,6 +160,30 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertEqual(result["native_window_response_status"], "ambiguous")
         self.assertFalse(result["guest_gpu_frames_verified"])
 
+    def test_overlong_response_length_is_unverified(self):
+        self.set_through(7)
+        self.data += (
+            "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 "
+            "response_len=999999999999999999999 response_first64="
+            "53,46,43,4f,00,00,00,00,00,00,00,00 in_data_first32=00"
+        )
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "native_window_request_response_status_unverified")
+        self.assertEqual(result["native_window_response_status"], "unverified")
+
+    def test_overlong_response_preview_is_unverified_without_expanding_tokens(self):
+        self.set_through(7)
+        preview = ",".join(["00"] * 65)
+        self.data += (
+            "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 "
+            "response_len=64 response_first64=" + preview + " in_data_first32=00"
+        )
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "native_window_request_response_status_unverified")
+        self.assertEqual(result["native_window_response_status"], "unverified")
+
     def test_binder_transact_without_connect(self):
         self.set_through(9)
         self.assertEqual(self.inspect()["observed_stage"], "binder_transact_igbp_connect_not_observed")

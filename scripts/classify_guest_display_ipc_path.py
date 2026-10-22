@@ -224,10 +224,10 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                     if line_end < 0:
                                         line_end = len(data)
                                     response_line = data[response_match.start():line_end]
-                                    rc_match = re.search(r"\brc=(0x[0-9a-fA-F]+)\b", response_line)
-                                    response_len_match = re.search(r"\bresponse_len=(\d+)\b", response_line)
+                                    rc_match = re.search(r"\brc=(0x[0-9a-fA-F]{8})\b", response_line)
+                                    response_len_match = re.search(r"\bresponse_len=([0-9]{1,20})\b", response_line)
                                     preview_match = re.search(
-                                        r"\bresponse_first64=([0-9a-fA-F,]*)\s+in_data_first32=",
+                                        r"\bresponse_first64=([0-9a-fA-F,]{0,191})\s+in_data_first32=",
                                         response_line,
                                     )
                                     if (rc_match is None or response_len_match is None

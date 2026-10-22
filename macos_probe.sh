@@ -70,6 +70,13 @@ git fetch origin "$REVISION"
 git checkout --detach "$REVISION"
 git submodule update --init --recursive
 python3 "$SELF/scripts/apply_macos_bootstrap.py" "$SRC"
+# Stage73: elevate only the one generic IPC request log to DEBUG in this
+# disposable diagnostic build. Avoid global TRACE, which logs every guest SVC.
+if [[ "${NEXIUM_DISPLAY_IPC_TRACE:-0}" == "1" ]]; then
+    python3 "$SELF/scripts/apply_macos_display_ipc_trace.py" \
+        --source-root "$SRC" \
+        --receipt "$WORK/display-ipc-trace-patch.json"
+fi
 if [[ "${NEXIUM_EXPERIMENT_AUDIO_ABLATION:-0}" == "1" ]]; then
     echo "AUDIO_ABLATION_EXPERIMENT: patching locally checked-out host and UI audio initialization"
     python3 "$SELF/scripts/apply_macos_audio_ablation.py" "$SRC"

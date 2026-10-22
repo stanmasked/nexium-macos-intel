@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from classify_guest_display_ipc_path import (
     inspect_guest_display_ipc_path, last_ipc_request_summary, MAX_LOG_BYTES,
 )
+from test_intel_integrated_tree import safe_unittest_failure_summary
 
 MACHO, NRO = "a" * 64, "b" * 64
 
@@ -422,6 +423,37 @@ class Stage73WorkflowTriggerTests(unittest.TestCase):
         )
         self.assertIn("github.event.pull_request.draft == false", workflow)
         self.assertIn("needs.current-head.outputs.is_current == 'true'", workflow)
+
+
+class Stage73IntegratedPythonFailureSummaryTests(unittest.TestCase):
+    def test_failure_summary_keeps_counts_and_safe_case_ids_only(self):
+        combined = (
+            "Traceback (most recent call last):\\n"
+            '  File "/private/runner/path.py", line 12, in test_case\\n'
+            "FAIL: test_bad (module.SecretTest)\\n"
+            "AssertionError: private fixture payload\\n"
+            "Ran 492 tests in 0.12s\\n"
+            "FAILED (failures=1)\\n"
+        )
+        summary = safe_unittest_failure_summary(
+            combined, returncode=1, min_tests=497, reason="unittest_failure"
+        )
+        self.assertIn("reported_tests=492", summary)
+        self.assertIn("min_tests=497", summary)
+        self.assertIn("failures=1 errors=0", summary)
+        self.assertIn("cases=module.SecretTest.test_bad", summary)
+        self.assertNotIn("Traceback", summary)
+        self.assertNotIn("/private/", summary)
+        self.assertNotIn("private fixture payload", summary)
+
+    def test_timeout_summary_does_not_require_or_emit_test_output(self):
+        summary = safe_unittest_failure_summary(
+            "", returncode=-1, min_tests=497, reason="timeout"
+        )
+        self.assertIn("reason=timeout", summary)
+        self.assertIn("reported_tests=-1", summary)
+        self.assertIn("min_tests=497", summary)
+        self.assertNotIn("Traceback", summary)
 
 
 if __name__ == "__main__":

@@ -408,5 +408,21 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
             inspect_guest_display_ipc_path(self.root, MACHO, NRO)
 
 
+class Stage73WorkflowTriggerTests(unittest.TestCase):
+    def test_classifier_triggers_on_ready_for_review_but_still_gates_drafts(self):
+        workflow_path = (
+            Path(__file__).resolve().parents[1]
+            / ".github" / "workflows"
+            / "nexium-intel-display-ipc-path-diagnostics.yml"
+        )
+        workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertRegex(
+            workflow,
+            r"(?m)^    types: \[opened, synchronize, reopened, ready_for_review\]$",
+        )
+        self.assertIn("github.event.pull_request.draft == false", workflow)
+        self.assertIn("needs.current-head.outputs.is_current == 'true'", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()

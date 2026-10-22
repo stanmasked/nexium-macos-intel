@@ -2,7 +2,7 @@ name: NeXium Intel classify original guest display IPC path without raw logs
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 concurrency:

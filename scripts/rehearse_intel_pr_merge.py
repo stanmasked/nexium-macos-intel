@@ -84,7 +84,7 @@ def conflicted_filenames(output: str) -> list[str]:
             break
         parts = line.split("/")
         if (len(paths) >= 64 or len(line) > 512 or not line
-                or line.startswith("/") or "\\x00" in line
+                or line.startswith("/") or chr(0) in line
                 or any(part in ("", ".", "..") for part in parts)
                 or any(ord(ch) < 32 or ord(ch) == 127 for ch in line)):
             raise ValueError("untrusted conflict filename")

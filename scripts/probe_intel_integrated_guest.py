@@ -186,7 +186,8 @@ def main(argv=None) -> int:
             system, arch,
             check.returncode == 0 and check.stdout.strip() == "1",
         )
-        guest_nro = args.guest_nro.resolve()
+        # Check the original path before following any filesystem links.
+        guest_nro = args.guest_nro
         validate_public_probe(guest_nro)
         snapshot = collect_live(
             args.repository, os.environ.get("GH_TOKEN", ""), top_pr=args.top_pr,

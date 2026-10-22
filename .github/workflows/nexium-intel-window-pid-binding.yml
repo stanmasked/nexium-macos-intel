@@ -1,0 +1,44 @@
+name: NeXium Intel bind window frames to exact smoke PID
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-exact-window-process-identity:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage69-bind-window-capture-pid'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Syntax-check local smoke and capture evidence auditors
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/nro_smoke_test.py \
+            scripts/observe_intel_integrated_window.py \
+            scripts/probe_intel_graphics_runtime.py
+      - name: Run strict PID binding and graphics guest regression fixtures
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage66_owned_window.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage65_integrated_guest.py' -v
+      - name: Confirm no output contains private screenshot payloads
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("scripts/observe_intel_integrated_window.py").read_text()
+          assert 'capture_pid != smoke_pid' in text
+          assert '"raw_frames_uploaded": False' in text
+          assert '"guest_gpu_frames_verified": False' in text
+          print("STAGE69_EXACT_PROCESS_CAPTURE_BINDING_PASS")
+          PY

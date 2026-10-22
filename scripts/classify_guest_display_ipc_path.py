@@ -22,7 +22,7 @@ ALLOWED_STATUSES = frozenset({
 # These are literal, allowlisted signatures from the pinned public NeXium
 # service-manager/IPC/IGBP source paths. Never print matching log lines.
 EVIDENCE = {
-    "trace_ipc_request_observed": 'IPC request service="',
+    "ipc_request_marker_observed": 'IPC request service="',
     "vi_u_service_handle_requested": "sm:GetServiceHandle name=vi:u",
     "display_service_subsession_returned": "IApplicationDisplayService sub-session handle=",
     "display_cmd_2020_request_observed": 'IPC request service="IApplicationDisplayService" cmd=2020',
@@ -58,8 +58,8 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         raise ValueError("original display IPC log unsafe or oversized")
     data = log.read_text(encoding="utf-8", errors="replace")
     evidence = {name: token in data for name, token in EVIDENCE.items()}
-    if not evidence["trace_ipc_request_observed"]:
-        stage = "trace_ipc_markers_not_observed"
+    if not evidence["ipc_request_marker_observed"]:
+        stage = "ipc_request_markers_not_observed"
     elif not evidence["vi_u_service_handle_requested"]:
         stage = "before_vi_u_service_handle_observed"
     elif not evidence["display_service_subsession_returned"]:

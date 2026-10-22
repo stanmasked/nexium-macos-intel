@@ -24,7 +24,7 @@ REPLACEMENT = ANCHOR.replace("log::trace!(", "log::debug!(", 1)
 
 def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob " + str(len(data)).encode("ascii")
-                        + b"\\x00" + data).hexdigest()
+                        + b"\x00" + data).hexdigest()
 
 
 def patch_scoped_ipc_request_log(source_root: Path, receipt_path: Path,
@@ -61,7 +61,7 @@ def patch_scoped_ipc_request_log(source_root: Path, receipt_path: Path,
         "main_merge_approved": False,
     }
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
-    receipt_path.write_text(json.dumps(result, sort_keys=True, indent=2) + "\\n",
+    receipt_path.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n",
                             encoding="utf-8")
     return result
 

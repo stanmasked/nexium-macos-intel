@@ -1,0 +1,42 @@
+name: NeXium Intel read-only stacked PR integration audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  inspect-pr-stack:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage59-pr-stack-audit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Fetch exact PR revision
+        uses: actions/checkout@v4
+
+      - name: Check independent stack-audit fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage59_pr_stack.py' -v
+
+      - name: Classify GitHub live stack with read-only API token
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_intel_pr_stack.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 61 \
+            --min-depth 28 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --output "$RUNNER_TEMP/stage59-sanitized-stack-report.json"
+          echo 'Stage59 means ancestry classified; all Draft PRs still require human integration review.'
+      # Intentionally no artifact upload: no token or full raw GitHub API data
+      # should be retained as a workflow artifact. Never merges or moves refs.

@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   compile-public-framebuffer-nro:
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-diagnostics'
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
     runs-on: ubuntu-latest
     timeout-minutes: 18
     container:
@@ -68,7 +68,7 @@ jobs:
           retention-days: 7
 
   integrated-intel-guest-graphics:
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-diagnostics'
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
     needs: compile-public-framebuffer-nro
     runs-on: macos-15-intel
     timeout-minutes: 110
@@ -119,7 +119,7 @@ jobs:
           set -euo pipefail
           python3 scripts/probe_intel_graphics_runtime.py \
             --repository "$GITHUB_REPOSITORY" \
-            --top-pr 75 --min-depth 40 \
+            --top-pr 76 --min-depth 40 \
             --expected-head-sha "$EXPECTED_HEAD_SHA" \
             --git-repo . \
             --guest-nro stage73-graphics/framebuffer.nro \

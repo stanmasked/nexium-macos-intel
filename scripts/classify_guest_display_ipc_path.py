@@ -23,15 +23,15 @@ ALLOWED_STATUSES = frozenset({
 # These are literal, allowlisted signatures from the pinned public NeXium
 # service-manager/IPC/IGBP source paths. Never print matching log lines.
 IPC_REQUEST_PATTERNS = (
-    ("service_manager", re.compile(r'IPC request service="sm:" cmd=(\\d+)')),
-    ("vi_u", re.compile(r'IPC request service="vi:u" cmd=(\\d+)')),
-    ("display_service", re.compile(r'IPC request service="IApplicationDisplayService" cmd=(\\d+)')),
-    ("binder", re.compile(r'IPC request service="IHOSBinderDriver" cmd=(\\d+)')),
-    ("nvdrv", re.compile(r'IPC request service="nvdrv(?::[ast])?" cmd=(\\d+)')),
+    ("service_manager", re.compile(r'IPC request service="sm:" cmd=(\d+)')),
+    ("vi_u", re.compile(r'IPC request service="vi:u" cmd=(\d+)')),
+    ("display_service", re.compile(r'IPC request service="IApplicationDisplayService" cmd=(\d+)')),
+    ("binder", re.compile(r'IPC request service="IHOSBinderDriver" cmd=(\d+)')),
+    ("nvdrv", re.compile(r'IPC request service="nvdrv(?::[ast])?" cmd=(\d+)')),
 )
 IPC_RESPONSE_PATTERN = re.compile(
-    r"IPC FIRST-OCCURRENCE response \\(compare with RustSwitch\\) "
-    r"service=(sm:|vi:u|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\\d+)"
+    r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
+    r"service=(sm:|vi:u|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\d+)"
 )
 
 

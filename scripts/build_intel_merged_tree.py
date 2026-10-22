@@ -193,7 +193,7 @@ def compile_native_intel(source: Path, work_dir: Path, *,
         patched_source_bytes = patched_source_path.read_bytes()
         final_source_blob = hashlib.sha1(
             b"blob " + str(len(patched_source_bytes)).encode("ascii")
-            + b"\\x00" + patched_source_bytes
+            + b"\x00" + patched_source_bytes
         ).hexdigest()
         if final_source_blob != trace_receipt["patched_git_blob_sha1"]:
             raise ValueError("final compiled source no longer matches scoped IPC patch receipt")

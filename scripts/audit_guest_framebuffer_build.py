@@ -54,7 +54,7 @@ SOURCE_API_ORDER = (
 def verify_graphics_source(text: str) -> None:
     if not isinstance(text, str) or len(text) > 30000:
         raise ValueError("graphics probe source missing or oversized")
-    if any(text.count("mark(\\"" + m) != 1 for m in EXPECTED_MARKERS):
+    if any(text.count('mark("' + m) != 1 for m in EXPECTED_MARKERS):
         raise ValueError("expected one exact graphics source marker per state")
     if any(api not in text for api in REQUIRED_APIS):
         raise ValueError("original libnx framebuffer calls missing")

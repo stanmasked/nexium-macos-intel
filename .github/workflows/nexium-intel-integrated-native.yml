@@ -1,0 +1,69 @@
+name: NeXium Intel compile actual reviewed virtual integrated tree
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  native-intel-virtual-merge:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage64-integrated-native-build'
+    runs-on: macos-15-intel
+    timeout-minutes: 110
+    steps:
+      - name: Checkout exact PR head without retaining GitHub credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify native Intel host and exact PR revision
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
+          xcodebuild -version
+
+      - name: Validate safe temporary merged-build policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/build_intel_merged_tree.py
+          python3 -m unittest discover -s tests -p 'test_stage64_integrated_native.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage63_integrated_tree.py' -v
+
+      - name: Install pinned upstream native build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
+
+      - name: Build Mach-O directly from reviewed virtual Git merged source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build_intel_merged_tree.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 66 \
+            --min-depth 33 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo .
+          echo "Native Intel compile checked the virtual integrated source; no merge or hardware-gameplay approval."
+      # Intentionally no artifact upload: the temporary merged tree and binary
+      # are deleted before the job returns, and no proprietary game data exists.

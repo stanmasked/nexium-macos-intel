@@ -46,7 +46,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
             'IPC request service="IApplicationDisplayService" cmd=100 in_data=0 is_domain=false',
             "→ IHOSBinderDriver sub-session handle=0x102",
             'IPC request service="IApplicationDisplayService" cmd=2020 in_data=8 is_domain=false',
-            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020 rc=0 response_len=64",
+            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=64",
             'IPC request service="IHOSBinderDriver" cmd=0 in_data=8 is_domain=false',
             "IGBP::Connect binder=256 api=1 1280x720",
             "IGBP::RequestBuffer binder=256 slot=0",
@@ -86,7 +86,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
             "\nIPC request service=\"IApplicationDisplayService\" "
             "cmd=2020 in_data=8 is_domain=false"
             "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
-            "service=IApplicationDisplayService cmd=2020 rc=0 response_len=64"
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=64"
         )
         self.assertEqual(
             self.inspect()["observed_stage"],
@@ -202,7 +202,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(6)
         self.data += (
             "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
-            "service=IApplicationDisplayService cmd=2020 rc=0 response_len=64"
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=64"
             "\nIPC request service=\"IApplicationDisplayService\" "
             "cmd=2020 in_data=8 is_domain=false"
         )
@@ -232,7 +232,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
     def test_last_ipc_request_response_after_request_is_detected(self):
         data = ('IPC request service="IApplicationDisplayService" cmd=2020 in_data=8\n'
                 'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
-                'service=IApplicationDisplayService cmd=2020 rc=0')
+                'service=IApplicationDisplayService cmd=2020 rc=0x00000000')
         result = last_ipc_request_summary(data)
         self.assertEqual(result["last_ipc_request_stage"],
                          "native_window_layer_request_last_observed")

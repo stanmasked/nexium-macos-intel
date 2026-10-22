@@ -1,0 +1,49 @@
+name: NeXium Intel two-stage reviewed virtual integration
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  two-scoped-reviewed-merges:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage62-reviewed-three-file-rehearsal'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Fetch full Git history without persisting credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test both explicit scoped Git resolution policies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage60_local_merge_rehearsal.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage61_reviewed_conflict.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage62_three_file_review.py' -v
+
+      - name: Rehearse PR44 plus PR60 exact reviewed source blobs only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --is-shallow-repository)" = false
+          python3 scripts/rehearse_intel_reviewed_conflict.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 64 \
+            --min-depth 31 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo . \
+            --review-pr44-hid-blob \
+            --review-pr60-three-blobs
+          echo "Only 4 exact reviewed blobs are eligible for temporary resolution. No GitHub ref is changed."
+      # Read-only GitHub API; no git push, merge, tag or uploaded artifacts.

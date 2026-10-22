@@ -3,7 +3,6 @@ name: NeXium Intel classify original guest display IPC path without raw logs
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  workflow_dispatch:
 
 concurrency:
   group: nexium-stage73-ipc-classify-${{ github.head_ref || github.ref_name }}

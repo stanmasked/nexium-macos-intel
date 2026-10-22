@@ -40,7 +40,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
     def set_through(self, stage):
         stages = [
             'IPC request service="sm:" cmd=1',
-            "sm:GetServiceHandle name=vi:u raw=0000000000000000",
+            "SM::GetServiceHandle 'vi:u' data_off=0x20",
             'IPC request service="vi:u" cmd=2 in_data=0 is_domain=false',
             "→ IApplicationDisplayService sub-session handle=0x101",
             'IPC request service="IApplicationDisplayService" cmd=2020 in_data=8 is_domain=false',
@@ -49,8 +49,8 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
             'IPC request service="IHOSBinderDriver" cmd=0 in_data=8 is_domain=false',
             "IGBP::Connect binder=256 api=1 1280x720",
             "IGBP::RequestBuffer binder=256 slot=0",
-            "IGBP::DequeueBuffer binder=256 → slot=0",
-            "IGBP::QueueBuffer binder=256 slot=0",
+            "IGBP::DequeueBuffer binder=256: request cannot be re-issued, polling in-SVC",
+            "IGBP::QueueBuffer binder=256 swap_interval=1 (was None)",
         ]
         self.data = "\n".join(stages[:stage])
 
@@ -60,6 +60,11 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
 
     def test_ipc_request_marker_without_vi_handle_request(self):
         self.data = 'IPC request service="sm:" cmd=1'
+        self.assertEqual(self.inspect()["observed_stage"], "before_vi_u_service_handle_observed")
+
+    def test_legacy_unmatched_vi_service_marker_does_not_count(self):
+        self.data = ('IPC request service="sm:" cmd=1\\n'
+                     'sm:GetServiceHandle name=vi:u raw=0000000000000000')
         self.assertEqual(self.inspect()["observed_stage"], "before_vi_u_service_handle_observed")
 
     def test_vi_handle_without_vi_ipc_request(self):
@@ -94,13 +99,21 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(9)
         self.assertEqual(self.inspect()["observed_stage"], "igbp_connect_request_buffer_not_observed")
 
-    def test_request_buffer_without_dequeue(self):
+    def test_request_buffer_without_debug_visible_later_marker_is_unverified(self):
         self.set_through(10)
-        self.assertEqual(self.inspect()["observed_stage"], "request_buffer_dequeue_not_observed")
+        self.assertEqual(
+            self.inspect()["observed_stage"],
+            "igbp_request_buffer_observed_later_buffer_operations_unverified_at_debug_level",
+        )
 
-    def test_dequeue_without_queue(self):
+    def test_dequeue_retry_marker_is_positive_diagnostic(self):
         self.set_through(11)
-        self.assertEqual(self.inspect()["observed_stage"], "dequeue_queue_not_observed")
+        self.assertEqual(self.inspect()["observed_stage"], "igbp_dequeue_retry_or_timeout_observed")
+
+    def test_dequeue_timeout_marker_is_positive_diagnostic(self):
+        self.set_through(10)
+        self.data += "\\nIGBP::DequeueBuffer timed out waiting for a released slot binder=256 (free=0 deq=0 queued=0)"
+        self.assertEqual(self.inspect()["observed_stage"], "igbp_dequeue_retry_or_timeout_observed")
 
     def test_queue_is_not_guest_gpu_proof(self):
         self.set_through(12)

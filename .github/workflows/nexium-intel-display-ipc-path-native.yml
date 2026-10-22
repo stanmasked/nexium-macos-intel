@@ -22,10 +22,21 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - name: Audit exact pinned IPC marker formats before native run
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          SOURCE="$RUNNER_TEMP/stage73-svc.rs"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/nexium-kernel/src/kernel/svc.rs" \
+            --output "$SOURCE"
+          python3 scripts/audit_stage73_display_ipc_markers.py --source "$SOURCE"
       - name: Verify public graphics probe source and synthetic binary tests
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m py_compile scripts/audit_stage73_display_ipc_markers.py
           python3 -m unittest discover -s tests -p 'test_stage67_graphics_nro_build.py' -v
           python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
           python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v

@@ -16,22 +16,22 @@ This places the observed stall **after guest main-start marker and before any ve
 
 The next run keeps `NEXIUM_LOG_LEVEL=debug` and applies a source-pinned, temporary instrumentation patch to exactly one generic IPC-request log call in the disposable upstream checkout: `log::trace!` becomes `log::debug!` for that single request record. It does **not** enable global TRACE (which would log every guest SVC). The smoke duration is reduced from 70 to 25 seconds, and no guest or service behavior changes. The smoke receipt is still bound to the exact native Mach-O and public NRO SHA-256.
 
-A new parser reads at most one private original FileLogger (bounded at 16 MiB) and outputs only fixed booleans for source-anchored milestones:
+A new parser reads at most one private original FileLogger (bounded at 16 MiB) and outputs only fixed booleans for source-anchored milestones. The CI also downloads the exact pinned public svc.rs, verifies its Git blob SHA-1, checks the real log templates and levels, and rejects marker drift before the native run:
 
 1. service-manager lookup of `vi:u` and the actual `vi:u` IPC request;
 2. creation of an `IApplicationDisplayService` subsession;
 3. the original IPC request/response markers for OpenLayer commands 2020/2030;
 4. the last allowlisted IPC request, whether its first-occurrence response follows, and ambiguity if the same command was previously answered;
 5. creation and first transaction of `IHOSBinderDriver`;
-6. original IGBP Connect, RequestBuffer, DequeueBuffer and QueueBuffer markers;
+6. original IGBP Connect and RequestBuffer markers, positive DequeueBuffer retry/timeout diagnostics, and QueueBuffer evidence. A normal successful DequeueBuffer record is TRACE-only at the current DEBUG log level, so its absence is reported as unverified rather than as proof that dequeue did not occur;
 7. original guest default-window and framebuffer-created markers.
 
-The stage classifier emits no raw log lines, dynamic service names, command IDs, IPC bytes, paths or screenshots. If scoped IPC request markers are absent it reports `ipc_request_markers_not_observed` rather than claiming that no service call happened. Every outcome keeps guest GPU and gameplay proof false. This is observation only, not a guessed VI/Binder fix.
+The stage classifier emits no raw log lines, dynamic service names, command IDs, IPC bytes, paths or screenshots. The VI service-handle marker follows the actual `SM::GetServiceHandle 'vi:u'` handler format. If scoped IPC request markers are absent it reports `ipc_request_markers_not_observed` rather than claiming that no service call happened. Missing TRACE-only dequeue-success logging is never treated as a missing operation. Every outcome keeps guest GPU and gameplay proof false. This is observation only, not a guessed VI/Binder fix.
 
 ## Validation and next decision
 
-- 24 display-IPC fixtures cover progressive boundaries and last-request/response ordering; 8 additional fixtures validate the exact scoped source patch, original Git blob, symlink rejection and no mutation on mismatch.
-- The lightweight Stage73 CI covers these fixtures and Stage68/70/71 predecessors.
+- 26 display-IPC fixtures cover progressive boundaries, real handler-marker spelling, debug-visible dequeue retry/timeout behavior and last-request/response ordering; 8 additional fixtures validate the exact scoped source patch, original Git blob, symlink rejection and no mutation on mismatch.
+- The lightweight Stage73 CI audits the exact pinned svc.rs log templates and levels, then covers these fixtures and Stage68/70/71 predecessors.
 - A separate native Intel workflow repeats the exact virtual integration at depth 40 and emits only sanitized Stage71/Stage73 classifications.
 
 After the exact native run completes, implement only the first specific missing response/handler demonstrated by the allowlisted marker sequence. Do not treat an IPC request or a framebuffer API call returning as visible guest GPU rendering. All PRs remain Draft and `main` unchanged.

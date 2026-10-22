@@ -18,13 +18,23 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - name: Audit classifier markers against exact pinned svc.rs formats
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          SOURCE="$RUNNER_TEMP/stage73-svc.rs"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/nexium-kernel/src/kernel/svc.rs" \
+            --output "$SOURCE"
+          python3 scripts/audit_stage73_display_ipc_markers.py --source "$SOURCE"
       - name: Compile safe original display IPC classifier
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/classify_guest_display_ipc_path.py
           python3 -m py_compile scripts/classify_intel_guest_graphics_boot.py
           python3 -m py_compile scripts/probe_intel_graphics_runtime.py
-          python3 -m py_compile scripts/apply_macos_display_ipc_trace.py
+          python3 -m py_compile scripts/apply_macos_display_ipc_trace.py scripts/audit_stage73_display_ipc_markers.py
       - name: Validate fixed-stage source markers and hostile-log behavior
         run: |
           set -euo pipefail

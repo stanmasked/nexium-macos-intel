@@ -87,7 +87,7 @@ def last_ipc_request_summary(data: str) -> dict:
 
 EVIDENCE = {
     "ipc_request_marker_observed": 'IPC request service="',
-    "vi_u_service_handle_requested": "sm:GetServiceHandle name=vi:u",
+    "vi_u_service_handle_requested": "SM::GetServiceHandle 'vi:u'",
     "vi_u_ipc_request_observed": 'IPC request service="vi:u" cmd=',
     "display_service_subsession_returned": "IApplicationDisplayService sub-session handle=",
     "display_cmd_2020_request_observed": 'IPC request service="IApplicationDisplayService" cmd=2020',
@@ -99,7 +99,8 @@ EVIDENCE = {
     "binder_cmd_3_request_observed": 'IPC request service="IHOSBinderDriver" cmd=3',
     "igbp_connect_observed": "IGBP::Connect binder=",
     "igbp_request_buffer_observed": "IGBP::RequestBuffer binder=",
-    "igbp_dequeue_buffer_observed": "IGBP::DequeueBuffer binder=",
+    "igbp_dequeue_retry_marker_observed": "request cannot be re-issued, polling in-SVC",
+    "igbp_dequeue_timeout_marker_observed": "IGBP::DequeueBuffer timed out waiting for a released slot",
     "igbp_queue_buffer_observed": "IGBP::QueueBuffer",
     "nvdrv_open_observed": "nvdrv:Open path=",
     "guest_default_window_marker_observed": "OutputDebugString: STAGE67_GUEST_DEFAULT_WINDOW_OBTAINED",
@@ -144,14 +145,15 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         stage = "binder_subsession_transact_not_observed"
     elif not evidence["igbp_connect_observed"]:
         stage = "binder_transact_igbp_connect_not_observed"
+    elif evidence["igbp_queue_buffer_observed"]:
+        stage = "igbp_queue_observed_not_gpu_proof"
+    elif (evidence["igbp_dequeue_retry_marker_observed"]
+          or evidence["igbp_dequeue_timeout_marker_observed"]):
+        stage = "igbp_dequeue_retry_or_timeout_observed"
     elif not evidence["igbp_request_buffer_observed"]:
         stage = "igbp_connect_request_buffer_not_observed"
-    elif not evidence["igbp_dequeue_buffer_observed"]:
-        stage = "request_buffer_dequeue_not_observed"
-    elif not evidence["igbp_queue_buffer_observed"]:
-        stage = "dequeue_queue_not_observed"
     else:
-        stage = "igbp_queue_observed_not_gpu_proof"
+        stage = "igbp_request_buffer_observed_later_buffer_operations_unverified_at_debug_level"
     return {
         "schema": "nexium-stage73-display-ipc-path/v1",
         "observed_stage": stage,

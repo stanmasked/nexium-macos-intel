@@ -107,6 +107,10 @@ def inspect_gui_evidence(report_dir: Path, expected_macho_sha: str,
     details = read_bounded_json(path)
     if details.get("capture_type") != "macos_pid_owned_window_only":
         raise ValueError("window capture was not restricted to NeXium PID")
+    smoke_pid, capture_pid = smoke.get("emulator_pid"), details.get("pid")
+    if (type(smoke_pid) is not int or smoke_pid <= 0
+            or type(capture_pid) is not int or capture_pid != smoke_pid):
+        raise ValueError("window capture PID not bound to exact smoke process")
     frames = details.get("frames")
     if not isinstance(frames, list) or len(frames) > MAX_FRAMES:
         raise ValueError("unbounded GUI frame collection")

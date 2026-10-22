@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from rehearse_intel_pr_merge import (
-    git, local_merge_chain, check_reconciled_sources,
+    git, local_merge_chain, check_reconciled_sources, conflicted_filenames,
 )
 
 
@@ -76,8 +76,22 @@ class Stage60LocalMergeTests(unittest.TestCase):
         )
         self.assertFalse(result["merge_tree_complete"])
         self.assertEqual(result["classification"][-1],
-                         {"pr": 2, "result": "conflict"})
+                         {"pr": 2, "result": "conflict",
+                          "conflicted_files": ["seed.txt"]})
         self.assertFalse(result["main_merge_approved"])
+        self.assertEqual(require(git(self.root, "rev-parse", "HEAD")), right)
+
+    def test_conflict_report_must_be_bounded_relative_public_path(self):
+        fake_tree = "f" * 40
+        for path in ("../secret.txt", "/tmp/log", "./file.txt",
+                     "dir//file.txt", "bad\\x00name"):
+            with self.subTest(path=repr(path)):
+                with self.assertRaisesRegex(ValueError, "untrusted"):
+                    conflicted_filenames(fake_tree + "\\n" + path + "\\n\\n")
+
+    def test_missing_conflict_filename_blocks_report(self):
+        with self.assertRaisesRegex(ValueError, "lacks unique filenames"):
+            conflicted_filenames("f" * 40 + "\\n\\n")
 
     def test_already_included_commit_explicitly_classified(self):
         a = self.commit("a", "a")

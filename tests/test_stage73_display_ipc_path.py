@@ -51,9 +51,9 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         ]
         self.data = "\n".join(stages[:stage])
 
-    def test_no_trace_marker_is_insufficient_not_a_false_negative_claim(self):
+    def test_no_scoped_ipc_marker_is_insufficient_not_a_false_negative_claim(self):
         self.data = "Auto-loaded NRO:\nBooting NRO:\n"
-        self.assertEqual(self.inspect()["observed_stage"], "trace_ipc_markers_not_observed")
+        self.assertEqual(self.inspect()["observed_stage"], "ipc_request_markers_not_observed")
 
     def test_trace_without_vi_handle_request(self):
         self.data = 'IPC request service="sm:" cmd=1'

@@ -70,13 +70,6 @@ git fetch origin "$REVISION"
 git checkout --detach "$REVISION"
 git submodule update --init --recursive
 python3 "$SELF/scripts/apply_macos_bootstrap.py" "$SRC"
-# Stage73: elevate only the one generic IPC request log to DEBUG in this
-# disposable diagnostic build. Avoid global TRACE, which logs every guest SVC.
-if [[ "${NEXIUM_DISPLAY_IPC_TRACE:-0}" == "1" ]]; then
-    python3 "$SELF/scripts/apply_macos_display_ipc_trace.py" \
-        --source-root "$SRC" \
-        --receipt "$WORK/display-ipc-trace-patch.json"
-fi
 if [[ "${NEXIUM_EXPERIMENT_AUDIO_ABLATION:-0}" == "1" ]]; then
     echo "AUDIO_ABLATION_EXPERIMENT: patching locally checked-out host and UI audio initialization"
     python3 "$SELF/scripts/apply_macos_audio_ablation.py" "$SRC"
@@ -156,6 +149,14 @@ fi
 if [[ "${NEXIUM_EXPERIMENT_STAGE53_DEADZONE_THRESHOLD:-0}" == "1" ]]; then
     echo "STAGE53: probe below/above default analog deadzone in original source"
     python3 "$SELF/scripts/apply_macos_guest_deadzone_threshold.py" "$SRC"
+fi
+
+# Stage73: apply the single IPC log-level change AFTER all other opt-in
+# source edits, so the receipt binds the final pre-build svc.rs blob.
+if [[ "${NEXIUM_DISPLAY_IPC_TRACE:-0}" == "1" ]]; then
+    python3 "$SELF/scripts/apply_macos_display_ipc_trace.py" \
+        --source-root "$SRC" \
+        --receipt "$WORK/display-ipc-trace-patch.json"
 fi
 
 rustup target add x86_64-apple-darwin

@@ -63,7 +63,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertEqual(self.inspect()["observed_stage"], "before_vi_u_service_handle_observed")
 
     def test_legacy_unmatched_vi_service_marker_does_not_count(self):
-        self.data = ('IPC request service="sm:" cmd=1\\n'
+        self.data = ('IPC request service="sm:" cmd=1\n'
                      'sm:GetServiceHandle name=vi:u raw=0000000000000000')
         self.assertEqual(self.inspect()["observed_stage"], "before_vi_u_service_handle_observed")
 
@@ -112,7 +112,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
 
     def test_dequeue_timeout_marker_is_positive_diagnostic(self):
         self.set_through(10)
-        self.data += "\\nIGBP::DequeueBuffer timed out waiting for a released slot binder=256 (free=0 deq=0 queued=0)"
+        self.data += "\nIGBP::DequeueBuffer timed out waiting for a released slot binder=256 (free=0 deq=0 queued=0)"
         self.assertEqual(self.inspect()["observed_stage"], "igbp_dequeue_retry_or_timeout_observed")
 
     def test_queue_is_not_guest_gpu_proof(self):

@@ -93,7 +93,7 @@ def audit_source(path: Path) -> dict:
     # The classifier only treats the DEBUG retry or ERROR timeout as positive
     # evidence; absence of either is not interpreted as a missing dequeue.
     normal_dequeue_trace = re.search(
-        r'log::trace!\(\s*"IGBP::DequeueBuffer binder=\{\}\s+.\s+slot=\{\}',
+        r'log::trace!\(\s*"IGBP::DequeueBuffer binder=\{\}\s+.{1,3}\s+slot=\{\}',
         source,
     )
     if normal_dequeue_trace is None:

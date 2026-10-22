@@ -97,6 +97,7 @@ def run_integrated_guest(
     validate_public_probe(guest_nro)
     guest_nro = guest_nro.absolute()
     validate_public_probe(guest_nro)
+    print("STAGE65_GATE_PUBLIC_NRO_ABSOLUTE_OK", flush=True)
     if binary.is_symlink() or not binary.is_file():
         raise ValueError("integrated native Mach-O unavailable")
     before = (_identity(binary), _identity(guest_nro))
@@ -123,6 +124,7 @@ def run_integrated_guest(
         raise ValueError("original libnx guest readback timed out") from None
     if run.returncode != 0:
         raise ValueError("original libnx guest readback failed to start")
+    print("STAGE65_GATE_ORIGINAL_NRO_SMOKE_FINISHED", flush=True)
 
     receipt = audit_deadzone(report_dir)
     if (receipt.get("schema") != EXPECTED_GUEST_SCHEMA
@@ -130,6 +132,7 @@ def run_integrated_guest(
             or receipt.get("physical_controller_verified") is not False
             or receipt.get("raw_logs_uploaded") is not False):
         raise ValueError("original guest deadzone audit did not pass")
+    print("STAGE65_GATE_GUEST_DEADZONE_AUDIT_PASSED", flush=True)
     # Keep only pre-allowlisted source/guest observations in proof; do not
     # print or upload console logs, snapshots or private guest memory.
     receipt_path = report_dir / "stage65-sanitized-receipt.json"
@@ -157,6 +160,7 @@ def run_integrated_guest(
             or structures.get("structure_audit_passed") is not True
             or before != (_identity(binary), _identity(guest_nro))):
         raise ValueError("integrated proof altered or independent replay failed")
+    print("STAGE65_GATE_INDEPENDENT_TRIPLET_REPLAY_PASSED", flush=True)
     return {
         "same_integrated_intel_macho_and_original_guest_nro_verified": True,
         "original_npad_samples": receipt["original_npad_serialized_sample_count"],
@@ -215,6 +219,7 @@ def main(argv=None) -> int:
             args.git_repo, snapshot["main_sha"], ordered,
             args.expected_head_sha,
         )
+        print("STAGE65_GATE_LIVE_ANCESTRY_AND_VIRTUAL_MERGE_PASSED", flush=True)
         with tempfile.TemporaryDirectory(prefix="nexium-integrated-guest-") as tmp:
             root = Path(tmp)
             src, work, report = root/"source", root/"native-build", root/"guest"
@@ -222,10 +227,12 @@ def main(argv=None) -> int:
             work.mkdir()
             extracted = extract_virtual_source(args.git_repo, combined, src)
             python_suite = execute_integrated_tests(src, min_tests=450)
+            print("STAGE65_GATE_VIRTUAL_PYTHON_SUITE_PASSED", flush=True)
             intel = compile_native_intel(
                 src, work, host_system=system, host_arch=arch,
                 apple_arm_capable=False, base_env=dict(os.environ),
             )
+            print("STAGE65_GATE_NATIVE_INTEL_MACHO_VALIDATED", flush=True)
             binary = work/"nexium"/"target"/"x86_64-apple-darwin"/"release"/"nexium"
             guest = run_integrated_guest(
                 source=src, binary=binary, guest_nro=guest_nro,

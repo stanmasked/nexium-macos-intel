@@ -206,18 +206,66 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                             if response_match is None:
                                 native_window_response_status = "no_response"
                             else:
-                                line_end = data.find("\n", response_match.start())
-                                if line_end < 0:
-                                    line_end = len(data)
-                                response_line = data[response_match.start():line_end]
-                                rc_match = re.search(r"\brc=(0x[0-9a-fA-F]+)\b", response_line)
-                                if rc_match is None:
-                                    native_window_response_status = "unverified"
-                                elif int(rc_match.group(1), 16) == 0:
-                                    native_window_response_status = "success"
-                                    native_window_response = response_match
+                                same_command_request_pattern = re.compile(
+                                    r'IPC request service="IApplicationDisplayService" cmd='
+                                    + re.escape(native_window_cmd)
+                                    + r'\b'
+                                )
+                                repeated_request = same_command_request_pattern.search(
+                                    data, native_window_request.end(), response_match.start()
+                                )
+                                if repeated_request is not None:
+                                    # The first-occurrence response is not correlated to a
+                                    # request/thread ID. A second outstanding request makes
+                                    # the response unsafe to attribute to the first request.
+                                    native_window_response_status = "ambiguous"
                                 else:
-                                    native_window_response_status = "failure"
+                                    line_end = data.find("\n", response_match.start())
+                                    if line_end < 0:
+                                        line_end = len(data)
+                                    response_line = data[response_match.start():line_end]
+                                    rc_match = re.search(r"\brc=(0x[0-9a-fA-F]+)\b", response_line)
+                                    response_len_match = re.search(r"\bresponse_len=(\d+)\b", response_line)
+                                    preview_match = re.search(
+                                        r"\bresponse_first64=([0-9a-fA-F,]*)\s+in_data_first32=",
+                                        response_line,
+                                    )
+                                    if (rc_match is None or response_len_match is None
+                                            or preview_match is None):
+                                        native_window_response_status = "unverified"
+                                    else:
+                                        response_len = int(response_len_match.group(1))
+                                        preview_text = preview_match.group(1)
+                                        preview_tokens = preview_text.split(",") if preview_text else []
+                                        valid_preview = (
+                                            len(preview_tokens) == min(response_len, 64)
+                                            and all(re.fullmatch(r"[0-9a-fA-F]{2}", token)
+                                                    for token in preview_tokens)
+                                        )
+                                        if not valid_preview:
+                                            native_window_response_status = "unverified"
+                                        else:
+                                            preview_bytes = bytes(
+                                                int(token, 16) for token in preview_tokens
+                                            )
+                                            sfco_offset = preview_bytes.find(b"SFCO")
+                                            if sfco_offset < 0 or sfco_offset + 12 > len(preview_bytes):
+                                                # svc.rs defaults its logged rc to zero if SFCO
+                                                # is absent; that fallback is not success proof.
+                                                native_window_response_status = "unverified"
+                                            else:
+                                                header_rc = int.from_bytes(
+                                                    preview_bytes[sfco_offset + 8:sfco_offset + 12],
+                                                    "little",
+                                                )
+                                                logged_rc = int(rc_match.group(1), 16)
+                                                if header_rc != logged_rc:
+                                                    native_window_response_status = "unverified"
+                                                elif header_rc == 0:
+                                                    native_window_response_status = "success"
+                                                    native_window_response = response_match
+                                                else:
+                                                    native_window_response_status = "failure"
 
                         pending_branches = []
                         if binder_session_request is not None and binder_subsession is None:
@@ -230,6 +278,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                 "no_response": "native_window_request_response_not_observed",
                                 "failure": "native_window_request_failed_response_observed",
                                 "unverified": "native_window_request_response_status_unverified",
+                                "ambiguous": "native_window_request_response_correlation_ambiguous",
                             }.get(
                                 native_window_response_status,
                                 "native_window_request_response_status_unverified",

@@ -46,7 +46,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
             'IPC request service="IApplicationDisplayService" cmd=100 in_data=0 is_domain=false',
             "→ IHOSBinderDriver sub-session handle=0x102",
             'IPC request service="IApplicationDisplayService" cmd=2020 in_data=8 is_domain=false',
-            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=64",
+            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=12 response_first64=53,46,43,4f,00,00,00,00,00,00,00,00 in_data_first32=00",
             'IPC request service="IHOSBinderDriver" cmd=0 in_data=8 is_domain=false',
             "IGBP::Connect binder=256 api=1 1280x720",
             "IGBP::RequestBuffer binder=256 slot=0",
@@ -86,7 +86,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
             "\nIPC request service=\"IApplicationDisplayService\" "
             "cmd=2020 in_data=8 is_domain=false"
             "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
-            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=64"
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=12 response_first64=53,46,43,4f,00,00,00,00,00,00,00,00 in_data_first32=00"
         )
         self.assertEqual(
             self.inspect()["observed_stage"],
@@ -114,7 +114,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(7)
         self.data += (
             "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
-            "service=IApplicationDisplayService cmd=2020 rc=0x00000001 response_len=0"
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000001 response_len=12 response_first64=53,46,43,4f,00,00,00,00,01,00,00,00 in_data_first32=00"
         )
         result = self.inspect()
         self.assertEqual(result["observed_stage"], "native_window_request_failed_response_observed")
@@ -126,12 +126,39 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(7)
         self.data += (
             "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
-            "service=IApplicationDisplayService cmd=2020 response_len=64"
+            "service=IApplicationDisplayService cmd=2020 response_len=12 response_first64=53,46,43,4f,00,00,00,00,00,00,00,00 in_data_first32=00"
         )
         result = self.inspect()
         self.assertEqual(result["observed_stage"], "native_window_request_response_status_unverified")
         self.assertEqual(result["native_window_response_status"], "unverified")
 
+
+    def test_zero_rc_without_sfco_header_is_not_success(self):
+        self.set_through(7)
+        self.data += (
+            "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 "
+            "response_len=12 response_first64=00,00,00,00,00,00,00,00,00,00,00,00 "
+            "in_data_first32=00"
+        )
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "native_window_request_response_status_unverified")
+        self.assertEqual(result["native_window_response_status"], "unverified")
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
+    def test_repeated_native_window_request_makes_response_correlation_ambiguous(self):
+        self.set_through(7)
+        self.data += (
+            '\nIPC request service="IApplicationDisplayService" cmd=2020 in_data=8 is_domain=false'
+            "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 "
+            "response_len=12 response_first64=53,46,43,4f,00,00,00,00,00,00,00,00 "
+            "in_data_first32=00"
+        )
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "native_window_request_response_correlation_ambiguous")
+        self.assertEqual(result["native_window_response_status"], "ambiguous")
+        self.assertFalse(result["guest_gpu_frames_verified"])
 
     def test_binder_transact_without_connect(self):
         self.set_through(9)
@@ -202,7 +229,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(6)
         self.data += (
             "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
-            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=64"
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=12 response_first64=53,46,43,4f,00,00,00,00,00,00,00,00 in_data_first32=00"
             "\nIPC request service=\"IApplicationDisplayService\" "
             "cmd=2020 in_data=8 is_domain=false"
         )

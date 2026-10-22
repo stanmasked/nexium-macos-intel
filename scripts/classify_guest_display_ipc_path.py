@@ -118,6 +118,8 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
     if receipt.get("status") not in ALLOWED_STATUSES or receipt.get("gameplay_verified") is not False:
         raise ValueError("display IPC receipt status untrusted")
     log_dir = report / "data-root" / "logs"
+    if log_dir.is_symlink():
+        raise ValueError("original display IPC log directory unsafe")
     paths = sorted(log_dir.glob("nexium-*.log")) if log_dir.is_dir() else []
     if len(paths) != 1:
         raise ValueError("original display IPC log is missing or ambiguous")

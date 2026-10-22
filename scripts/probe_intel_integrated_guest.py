@@ -91,6 +91,11 @@ def run_integrated_guest(
     *, source: Path, binary: Path, guest_nro: Path, report_dir: Path,
     repository_sha: str, run_id: str, base_env: dict[str, str],
 ) -> dict:
+    # Check the original path before canonicalizing: symlinked inputs are
+    # never accepted. The smoke harness runs from a different working directory
+    # (the extracted virtual merge), so pass an absolute, still-direct path.
+    validate_public_probe(guest_nro)
+    guest_nro = guest_nro.absolute()
     validate_public_probe(guest_nro)
     if binary.is_symlink() or not binary.is_file():
         raise ValueError("integrated native Mach-O unavailable")

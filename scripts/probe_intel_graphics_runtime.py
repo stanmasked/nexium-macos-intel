@@ -164,9 +164,9 @@ def run_graphics_guest(source: Path, binary: Path, nro: Path, report: Path) -> N
         "--seconds", "25", "--snapshot-ms", "5000", "--capture-window",
     ]
     env = probe_environment(dict(os.environ))
-    # Trace only this short diagnostic run so original IPC request stages are visible.
-    # The classifier emits allowlisted booleans, never the raw private log.
-    env["NEXIUM_LOG_LEVEL"] = "trace"
+    # Keep normal DEBUG logging. Stage73 elevates only the single IPC-request
+    # log call in the disposable build, avoiding global per-SVC TRACE flooding.
+    env["NEXIUM_LOG_LEVEL"] = "debug"
     # Same original NeXium startup profile as the proven Stage65 diagnostic,
     # but the analog-input deadzone stimulus is not a graphics prerequisite.
     env["NEXIUM_MACOS_GUEST_DEADZONE_THRESHOLD_PROBE"] = "0"
@@ -234,12 +234,17 @@ def main(argv=None) -> int:
             files = extract_virtual_source(args.git_repo, combined, src)
             tests = execute_integrated_tests(src, min_tests=497)
             print("STAGE68_GATE_INTEGRATED_PYTHON_PASS", flush=True)
+            build_env = dict(os.environ)
+            build_env["NEXIUM_DISPLAY_IPC_TRACE"] = "1"
             intel_binary = compile_native_intel(
                 src, work,
                 host_system=platform.system(), host_arch=platform.machine(),
-                apple_arm_capable=False, base_env=dict(os.environ),
+                apple_arm_capable=False, base_env=build_env,
             )
             print("STAGE68_GATE_REAL_INTEL_MACHO_PASS", flush=True)
+            if intel_binary.get("display_ipc_trace_patch_applied") is not True:
+                raise ValueError("Stage73 scoped IPC request log patch not bound to Intel build")
+            print("STAGE73_SCOPED_IPC_REQUEST_LOG_PATCH_VERIFIED", flush=True)
             binary = work / "nexium" / "target" / "x86_64-apple-darwin" / "release" / "nexium"
             try:
                 run_graphics_guest(src, binary, nro, report)

@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
           python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
-          python3 -m unittest discover -s tests -p 'test_stage69*' -v
+          python3 -m unittest discover -s tests -p 'test_stage65_integrated_guest.py' -v
           python3 -m unittest discover -s tests -p 'test_stage66_owned_window.py' -v
           echo "STAGE70_EXACT_GUEST_GRAPHICS_STATE_MACHINE_PASS"
       # Fixture-only read-only CI. No private logs, NRO/game images or screenshots.

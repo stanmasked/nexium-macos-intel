@@ -14,7 +14,7 @@ This places the observed stall **after guest main-start marker and before any ve
 
 ## Stage73 change
 
-The next run enables `NEXIUM_LOG_LEVEL=trace` **only inside the short-lived original graphics smoke process**, reduces its duration from 70 to 25 seconds, and leaves the original emulator and guest sources unchanged. The smoke receipt is still bound to the exact native Mach-O and public NRO SHA-256.
+The next run keeps `NEXIUM_LOG_LEVEL=debug` and applies a source-pinned, temporary instrumentation patch to exactly one generic IPC-request log call in the disposable upstream checkout: `log::trace!` becomes `log::debug!` for that single request record. It does **not** enable global TRACE (which would log every guest SVC). The smoke duration is reduced from 70 to 25 seconds, and no guest or service behavior changes. The smoke receipt is still bound to the exact native Mach-O and public NRO SHA-256.
 
 A new parser reads at most one private original FileLogger (bounded at 16 MiB) and outputs only fixed booleans for source-anchored milestones:
 
@@ -25,7 +25,7 @@ A new parser reads at most one private original FileLogger (bounded at 16 MiB) a
 5. original IGBP Connect, RequestBuffer, DequeueBuffer and QueueBuffer markers;
 6. original guest default-window and framebuffer-created markers.
 
-The stage classifier emits no raw log lines, dynamic service names, command IDs, IPC bytes, paths or screenshots. If trace markers are absent it reports `trace_ipc_markers_not_observed` rather than claiming that no service call happened. Every outcome keeps guest GPU and gameplay proof false. This is observation only, not a guessed VI/Binder fix.
+The stage classifier emits no raw log lines, dynamic service names, command IDs, IPC bytes, paths or screenshots. If scoped IPC request markers are absent it reports `ipc_request_markers_not_observed` rather than claiming that no service call happened. Every outcome keeps guest GPU and gameplay proof false. This is observation only, not a guessed VI/Binder fix.
 
 ## Validation and next decision
 

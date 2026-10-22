@@ -24,6 +24,7 @@ ALLOWED_STATUSES = frozenset({
 EVIDENCE = {
     "ipc_request_marker_observed": 'IPC request service="',
     "vi_u_service_handle_requested": "sm:GetServiceHandle name=vi:u",
+    "vi_u_ipc_request_observed": 'IPC request service="vi:u" cmd=',
     "display_service_subsession_returned": "IApplicationDisplayService sub-session handle=",
     "display_cmd_2020_request_observed": 'IPC request service="IApplicationDisplayService" cmd=2020',
     "display_cmd_2020_response_observed": "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020",
@@ -62,8 +63,10 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         stage = "ipc_request_markers_not_observed"
     elif not evidence["vi_u_service_handle_requested"]:
         stage = "before_vi_u_service_handle_observed"
+    elif not evidence["vi_u_ipc_request_observed"]:
+        stage = "vi_u_handle_created_ipc_request_not_observed"
     elif not evidence["display_service_subsession_returned"]:
-        stage = "vi_u_requested_display_subsession_not_observed"
+        stage = "vi_u_ipc_request_display_subsession_not_observed"
     elif not (evidence["display_cmd_2020_request_observed"]
               or evidence["display_cmd_2030_request_observed"]):
         stage = "display_subsession_created_native_window_request_not_observed"

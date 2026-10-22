@@ -112,11 +112,11 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         )
 
     def test_dequeue_retry_marker_is_positive_diagnostic(self):
-        self.set_through(11)
+        self.set_through(12)
         self.assertEqual(self.inspect()["observed_stage"], "igbp_dequeue_retry_or_timeout_observed")
 
     def test_dequeue_timeout_marker_is_positive_diagnostic(self):
-        self.set_through(10)
+        self.set_through(11)
         self.data += "\nIGBP::DequeueBuffer timed out waiting for a released slot binder=256 (free=0 deq=0 queued=0)"
         self.assertEqual(self.inspect()["observed_stage"], "igbp_dequeue_retry_or_timeout_observed")
 

@@ -20,17 +20,18 @@ A new parser reads at most one private original FileLogger (bounded at 16 MiB) a
 
 1. service-manager lookup of `vi:u` and the actual `vi:u` IPC request;
 2. creation of an `IApplicationDisplayService` subsession;
-3. the original IPC request/response markers for OpenLayer commands 2020/2030;
-4. the last allowlisted IPC request, whether its first-occurrence response follows, and ambiguity if the same command was previously answered;
-5. creation and first transaction of `IHOSBinderDriver`;
-6. original IGBP Connect and RequestBuffer markers, positive DequeueBuffer retry/timeout diagnostics, and QueueBuffer evidence. A normal successful DequeueBuffer record is TRACE-only at the current DEBUG log level, so its absence is reported as unverified rather than as proof that dequeue did not occur;
-7. original guest default-window and framebuffer-created markers.
+3. the `IApplicationDisplayService` command 100/103 request and corresponding `IHOSBinderDriver` subsession creation;
+4. the OpenLayer/native-window command 2020/2030 request and its matching first-occurrence response;
+5. the first Binder-driver transaction after the native-window response, then IGBP Connect and RequestBuffer;
+6. the last allowlisted IPC request, whether its first-occurrence response follows, and ambiguity if the same command was previously answered;
+7. positive DequeueBuffer retry/timeout diagnostics or QueueBuffer evidence. A normal successful DequeueBuffer record is TRACE-only at the current DEBUG log level, so its absence is reported as unverified rather than as proof that dequeue did not occur;
+8. original guest default-window and framebuffer-created markers.
 
 The stage classifier emits no raw log lines, dynamic service names, command IDs, IPC bytes, paths or screenshots. The VI service-handle marker follows the actual `SM::GetServiceHandle 'vi:u'` handler format. If scoped IPC request markers are absent it reports `ipc_request_markers_not_observed` rather than claiming that no service call happened. Missing TRACE-only dequeue-success logging is never treated as a missing operation. Every outcome keeps guest GPU and gameplay proof false. This is observation only, not a guessed VI/Binder fix.
 
 ## Validation and next decision
 
-- 26 display-IPC fixtures cover progressive boundaries, real handler-marker spelling, debug-visible dequeue retry/timeout behavior and last-request/response ordering; 8 additional fixtures validate the exact scoped source patch, original Git blob, symlink rejection and no mutation on mismatch.
+- 28 display-IPC fixtures cover progressive boundaries, the real handler-marker spelling, the source-mapped Binder-session-before-native-window order, out-of-order evidence rejection, debug-visible dequeue retry/timeout behavior and last-request/response ordering; 8 additional fixtures validate the exact scoped source patch, original Git blob, symlink rejection and no mutation on mismatch.
 - The lightweight Stage73 CI audits the exact pinned svc.rs log templates and levels, then covers these fixtures and Stage68/70/71 predecessors.
 - A separate native Intel workflow repeats the exact virtual integration at depth 40 and emits only sanitized Stage71/Stage73 classifications.
 

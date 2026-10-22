@@ -32,6 +32,14 @@ SOURCE_TEMPLATES = {
     "nvdrv_open": "nvdrv:Open path='{}' (sb={:?})",
 }
 
+SOURCE_COMMAND_MAPS = {
+    "display_binder_cmd_100": '("IApplicationDisplayService", 100) => Some("IHOSBinderDriver"),',
+    "display_binder_cmd_103": '("IApplicationDisplayService", 103) => Some("IHOSBinderDriver"),',
+    "native_window_cmd_2020": '("IApplicationDisplayService", 2020)',
+    "native_window_cmd_2030": '("IApplicationDisplayService", 2030)',
+    "native_window_parcel_builder": "Some(build_native_window_parcel(0x100))",
+}
+
 EXPECTED_LEVELS = {
     "ipc_request": "trace",
     "ipc_response": "debug",
@@ -91,6 +99,10 @@ def audit_source(path: Path) -> dict:
             raise ValueError("pinned source log level differs from classifier assumptions")
         levels[name] = level
 
+    for name, marker in SOURCE_COMMAND_MAPS.items():
+        if source.count(marker) != 1:
+            raise ValueError("pinned source display command map differs from classifier assumptions")
+
     # Successful dequeue uses TRACE and therefore is not expected at DEBUG.
     # The classifier only treats the DEBUG retry or ERROR timeout as positive
     # evidence; absence of either is not interpreted as a missing dequeue.
@@ -110,6 +122,7 @@ def audit_source(path: Path) -> dict:
         "pinned_upstream_commit": PINNED_UPSTREAM_COMMIT,
         "source_git_blob_sha1": EXPECTED_SOURCE_BLOB,
         "source_templates_verified": len(SOURCE_TEMPLATES),
+        "source_command_maps_verified": len(SOURCE_COMMAND_MAPS),
         "source_log_levels_verified": True,
         "normal_dequeue_success_is_trace_only": True,
         "vi_u_handler_marker_matches_source": True,

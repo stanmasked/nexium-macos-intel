@@ -18,7 +18,7 @@ jobs:
       - name: Fetch exact PR revision
         uses: actions/checkout@v4
 
-      - name: Check 20 independent stack-audit fixtures
+      - name: Check independent stack-audit fixtures
         shell: bash
         run: |
           set -euo pipefail

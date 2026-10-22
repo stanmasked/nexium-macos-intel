@@ -24,6 +24,7 @@ jobs:
           python3 -m py_compile scripts/classify_guest_display_ipc_path.py
           python3 -m py_compile scripts/classify_intel_guest_graphics_boot.py
           python3 -m py_compile scripts/probe_intel_graphics_runtime.py
+          python3 -m py_compile scripts/apply_macos_display_ipc_trace.py
       - name: Validate fixed-stage source markers and hostile-log behavior
         run: |
           set -euo pipefail

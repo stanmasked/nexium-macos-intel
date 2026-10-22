@@ -1,0 +1,54 @@
+name: NeXium Intel test actual virtual integrated Python source
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  integrated-python-from-virtual-tree:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage63-integrated-tree-tests'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout exact Stage63 PR head without credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reject unexpected checkout revision
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
+
+      - name: Test bounded reviewed-source archive and runner safeguards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage63_integrated_tree.py' -v
+
+      - name: Execute complete Python suite from disposable merged tree
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/test_intel_integrated_tree.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 65 \
+            --min-depth 32 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo .
+          echo "Only the disposable virtual merge tree was tested; main is not merge-approved."
+      # No remote Git writes, no published artifacts, no raw test logs exported.

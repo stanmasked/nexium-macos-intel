@@ -186,10 +186,22 @@ def compile_native_intel(source: Path, work_dir: Path, *,
             or trace_receipt.get("main_merge_approved") is not False
         ):
             raise ValueError("scoped display IPC source-patch receipt failed exact review")
+        patched_source_path = work_dir / "nexium" / "nexium-kernel/src/kernel/svc.rs"
+        if (patched_source_path.is_symlink() or not patched_source_path.is_file()
+                or patched_source_path.stat().st_size > 2 * 1024 * 1024):
+            raise ValueError("final scoped IPC source file missing or unsafe")
+        patched_source_bytes = patched_source_path.read_bytes()
+        final_source_blob = hashlib.sha1(
+            b"blob " + str(len(patched_source_bytes)).encode("ascii")
+            + b"\\x00" + patched_source_bytes
+        ).hexdigest()
+        if final_source_blob != trace_receipt["patched_git_blob_sha1"]:
+            raise ValueError("final compiled source no longer matches scoped IPC patch receipt")
         trace_report = {
             "display_ipc_trace_patch_applied": True,
             "display_ipc_trace_patch_source_blob_sha1": trace_receipt["patched_git_blob_sha1"],
             "display_ipc_trace_patch_exact_single_anchor": True,
+            "display_ipc_trace_patch_final_source_bound": True,
         }
     elif trace_receipt_path.exists() or trace_receipt_path.is_symlink():
         raise ValueError("unexpected display IPC source-patch receipt without opt-in")

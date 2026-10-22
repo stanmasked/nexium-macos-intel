@@ -24,6 +24,7 @@ import tempfile
 
 from audit_guest_framebuffer_build import validate_compiled_public_probe
 from classify_intel_guest_graphics_boot import inspect_original_graphics_boot
+from classify_guest_display_ipc_path import inspect_guest_display_ipc_path
 from audit_intel_pr_stack import audit_snapshot, collect_live
 from build_intel_merged_tree import (
     compile_native_intel, compute_virtual_tree, extract_virtual_source,
@@ -160,9 +161,12 @@ def run_graphics_guest(source: Path, binary: Path, nro: Path, report: Path) -> N
     command = [
         sys.executable, str(source / "scripts" / "nro_smoke_test.py"),
         "--exe", str(binary), "--nro", str(nro), "--output", str(report),
-        "--seconds", "70", "--snapshot-ms", "5000", "--capture-window",
+        "--seconds", "25", "--snapshot-ms", "5000", "--capture-window",
     ]
     env = probe_environment(dict(os.environ))
+    # Trace only this short diagnostic run so original IPC request stages are visible.
+    # The classifier emits allowlisted booleans, never the raw private log.
+    env["NEXIUM_LOG_LEVEL"] = "trace"
     # Same original NeXium startup profile as the proven Stage65 diagnostic,
     # but the analog-input deadzone stimulus is not a graphics prerequisite.
     env["NEXIUM_MACOS_GUEST_DEADZONE_THRESHOLD_PROBE"] = "0"
@@ -170,7 +174,7 @@ def run_graphics_guest(source: Path, binary: Path, nro: Path, report: Path) -> N
         child = subprocess.run(
             command, cwd=source, env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            check=False, timeout=102,
+            check=False, timeout=48,
         )
     except subprocess.TimeoutExpired:
         raise ValueError("original graphics NRO smoke harness exceeded budget") from None
@@ -249,8 +253,20 @@ def main(argv=None) -> int:
                     )
                     print("STAGE71_ORIGINAL_GRAPHICS_BOOT_DIAGNOSTIC "
                           + json.dumps(boot, sort_keys=True), flush=True)
+                    try:
+                        ipc = inspect_guest_display_ipc_path(
+                            report, intel_binary["native_macho_sha256"],
+                            compiled["nro_sha256"],
+                        )
+                        print("STAGE73_GUEST_DISPLAY_IPC_DIAGNOSTIC "
+                              + json.dumps(ipc, sort_keys=True), flush=True)
+                    except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+                        print("STAGE73_GUEST_DISPLAY_IPC_DIAGNOSTIC_BLOCKED",
+                              flush=True)
                 else:
                     print("STAGE71_ORIGINAL_GRAPHICS_SMOKE_RECEIPT_UNAVAILABLE",
+                          flush=True)
+                    print("STAGE73_GUEST_DISPLAY_IPC_RECEIPT_UNAVAILABLE",
                           flush=True)
             guest = source_graphics_audit(
                 report, intel_binary["native_macho_sha256"], compiled["nro_sha256"]

@@ -15,6 +15,8 @@ import re
 from observe_intel_integrated_window import read_bounded_json
 
 MAX_LOG_BYTES = 16 * 1024 * 1024
+# Conservative classifier sanity cap for display-service replies, not a protocol limit.
+MAX_DISPLAY_IPC_RESPONSE_BYTES = 1024 * 1024
 ALLOWED_STATUSES = frozenset({
     "exited_zero_unverified", "exited_nonzero",
     "timeout_alive_unverified", "launch_failed",
@@ -238,7 +240,8 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                         preview_text = preview_match.group(1)
                                         preview_tokens = preview_text.split(",") if preview_text else []
                                         valid_preview = (
-                                            len(preview_tokens) == min(response_len, 64)
+                                            response_len <= MAX_DISPLAY_IPC_RESPONSE_BYTES
+                                            and len(preview_tokens) == min(response_len, 64)
                                             and all(re.fullmatch(r"[0-9a-fA-F]{2}", token)
                                                     for token in preview_tokens)
                                         )

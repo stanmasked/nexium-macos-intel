@@ -172,6 +172,20 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertEqual(result["observed_stage"], "native_window_request_response_status_unverified")
         self.assertEqual(result["native_window_response_status"], "unverified")
 
+    def test_implausibly_large_response_length_with_valid_sfco_is_unverified(self):
+        self.set_through(7)
+        preview = ",".join(["53", "46", "43", "4f", "00", "00", "00", "00", "00", "00", "00", "00"] + ["00"] * 52)
+        self.data += (
+            "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000000 "
+            "response_len=99999999999999999999 response_first64="
+            + preview + " in_data_first32=00"
+        )
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "native_window_request_response_status_unverified")
+        self.assertEqual(result["native_window_response_status"], "unverified")
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
     def test_overlong_response_preview_is_unverified_without_expanding_tokens(self):
         self.set_through(7)
         preview = ",".join(["00"] * 65)

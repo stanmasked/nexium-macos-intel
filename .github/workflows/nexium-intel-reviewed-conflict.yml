@@ -1,0 +1,47 @@
+name: NeXium Intel reviewed single-conflict integration rehearsal
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  scoped-reviewed-merge:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage61-scoped-conflict-rehearsal'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Fetch repository history, without persisting credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test strict single-file resolution contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage61_reviewed_conflict.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage60_local_merge_rehearsal.py' -v
+
+      - name: Rehearse one pinned PR44 conflict in alternate local Git index
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --is-shallow-repository)" = false
+          python3 scripts/rehearse_intel_reviewed_conflict.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 63 \
+            --min-depth 30 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo . \
+            --review-pr44-hid-blob
+          echo "Only an explicit reviewed temporary source blob is considered. Never merge or push."
+      # No ref changes, no git push and no build artifacts are published.

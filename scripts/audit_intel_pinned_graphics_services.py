@@ -76,7 +76,7 @@ def inspect_pinned_graphics_sources(sources: dict[str, str]) -> dict:
             bool(re.search(r"pub fn open_layer\([^)]*\)\s*->\s*u64\s*\{\s*NATIVE_WINDOW_PARCEL_SIZE\s*\}", display)),
         "vi_unhandled_command_returns_success":
             "VI.cmd_{} UNHANDLED" in vi and
-            bool(re.search(r"_\s*=>\s*\{[^}]*log::warn!\([\s\S]*?\);\s*SUCCESS\s*\}", vi)),
+            bool(re.search(r"_\s*=>\s*\{\s*log::warn!\([\s\S]*?\);\s*SUCCESS\s*\}", vi)),
         "vi_framebuffer_queue_is_separate_mutex_vector":
             "framebuffer_queue: Arc<Mutex<Vec<Vec<u8>>>>" in vi,
         "binder_unsupported_commands_return_success":

@@ -164,6 +164,22 @@ def _get_json(url: str, token: str):
     return json.loads(contents.decode("utf-8"))
 
 
+def normalize_current_bases(pulls: list[dict], main_sha: str) -> None:
+    """PR API base.sha can be a stale PR comparison snapshot, not branch HEAD.
+
+    Compare each child to the *current* exact commit of its actual base ref.
+    Retain the PR's reported base SHA separately for traceability; never use
+    that old value to hide a behind-base history divergence.
+    """
+    by_head = {pr["head"]: pr["head_sha"] for pr in pulls}
+    for pr in pulls:
+        base = pr["base"]
+        current = main_sha if base == "main" else by_head.get(base)
+        if current is not None:
+            pr["reported_base_sha"] = pr["base_sha"]
+            pr["base_sha"] = current
+
+
 def collect_live(repository: str, token: str, *, top_pr: int) -> dict:
     if not REPO_RE.fullmatch(repository):
         raise ValueError("repository name invalid")
@@ -195,6 +211,7 @@ def collect_live(repository: str, token: str, *, top_pr: int) -> dict:
         page += 1
     branch = _get_json(endpoint + "/branches/main", token)
     main_sha = branch["commit"]["sha"]
+    normalize_current_bases(pulls, main_sha)
     heads = {pr["head"]: pr for pr in pulls}
     root = next((pr for pr in pulls if pr["number"] == top_pr), None)
     if root is None:

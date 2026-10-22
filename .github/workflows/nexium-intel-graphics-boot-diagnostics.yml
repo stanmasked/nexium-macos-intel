@@ -1,0 +1,33 @@
+name: NeXium Intel diagnose original graphics guest boot without raw logs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-guest-boot-markers:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage71-graphics-boot-diagnostics'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Compile Python boot and original graphics auditors
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/classify_intel_guest_graphics_boot.py
+          python3 -m py_compile scripts/probe_intel_graphics_runtime.py
+      - name: Require source-bound fixed-category boot classification
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage71_graphics_boot_diagnostics.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
+          echo "STAGE71_ORIGINAL_GRAPHICS_BOOT_AUDITOR_PASS"
+      # Diagnostic fixtures only. No raw NeXium files or screenshots uploaded.

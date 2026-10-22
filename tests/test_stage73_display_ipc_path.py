@@ -428,12 +428,12 @@ class Stage73WorkflowTriggerTests(unittest.TestCase):
 class Stage73IntegratedPythonFailureSummaryTests(unittest.TestCase):
     def test_failure_summary_keeps_counts_and_safe_case_ids_only(self):
         combined = (
-            "Traceback (most recent call last):\\n"
-            '  File "/private/runner/path.py", line 12, in test_case\\n'
-            "FAIL: test_bad (module.SecretTest)\\n"
-            "AssertionError: private fixture payload\\n"
-            "Ran 492 tests in 0.12s\\n"
-            "FAILED (failures=1)\\n"
+            "Traceback (most recent call last):\n"
+            '  File "/private/runner/path.py", line 12, in test_case\n'
+            "FAIL: test_bad (module.SecretTest)\n"
+            "AssertionError: private fixture payload\n"
+            "Ran 492 tests in 0.12s\n"
+            "FAILED (failures=1)\n"
         )
         summary = safe_unittest_failure_summary(
             combined, returncode=1, min_tests=497, reason="unittest_failure"

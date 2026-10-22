@@ -34,10 +34,10 @@ def safe_unittest_failure_summary(combined: str, returncode: int,
     matched = TEST_COUNT.findall(combined)
     executed = int(matched[0]) if len(matched) == 1 else -1
     failures = errors = 0
-    summary = re.search(r"(?m)^FAILED \\(([^)]*)\\)$", combined)
+    summary = re.search(r"(?m)^FAILED \(([^)]*)\)$", combined)
     if summary:
         for item in summary.group(1).split(", "):
-            field = re.fullmatch(r"(failures|errors)=(\\d+)", item)
+            field = re.fullmatch(r"(failures|errors)=(\d+)", item)
             if field:
                 if field.group(1) == "failures":
                     failures = int(field.group(2))
@@ -47,7 +47,7 @@ def safe_unittest_failure_summary(combined: str, returncode: int,
     for line in combined.splitlines():
         match = re.fullmatch(
             r"(?:FAIL|ERROR): ([A-Za-z_][A-Za-z0-9_]*) "
-            r"\\(([A-Za-z_][A-Za-z0-9_.]*)\\)", line.strip()
+            r"\(([A-Za-z_][A-Za-z0-9_.]*)\)", line.strip()
         )
         if match:
             cases.append(f"{match.group(2)}.{match.group(1)}")

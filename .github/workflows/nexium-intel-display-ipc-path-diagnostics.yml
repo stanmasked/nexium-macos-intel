@@ -13,8 +13,33 @@ permissions:
   contents: read
 
 jobs:
-  guest-display-ipc-classification:
+  current-head:
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      is_current: ${{ steps.freshness.outputs.is_current }}
+    steps:
+      - name: Skip classification for a superseded PR revision
+        id: freshness
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH_NAME: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${BRANCH_NAME}" | awk 'NR == 1 {print $1}')"
+          if [[ -n "$actual" && "$actual" == "$EXPECTED_HEAD_SHA" ]]; then
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+            echo "Stage73 revision is current."
+          else
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+            echo "Stage73 revision was superseded; skipping classification."
+          fi
+
+  guest-display-ipc-classification:
+    needs: current-head
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

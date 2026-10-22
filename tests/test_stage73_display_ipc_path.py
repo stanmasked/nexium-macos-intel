@@ -234,6 +234,23 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["last_ipc_request_response_after_request"])
         self.assertTrue(result["last_ipc_request_same_response_seen_before"])
 
+    def test_nvdrv_response_from_different_service_alias_does_not_count(self):
+        data = ('IPC request service="nvdrv:a" cmd=7\n'
+                'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+                'service=nvdrv:s cmd=7')
+        result = last_ipc_request_summary(data)
+        self.assertEqual(result["last_ipc_request_stage"], "nvdrv_request_last_observed")
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_same_response_seen_before"])
+
+    def test_nvdrv_response_from_exact_service_alias_counts(self):
+        data = ('IPC request service="nvdrv:a" cmd=7\n'
+                'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+                'service=nvdrv:a cmd=7')
+        result = last_ipc_request_summary(data)
+        self.assertTrue(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_same_response_seen_before"])
+
     def test_no_allowlisted_ipc_request_does_not_invent_a_stage(self):
         result = last_ipc_request_summary("unrelated debug text")
         self.assertEqual(result["last_ipc_request_stage"],

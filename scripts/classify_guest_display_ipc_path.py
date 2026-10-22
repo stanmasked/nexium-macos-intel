@@ -138,6 +138,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         raise ValueError("original display IPC log unsafe or oversized")
     data = log.read_text(encoding="utf-8", errors="replace")
     evidence = {name: token in data for name, token in EVIDENCE.items()}
+    native_window_response_status = "not_observed"
     # The Binder-session and native-window requests are independent branches after
     # IApplicationDisplayService creation. Either may occur first; both must be
     # complete before the first Binder transaction can be attributed to this path.
@@ -198,10 +199,25 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                 + re.escape(native_window_cmd)
                                 + r"\b"
                             )
-                            native_window_response = regex_after(
+                            response_match = regex_after(
                                 native_window_response_pattern,
                                 native_window_request.start(),
                             )
+                            if response_match is None:
+                                native_window_response_status = "no_response"
+                            else:
+                                line_end = data.find("\n", response_match.start())
+                                if line_end < 0:
+                                    line_end = len(data)
+                                response_line = data[response_match.start():line_end]
+                                rc_match = re.search(r"\brc=(0x[0-9a-fA-F]+)\b", response_line)
+                                if rc_match is None:
+                                    native_window_response_status = "unverified"
+                                elif int(rc_match.group(1), 16) == 0:
+                                    native_window_response_status = "success"
+                                    native_window_response = response_match
+                                else:
+                                    native_window_response_status = "failure"
 
                         pending_branches = []
                         if binder_session_request is not None and binder_subsession is None:
@@ -210,9 +226,17 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                 "display_service_binder_subsession_not_observed",
                             ))
                         if native_window_request is not None and native_window_response is None:
+                            response_stage = {
+                                "no_response": "native_window_request_response_not_observed",
+                                "failure": "native_window_request_failed_response_observed",
+                                "unverified": "native_window_request_response_status_unverified",
+                            }.get(
+                                native_window_response_status,
+                                "native_window_request_response_status_unverified",
+                            )
                             pending_branches.append((
                                 native_window_request.start(),
-                                "native_window_request_response_not_observed",
+                                response_stage,
                             ))
 
                         if pending_branches:
@@ -298,6 +322,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         "observed_stage": stage,
         "probe_process_status": receipt["status"],
         **last_ipc_request_summary(data),
+        "native_window_response_status": native_window_response_status,
         **evidence,
         "guest_framebuffer_runtime_completed": False,
         "guest_gpu_frames_verified": False,

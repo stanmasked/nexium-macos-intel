@@ -106,7 +106,32 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
 
     def test_native_window_response_without_binder_transact(self):
         self.set_through(8)
-        self.assertEqual(self.inspect()["observed_stage"], "display_and_native_window_ready_binder_transact_not_observed")
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "display_and_native_window_ready_binder_transact_not_observed")
+        self.assertEqual(result["native_window_response_status"], "success")
+
+    def test_native_window_error_response_does_not_advance_to_binder_path(self):
+        self.set_through(7)
+        self.data += (
+            "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 rc=0x00000001 response_len=0"
+        )
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "native_window_request_failed_response_observed")
+        self.assertEqual(result["native_window_response_status"], "failure")
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("0x00000001", json.dumps(result))
+
+    def test_native_window_response_without_rc_is_unverified(self):
+        self.set_through(7)
+        self.data += (
+            "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 response_len=64"
+        )
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "native_window_request_response_status_unverified")
+        self.assertEqual(result["native_window_response_status"], "unverified")
+
 
     def test_binder_transact_without_connect(self):
         self.set_through(9)

@@ -7,7 +7,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from audit_intel_pr_stack import audit_snapshot, SCHEMA
+from audit_intel_pr_stack import audit_snapshot, normalize_current_bases, SCHEMA
 
 IDS = [61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 45, 44, 41,
        39, 38, 36, 34, 26, 22, 16, 15, 12, 10, 6, 4, 2, 1]
@@ -100,6 +100,26 @@ class Stage59StackAuditTests(unittest.TestCase):
         self.snapshot["pulls"][4]["draft"] = False
         with self.assertRaisesRegex(ValueError, "not an open Draft"):
             self.check()
+
+    def test_stale_github_pr_base_sha_is_normalized_to_live_parent(self):
+        # GitHub pull-list base.sha may be the historical PR diff baseline.
+        child = self.snapshot["pulls"][13]  # #41, base of #39
+        self.assertEqual(child["number"], 41)
+        child["base_sha"] = sha(888)
+        normalize_current_bases(self.snapshot["pulls"], sha(999))
+        self.assertEqual(child["reported_base_sha"], sha(888))
+        self.assertEqual(child["base_sha"], sha(39))
+        self.assertEqual(self.check()["pr_chain_checked"], 28)
+
+    def test_current_parent_comparison_still_exposes_old_branch_divergence(self):
+        for child in self.snapshot["pulls"]:
+            child["base_sha"] = sha(777)
+        normalize_current_bases(self.snapshot["pulls"], sha(999))
+        result = self.check()
+        self.assertEqual(
+            [x["pr"] for x in result["diverged_edges"]], [16, 39, 41]
+        )
+        self.assertFalse(result["main_merge_approved"])
 
     def test_wrong_base_head_sha_rejected(self):
         self.snapshot["pulls"][0]["base_sha"] = sha(888)

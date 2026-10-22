@@ -62,7 +62,8 @@ def read_bounded_json(path: Path) -> dict:
 
 
 def inspect_gui_evidence(report_dir: Path, expected_macho_sha: str,
-                         expected_nro_sha: str) -> dict:
+                         expected_nro_sha: str,
+                         *, allow_nonzero_guest: bool = False) -> dict:
     """Report verified own-window pixels separately from guest source proof."""
     if (not SHA256_RE.fullmatch(expected_macho_sha)
             or not SHA256_RE.fullmatch(expected_nro_sha)):
@@ -71,7 +72,15 @@ def inspect_gui_evidence(report_dir: Path, expected_macho_sha: str,
     if (smoke.get("emulator_sha256") != expected_macho_sha
             or smoke.get("nro_sha256") != expected_nro_sha):
         raise ValueError("GUI capture not bound to current integrated binary and NRO")
-    if (smoke.get("status") not in VALID_STATUSES
+    allowed = VALID_STATUSES
+    # A public graphics probe may intentionally exit nonzero when NeXium
+    # lacks a guest framebuffer service. Stage68 separately requires actual
+    # guest OutputDebugString state proof before enabling this exception.
+    if allow_nonzero_guest is True:
+        allowed = (*allowed, "exited_nonzero")
+    elif allow_nonzero_guest is not False:
+        raise ValueError("GUI observation mode must be Boolean")
+    if (smoke.get("status") not in allowed
             or smoke.get("gameplay_verified") is not False):
         raise ValueError("GUI capture not from valid source-bound smoke run")
     capture = smoke.get("window_capture")

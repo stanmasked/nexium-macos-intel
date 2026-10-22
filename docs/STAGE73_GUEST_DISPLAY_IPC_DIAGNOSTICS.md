@@ -18,12 +18,13 @@ The next run keeps `NEXIUM_LOG_LEVEL=debug` and applies a source-pinned, tempora
 
 A new parser reads at most one private original FileLogger (bounded at 16 MiB) and outputs only fixed booleans for source-anchored milestones:
 
-1. service-manager lookup of `vi:u`;
+1. service-manager lookup of `vi:u` and the actual `vi:u` IPC request;
 2. creation of an `IApplicationDisplayService` subsession;
-3. the original IPC request/response marker for OpenLayer commands 2020/2030;
-4. creation and first transaction of `IHOSBinderDriver`;
-5. original IGBP Connect, RequestBuffer, DequeueBuffer and QueueBuffer markers;
-6. original guest default-window and framebuffer-created markers.
+3. the original IPC request/response markers for OpenLayer commands 2020/2030;
+4. the last allowlisted IPC request, whether its first-occurrence response follows, and ambiguity if the same command was previously answered;
+5. creation and first transaction of `IHOSBinderDriver`;
+6. original IGBP Connect, RequestBuffer, DequeueBuffer and QueueBuffer markers;
+7. original guest default-window and framebuffer-created markers.
 
 The stage classifier emits no raw log lines, dynamic service names, command IDs, IPC bytes, paths or screenshots. If scoped IPC request markers are absent it reports `ipc_request_markers_not_observed` rather than claiming that no service call happened. Every outcome keeps guest GPU and gameplay proof false. This is observation only, not a guessed VI/Binder fix.
 

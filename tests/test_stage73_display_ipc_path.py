@@ -117,7 +117,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
 
     def test_out_of_order_queue_marker_does_not_advance_past_connect(self):
         self.set_through(9)
-        self.data += "\\nIGBP::QueueBuffer binder=256 swap_interval=1 (was None)"
+        self.data += "\nIGBP::QueueBuffer binder=256 swap_interval=1 (was None)"
         self.assertEqual(
             self.inspect()["observed_stage"],
             "igbp_connect_request_buffer_not_observed",
@@ -126,9 +126,9 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
     def test_response_before_native_window_request_does_not_count(self):
         self.set_through(4)
         self.data += (
-            "\\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "\nIPC FIRST-OCCURRENCE response (compare with RustSwitch) "
             "service=IApplicationDisplayService cmd=2020 rc=0 response_len=64"
-            "\\nIPC request service=\\"IApplicationDisplayService\\" "
+            "\nIPC request service=\"IApplicationDisplayService\" "
             "cmd=2020 in_data=8 is_domain=false"
         )
         self.assertEqual(

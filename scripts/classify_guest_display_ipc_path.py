@@ -155,7 +155,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                         stage = "vi_u_ipc_request_display_subsession_not_observed"
                     else:
                         display_request_pattern = re.compile(
-                            r'IPC request service="IApplicationDisplayService" cmd=(2020|2030)\\b'
+                            r'IPC request service="IApplicationDisplayService" cmd=(2020|2030)\b'
                         )
                         display_request = regex_after(
                             display_request_pattern, display_subsession
@@ -165,10 +165,10 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                         else:
                             display_cmd = display_request.group(1)
                             display_response_pattern = re.compile(
-                                r"IPC FIRST-OCCURRENCE response \\(compare with RustSwitch\\) "
+                                r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
                                 r"service=IApplicationDisplayService cmd="
                                 + re.escape(display_cmd)
-                                + r"\\b"
+                                + r"\b"
                             )
                             display_response = regex_after(
                                 display_response_pattern, display_request.start()
@@ -184,7 +184,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                     stage = "native_window_response_binder_subsession_not_observed"
                                 else:
                                     binder_request_pattern = re.compile(
-                                        r'IPC request service="IHOSBinderDriver" cmd=(0|3)\\b'
+                                        r'IPC request service="IHOSBinderDriver" cmd=(0|3)\b'
                                     )
                                     binder_request = regex_after(
                                         binder_request_pattern, binder_subsession

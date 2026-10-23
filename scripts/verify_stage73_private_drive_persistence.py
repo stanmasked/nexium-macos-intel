@@ -169,11 +169,13 @@ def audit_remote(transport, parent_id, folder_id, run_id, commit, manifest_sha25
 
 
 def audit_from_remote_handoff(transport, receipt_parent_id,
-                              capture_parent_id, run_id, commit):
+                              capture_parent_id, run_id, commit,
+                              expected_receipt_sha256):
     """Locate remote receipt after runner expiry, then audit the capture itself.
 
     Trust boundary: two previously established private, unshared Drive folders
-    and an independently supplied run ID + 40-hex source commit.
+    and an independently supplied run ID, 40-hex source commit, AND exact
+    SHA-256 digest of the receipt bytes, protected outside Google Drive.
     """
     if (not isinstance(receipt_parent_id, str)
             or not DRIVE_ID.fullmatch(receipt_parent_id)
@@ -181,7 +183,9 @@ def audit_from_remote_handoff(transport, receipt_parent_id,
             or not DRIVE_ID.fullmatch(capture_parent_id)
             or receipt_parent_id == capture_parent_id
             or not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id)
-            or not isinstance(commit, str) or not COMMIT.fullmatch(commit)):
+            or not isinstance(commit, str) or not COMMIT.fullmatch(commit)
+            or not isinstance(expected_receipt_sha256, str)
+            or not HEX64.fullmatch(expected_receipt_sha256)):
         raise DriveArchiveRejected("invalid_handoff_anchor")
     parent, _ = json_response(transport, "GET", metadata_path(
         receipt_parent_id, "id,mimeType,trashed,shared"
@@ -219,6 +223,10 @@ def audit_from_remote_handoff(transport, receipt_parent_id,
     raw = remote_bytes(transport, item["id"], 8192)
     if len(raw) != int(item["size"]):
         raise DriveArchiveRejected("receipt_size_mismatch")
+    # A receipt digest obtained from the same Drive folder is NOT a trust
+    # anchor: reject coordinated edits to receipt + manifest + capture.
+    if hashlib.sha256(raw).hexdigest() != expected_receipt_sha256:
+        raise DriveArchiveRejected("receipt_anchor_digest_mismatch")
     try:
         receipt = json.loads(raw)
     except (UnicodeError, ValueError) as error:
@@ -260,6 +268,7 @@ def main(argv=None):
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--expected-manifest-sha256")
     parser.add_argument("--receipt-parent-id")
+    parser.add_argument("--expected-receipt-sha256")
     args = parser.parse_args(argv)
     try:
         if (os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
@@ -267,14 +276,17 @@ def main(argv=None):
             raise DriveArchiveRejected("private_execution_required")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))
         if args.receipt_parent_id:
-            if args.folder_id or args.expected_manifest_sha256:
+            if (args.folder_id or args.expected_manifest_sha256
+                    or not args.expected_receipt_sha256):
                 raise DriveArchiveRejected("incompatible_audit_inputs")
             result = audit_from_remote_handoff(
                 transport, args.receipt_parent_id, args.parent_id,
                 args.run_id, args.source_commit,
+                args.expected_receipt_sha256,
             )
         else:
-            if not args.folder_id or not args.expected_manifest_sha256:
+            if (not args.folder_id or not args.expected_manifest_sha256
+                    or args.expected_receipt_sha256):
                 raise DriveArchiveRejected("missing_audit_inputs")
             result = audit_remote(
                 transport, args.parent_id, args.folder_id, args.run_id,

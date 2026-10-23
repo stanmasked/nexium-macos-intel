@@ -278,6 +278,8 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         result = persist_private_handoff(
             transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
         self.assertTrue(result["private_receipt_readback_verified"])
+        self.assertEqual(result["private_receipt_sha256"],
+                         hashlib.sha256(receipt.read_bytes()).hexdigest())
         self.assertFalse(result["retention_policy_verified"])
         self.assertEqual(len(transport.files), 4)
         receipt_meta = [

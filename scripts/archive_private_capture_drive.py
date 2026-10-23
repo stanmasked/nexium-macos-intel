@@ -354,9 +354,12 @@ def persist_private_handoff(transport, path, receipt_parent_id,
     # Check BOTH privacy and writability of the separate receipt folder.
     check_parent(transport, receipt_parent_id)
     name = "stage73-" + run_id + "-" + commit[:12] + "-handoff.json"
-    upload_one(transport, receipt_parent_id, name, raw,
-               hashlib.sha256(raw).hexdigest())
+    receipt_sha = hashlib.sha256(raw).hexdigest()
+    upload_one(transport, receipt_parent_id, name, raw, receipt_sha)
     return {"private_receipt_readback_verified": True,
+            # This MUST be anchored independently of remote Drive contents.
+            # Never print it or put it in PR logs.
+            "private_receipt_sha256": receipt_sha,
             "independent_persistence_verified": False,
             "retention_policy_verified": False}
 

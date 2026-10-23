@@ -83,6 +83,9 @@ class IndependentPersistenceTests(unittest.TestCase):
                 self.transport, receipt, RECEIPTS, PARENT,
                 "123", COMMIT, upload_result,
             )
+            # This digest is obtained BEFORE source deletion and retained
+            # outside the fake remote Drive. It is the trust anchor.
+            self.external_receipt_sha256 = hashlib.sha256(receipt.read_bytes()).hexdigest()
         # Simulate expiry/deletion of the original temporary runner.
         self.tmp.cleanup()
 
@@ -96,9 +99,31 @@ class IndependentPersistenceTests(unittest.TestCase):
     def check_from_receipt(self, **updates):
         values = {"transport": self.transport, "receipt_parent_id": RECEIPTS,
                   "capture_parent_id": PARENT, "run_id": "123",
-                  "commit": COMMIT}
+                  "commit": COMMIT,
+                  "expected_receipt_sha256": self.external_receipt_sha256}
         values.update(updates)
         return audit_from_remote_handoff(**values)
+
+    def test_receipt_anchor_is_mandatory(self):
+        with self.assertRaisesRegex(DriveArchiveRejected, "invalid_handoff_anchor"):
+            self.check_from_receipt(expected_receipt_sha256="")
+        with self.assertRaisesRegex(DriveArchiveRejected, "invalid_handoff_anchor"):
+            self.check_from_receipt(expected_receipt_sha256="f" * 63)
+
+    def test_wrong_independent_receipt_digest_rejected(self):
+        with self.assertRaisesRegex(DriveArchiveRejected, "receipt_anchor_digest_mismatch"):
+            self.check_from_receipt(expected_receipt_sha256="f" * 64)
+
+    def test_self_consistent_forged_receipt_rejected_by_external_anchor(self):
+        """Malicious remote can change both contents and manifest references."""
+        for file_id, (metadata, raw) in list(self.transport.files.items()):
+            if metadata["parents"] == [RECEIPTS]:
+                receipt = json.loads(raw)
+                receipt["manifest_sha256"] = "a" * 64
+                forged = json.dumps(receipt, sort_keys=True).encode()
+                self.transport.files[file_id] = (metadata, forged)
+        with self.assertRaisesRegex(DriveArchiveRejected, "receipt_anchor_digest_mismatch"):
+            self.check_from_receipt()
 
     def test_receipt_independent_readback_after_runner_deleted(self):
         result = self.check_from_receipt()

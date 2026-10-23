@@ -72,3 +72,12 @@ The existing dedicated private Stage73 receipt folder must be configured
 only at protected runtime; never embed its ID or tokens into public code.
 Independent persistence and long-term retention both remain explicitly false
 until later separate validation.
+
+
+The uploader's persist_private_handoff() returns a
+private_receipt_sha256 computed over its locally held 0600 receipt. The caller
+must anchor this SHA-256 in a separately controlled private audit record,
+independent of the raw-capture and receipt Drive folders, before the
+temporary source is deleted. The independent auditor will NOT accept a
+receipt without this external checksum. No checksum or private IDs in public
+GitHub Actions logs; the live integration remains disabled.

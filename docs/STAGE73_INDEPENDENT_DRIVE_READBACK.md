@@ -35,3 +35,14 @@ The original runner may already be deleted. No secrets, file IDs, or private
 contents are printed. Remote readback at this instant is not a retention policy
 guarantee. Independent execution on trusted, non-GitHub infrastructure remains
 required, and Stage73's real capture gate remains disabled.
+
+
+CRITICAL: A receipt retrieved from Drive is not an independent trust anchor
+for itself. The receipt-mode CLI REQUIRES --expected-receipt-sha256, calculated
+from the original 0600 handoff before runner deletion and held in a separate
+trusted location outside the capture/receipt Drive folders. The auditor hashes
+the remote receipt BEFORE trusting any of its metadata or following remote
+folder IDs. Without this independent anchor, an attacker with write access
+to both capture and receipt folders could forge a self-consistent set of files.
+No automatic fallback or trust-on-first-use is allowed. A manifest/receipt
+fingerprint read from the same remote folder is insufficient.

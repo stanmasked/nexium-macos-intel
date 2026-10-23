@@ -119,14 +119,27 @@ class Stage73ScopedIpcPatchTests(unittest.TestCase):
             repo_root / ".github" / "workflows"
             / "nexium-intel-display-ipc-path-native.yml"
         ).read_text(encoding="utf-8")
-        self.assertIn("paths-ignore:", native_workflow)
-        for ignored_path in (
+        self.assertNotIn("paths-ignore:", native_workflow)
+        self.assertIn(
+            "native_required: ${{ steps.scope.outputs.native_required }}",
+            native_workflow,
+        )
+        self.assertIn("id: scope", native_workflow)
+        self.assertIn(
+            'git diff-tree --no-commit-id --name-only -r "$EXPECTED_HEAD_SHA"',
+            native_workflow,
+        )
+        self.assertIn(
+            "needs.prepare-public-framebuffer-nro.outputs.native_required == 'true'",
+            native_workflow,
+        )
+        for scoped_path in (
             ".github/workflows/nexium-intel-display-ipc-path-diagnostics.yml",
             ".github/workflows/nexium-intel-display-ipc-path-native.yml",
             "tests/test_stage73_display_ipc_path.py",
             "tests/test_stage73_scoped_ipc_patch.py",
         ):
-            self.assertIn(f"- '{ignored_path}'", native_workflow)
+            self.assertIn(scoped_path, native_workflow)
     def test_receipt_does_not_claim_runtime_or_gpu_success(self):
         report = self.patch()
         self.assertFalse(report.get("guest_gpu_frames_verified", False))

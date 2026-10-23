@@ -3,11 +3,6 @@ name: NeXium Intel capture bounded original guest display IPC path
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths-ignore:
-      - '.github/workflows/nexium-intel-display-ipc-path-diagnostics.yml'
-      - '.github/workflows/nexium-intel-display-ipc-path-native.yml'
-      - 'tests/test_stage73_display_ipc_path.py'
-      - 'tests/test_stage73_scoped_ipc_patch.py'
   workflow_dispatch:
 
 concurrency:
@@ -26,10 +21,12 @@ jobs:
     timeout-minutes: 15
     outputs:
       is_current: ${{ steps.freshness.outputs.is_current }}
+      native_required: ${{ steps.scope.outputs.native_required }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
           persist-credentials: false
       - name: Verify Stage73 revision is current
         id: freshness
@@ -46,8 +43,39 @@ jobs:
             echo "is_current=false" >> "$GITHUB_OUTPUT"
             echo "Stage73 revision was superseded; skipping expensive work."
           fi
-      - name: Download source-identical Stage71 public libnx NRO seed
+      - name: Determine whether this commit needs a native runtime trace
+        id: scope
         if: steps.freshness.outputs.is_current == 'true'
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r "$EXPECTED_HEAD_SHA")
+          if (( ${#changed_paths[@]} == 0 )); then
+            echo "Cannot classify an empty Stage73 commit diff." >&2
+            exit 1
+          fi
+          native_required=false
+          for path in "${changed_paths[@]}"; do
+            case "$path" in
+              .github/workflows/nexium-intel-display-ipc-path-diagnostics.yml|.github/workflows/nexium-intel-display-ipc-path-native.yml|tests/test_stage73_display_ipc_path.py|tests/test_stage73_scoped_ipc_patch.py)
+                ;;
+              *)
+                native_required=true
+                break
+                ;;
+            esac
+          done
+          echo "native_required=$native_required" >> "$GITHUB_OUTPUT"
+          if [[ "$native_required" == "true" ]]; then
+            echo "Commit includes native-relevant source; continue with trace."
+          else
+            echo "Config/test-only commit; skip the expensive native trace."
+          fi
+      - name: Download source-identical Stage71 public libnx NRO seed
+        if: steps.freshness.outputs.is_current == 'true' && steps.scope.outputs.native_required == 'true'
         uses: actions/download-artifact@v4
         with:
           name: stage71-public-original-libnx-framebuffer-nro
@@ -56,7 +84,7 @@ jobs:
           run-id: 39821434769
           github-token: ${{ github.token }}
       - name: Verify pinned source and NRO identity before reuse
-        if: steps.freshness.outputs.is_current == 'true'
+        if: steps.freshness.outputs.is_current == 'true' && steps.scope.outputs.native_required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -79,7 +107,7 @@ jobs:
             --guest-nro stage73-graphics/framebuffer.nro \
             --source probes/nexium_guest_framebuffer_probe.c
       - name: Transfer only audited public graphics NRO
-        if: steps.freshness.outputs.is_current == 'true'
+        if: steps.freshness.outputs.is_current == 'true' && steps.scope.outputs.native_required == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: stage73-public-original-libnx-framebuffer-nro
@@ -89,7 +117,7 @@ jobs:
 
 
   integrated-intel-guest-graphics:
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.prepare-public-framebuffer-nro.outputs.is_current == 'true'
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.prepare-public-framebuffer-nro.outputs.is_current == 'true' && needs.prepare-public-framebuffer-nro.outputs.native_required == 'true'
     needs: [prepare-public-framebuffer-nro]
     runs-on: macos-15-intel
     timeout-minutes: 110

@@ -364,6 +364,66 @@ def persist_private_handoff(transport, path, receipt_parent_id,
             "retention_policy_verified": False}
 
 
+def write_private_receipt_anchor(path, report, receipt_path, capture_parent_id,
+                                 receipt_parent_id, run_id, commit, upload_result,
+                                 handoff_result):
+    """Preserve receipt SHA-256 outside guest workspace and remote Drive.
+
+    This is a LOCAL-ONLY anchor, not verified remote retention. A separate
+    protected archival step must preserve it before the runner is deleted.
+    """
+    path = Path(path)
+    root = report.parent.resolve()
+    absolute = path.resolve()
+    if (absolute == root or root in absolute.parents or
+            absolute == Path(receipt_path).resolve() or
+            path.is_symlink() or not path.parent.is_dir()
+            or path.parent.is_symlink()):
+        raise DriveArchiveRejected("unsafe_anchor_path")
+    digest = handoff_result.get("private_receipt_sha256")
+    if (not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            or handoff_result.get("private_receipt_readback_verified") is not True
+            or handoff_result.get("retention_policy_verified") is not False
+            or upload_result.get("readback_verified") is not True
+            or not isinstance(commit, str) or not COMMIT.fullmatch(commit)
+            or not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id)
+            or not isinstance(capture_parent_id, str)
+            or not DRIVE_ID.fullmatch(capture_parent_id)
+            or not isinstance(receipt_parent_id, str)
+            or not DRIVE_ID.fullmatch(receipt_parent_id)
+            or capture_parent_id == receipt_parent_id):
+        raise DriveArchiveRejected("untrusted_anchor_contents")
+    anchor = {
+        "schema": "nexium-stage73-independent-receipt-anchor/v1",
+        "privacy": "private",
+        "source_commit": commit,
+        "run_id": run_id,
+        "capture_parent_id": capture_parent_id,
+        "receipt_parent_id": receipt_parent_id,
+        "receipt_sha256": digest,
+        "receipt_remote_readback_verified": True,
+        "anchor_remote_retention_verified": False,
+        "guest_gpu_frames_verified": False,
+    }
+    descriptor, staging = tempfile.mkstemp(prefix=".stage73-anchor-", dir=path.parent)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(anchor, stream, sort_keys=True, separators=(",", ":"))
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Atomic exclusive create: never overwrite an existing anchor, even
+        # if another process creates one after our initial path check.
+        try:
+            os.link(staging, path)
+        except FileExistsError as error:
+            raise DriveArchiveRejected("anchor_collision") from error
+    finally:
+        if os.path.exists(staging):
+            os.unlink(staging)
+
+
 def upload_archive(report, manifest_path, parent_id, run_id, transport):
     if not RUN_ID.fullmatch(run_id):
         raise DriveArchiveRejected("invalid_run_id")
@@ -411,6 +471,7 @@ def main(argv=None):
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--receipt-path", type=Path)
     parser.add_argument("--receipt-parent-id")
+    parser.add_argument("--anchor-path", type=Path)
     args = parser.parse_args(argv)
     try:
         # A code-controlled env toggle alone is not a trust boundary. While
@@ -420,8 +481,9 @@ def main(argv=None):
             raise DriveArchiveRejected("github_runner_forbidden")
         if os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true":
             raise DriveArchiveRejected("uploader_not_armed")
-        if args.receipt_path is None or not args.receipt_parent_id:
-            raise DriveArchiveRejected("private_handoff_required")
+        if (args.receipt_path is None or not args.receipt_parent_id
+                or args.anchor_path is None):
+            raise DriveArchiveRejected("private_handoff_and_anchor_required")
         if (not DRIVE_ID.fullmatch(args.receipt_parent_id)
                 or args.receipt_parent_id == args.parent_id):
             raise DriveArchiveRejected("unsafe_receipt_destination")
@@ -439,7 +501,12 @@ def main(argv=None):
                 or handoff["independent_persistence_verified"] is not False
                 or handoff["retention_policy_verified"] is not False):
             raise DriveArchiveRejected("retention_claim_invalid")
-        print("STAGE73_REMOTE_CAPTURE_AND_HANDOFF_READBACK_VERIFIED_RETENTION_UNVERIFIED")
+        write_private_receipt_anchor(
+            args.anchor_path, args.report, args.receipt_path,
+            args.parent_id, args.receipt_parent_id, args.run_id,
+            manifest_data["source_commit"], result, handoff,
+        )
+        print("STAGE73_REMOTE_CAPTURE_AND_HANDOFF_READBACK_WITH_LOCAL_ANCHOR_RETENTION_UNVERIFIED")
         return 0
     except (DriveArchiveRejected, OSError, ValueError, TypeError, KeyError):
         print("STAGE73_PRIVATE_DRIVE_ARCHIVE_BLOCKED", file=sys.stderr)

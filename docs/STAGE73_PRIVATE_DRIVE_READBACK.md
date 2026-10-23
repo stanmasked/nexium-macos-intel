@@ -81,3 +81,17 @@ independent of the raw-capture and receipt Drive folders, before the
 temporary source is deleted. The independent auditor will NOT accept a
 receipt without this external checksum. No checksum or private IDs in public
 GitHub Actions logs; the live integration remains disabled.
+
+
+A separate local integrity anchor is now required for the trusted CLI:
+--anchor-path must point outside the guest temporary work tree and must not
+be the receipt file. The uploader exclusively creates a 0600 JSON anchor
+containing the original source identity, parent folders, and the SHA-256 of
+the privately uploaded/verified handoff receipt. It refuses to overwrite an
+existing anchor or create one before all remote upload read-backs pass.
+
+IMPORTANT: a local anchor is NOT an independently durable copy. A separate
+trusted backup process must copy it to a protected location independently
+controlled from the capture and receipt Drive folders, verify the copied SHA,
+and confirm recovery after temporary runner deletion. Until then, both
+retention and the readiness gate remain unverified/false.

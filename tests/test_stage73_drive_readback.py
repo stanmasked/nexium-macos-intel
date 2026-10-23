@@ -14,7 +14,7 @@ from seal_private_capture import build_manifest, write_manifest
 from archive_private_capture_drive import (
     DriveArchiveRejected, upload_archive, upload_one, read_sealed_file,
     read_private_manifest_bytes, write_private_handoff,
-    persist_private_handoff, main, HOST,
+    persist_private_handoff, write_private_receipt_anchor, main, HOST,
 )
 
 PARENT = "privateParent123456"
@@ -334,6 +334,59 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         with self.assertRaisesRegex(DriveArchiveRejected, "readback_mismatch"):
             persist_private_handoff(
                 transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
+
+    def make_anchored_receipt(self):
+        transport, uploaded, receipt = self.make_receipt()
+        handoff = persist_private_handoff(
+            transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
+        dest = tempfile.TemporaryDirectory()
+        self.addCleanup(dest.cleanup)
+        anchor = Path(dest.name) / "trusted-anchor.json"
+        return transport, uploaded, receipt, handoff, anchor
+
+    def test_exclusive_private_anchor_with_receipt_digest(self):
+        transport, uploaded, receipt, handoff, anchor = self.make_anchored_receipt()
+        write_private_receipt_anchor(
+            anchor, self.report, receipt, PARENT, RECEIPTS,
+            "123", COMMIT, uploaded, handoff)
+        record = json.loads(anchor.read_text())
+        self.assertEqual(record["receipt_sha256"], handoff["private_receipt_sha256"])
+        self.assertTrue(record["receipt_remote_readback_verified"])
+        self.assertFalse(record["anchor_remote_retention_verified"])
+        self.assertFalse(record["guest_gpu_frames_verified"])
+        self.assertEqual(anchor.stat().st_mode & 0o777, 0o600)
+
+    def test_existing_anchor_never_overwritten(self):
+        transport, uploaded, receipt, handoff, anchor = self.make_anchored_receipt()
+        anchor.write_text("immutable anchor")
+        with self.assertRaisesRegex(DriveArchiveRejected, "anchor_collision"):
+            write_private_receipt_anchor(
+                anchor, self.report, receipt, PARENT, RECEIPTS,
+                "123", COMMIT, uploaded, handoff)
+        self.assertEqual(anchor.read_text(), "immutable anchor")
+
+    def test_anchor_cannot_be_inside_disposable_guest_tree(self):
+        transport, uploaded, receipt, handoff, _ = self.make_anchored_receipt()
+        with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_anchor_path"):
+            write_private_receipt_anchor(
+                self.root / "anchor.json", self.report, receipt, PARENT,
+                RECEIPTS, "123", COMMIT, uploaded, handoff)
+
+    def test_anchor_cannot_replace_private_receipt(self):
+        transport, uploaded, receipt, handoff, _ = self.make_anchored_receipt()
+        with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_anchor_path"):
+            write_private_receipt_anchor(
+                receipt, self.report, receipt, PARENT, RECEIPTS,
+                "123", COMMIT, uploaded, handoff)
+
+    def test_anchor_rejects_unverified_readback(self):
+        transport, uploaded, receipt, handoff, anchor = self.make_anchored_receipt()
+        handoff["private_receipt_readback_verified"] = False
+        with self.assertRaisesRegex(DriveArchiveRejected, "untrusted_anchor_contents"):
+            write_private_receipt_anchor(
+                anchor, self.report, receipt, PARENT, RECEIPTS,
+                "123", COMMIT, uploaded, handoff)
+        self.assertFalse(anchor.exists())
 
     def test_private_server_resumable_url_only(self):
         t = FakeTransport()

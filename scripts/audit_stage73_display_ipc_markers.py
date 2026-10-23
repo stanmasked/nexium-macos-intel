@@ -35,6 +35,10 @@ SOURCE_TEMPLATES = {
 SOURCE_COMMAND_MAPS = {
     "sm_cmd_0_register_client": "0 => dispatch_sm_register_client(kernel, tls_buf, cmif_data_off, cmif_data_len, parsed_ctx),",
     "sm_cmd_1_get_service_handle": "1 => dispatch_sm_get_service_handle(",
+    "vi_service_cmd_0_returns_display_service": '("vi:m" | "vi:s" | "vi:u", 0) => Some("IApplicationDisplayService"),',
+    "vi_service_cmd_1_returns_display_service": '("vi:m" | "vi:s" | "vi:u", 1) => Some("IApplicationDisplayService"),',
+    "vi_service_cmd_2_returns_display_service": '("vi:m" | "vi:s" | "vi:u", 2) => Some("IApplicationDisplayService"),',
+    "vi_service_cmd_3_returns_display_service": '("vi:m" | "vi:s" | "vi:u", 3) => Some("IApplicationDisplayService"),',
     "display_binder_cmd_100": '("IApplicationDisplayService", 100) => Some("IHOSBinderDriver"),',
     "display_binder_cmd_103": '("IApplicationDisplayService", 103) => Some("IHOSBinderDriver"),',
     "native_window_cmd_2020": '("IApplicationDisplayService", 2020)',

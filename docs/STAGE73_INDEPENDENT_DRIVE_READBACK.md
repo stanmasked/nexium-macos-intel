@@ -46,3 +46,14 @@ folder IDs. Without this independent anchor, an attacker with write access
 to both capture and receipt folders could forge a self-consistent set of files.
 No automatic fallback or trust-on-first-use is allowed. A manifest/receipt
 fingerprint read from the same remote folder is insufficient.
+
+
+The independent audit CLI now accepts --anchor-path as an alternative to
+--expected-receipt-sha256. A local anchor is read using O_NOFOLLOW from a
+single regular owner-only (0600) file with an exact private schema and exact
+source/run/parent identities. The SHA-256 stored there must match the remote
+receipt before the auditor follows any receipt-provided folder information.
+Do NOT use both anchor options simultaneously. An anchor file derived from
+the remote Drive receipt is not independent; it must originate from the
+trusted uploader and survive on separately controlled storage. This still
+does not prove long-term retention, backup replication, or GPU execution.

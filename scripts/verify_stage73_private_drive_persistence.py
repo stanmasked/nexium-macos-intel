@@ -8,7 +8,9 @@ import argparse
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
+import stat
 import sys
 from urllib.parse import urlencode
 
@@ -260,6 +262,54 @@ def audit_from_remote_handoff(transport, receipt_parent_id,
     return {**evidence, "remote_receipt_readback_verified": True}
 
 
+def read_independent_anchor(path, source_commit, run_id,
+                            capture_parent_id, receipt_parent_id):
+    """Load a private protected 0600 anchor without following a symlink."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            info = os.fstat(descriptor)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or stat.S_IMODE(info.st_mode) != 0o600
+                    or not 0 < info.st_size <= 4096):
+                raise DriveArchiveRejected("anchor_unsafe")
+            raw = os.read(descriptor, 4097)
+            after = os.fstat(descriptor)
+            if (len(raw) != info.st_size
+                    or info.st_size != after.st_size
+                    or info.st_mtime_ns != after.st_mtime_ns
+                    or info.st_ctime_ns != after.st_ctime_ns):
+                raise DriveArchiveRejected("anchor_modified")
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise DriveArchiveRejected("anchor_unavailable") from error
+    try:
+        record = json.loads(raw)
+    except (UnicodeError, ValueError) as error:
+        raise DriveArchiveRejected("anchor_unreadable") from error
+    keys = {
+        "schema", "privacy", "source_commit", "run_id",
+        "capture_parent_id", "receipt_parent_id", "receipt_sha256",
+        "receipt_remote_readback_verified", "anchor_remote_retention_verified",
+        "guest_gpu_frames_verified",
+    }
+    if (not isinstance(record, dict) or set(record) != keys
+            or record.get("schema") != "nexium-stage73-independent-receipt-anchor/v1"
+            or record.get("privacy") != "private"
+            or record.get("source_commit") != source_commit
+            or record.get("run_id") != run_id
+            or record.get("capture_parent_id") != capture_parent_id
+            or record.get("receipt_parent_id") != receipt_parent_id
+            or record.get("receipt_remote_readback_verified") is not True
+            or record.get("anchor_remote_retention_verified") is not False
+            or record.get("guest_gpu_frames_verified") is not False
+            or not isinstance(record.get("receipt_sha256"), str)
+            or not HEX64.fullmatch(record["receipt_sha256"])):
+        raise DriveArchiveRejected("untrusted_anchor")
+    return record["receipt_sha256"]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Independent private Drive read-only audit")
     parser.add_argument("--parent-id", required=True)
@@ -269,6 +319,7 @@ def main(argv=None):
     parser.add_argument("--expected-manifest-sha256")
     parser.add_argument("--receipt-parent-id")
     parser.add_argument("--expected-receipt-sha256")
+    parser.add_argument("--anchor-path", type=Path)
     args = parser.parse_args(argv)
     try:
         if (os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
@@ -277,16 +328,22 @@ def main(argv=None):
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))
         if args.receipt_parent_id:
             if (args.folder_id or args.expected_manifest_sha256
-                    or not args.expected_receipt_sha256):
+                    or bool(args.expected_receipt_sha256) == bool(args.anchor_path)):
                 raise DriveArchiveRejected("incompatible_audit_inputs")
+            anchored_sha = (
+                read_independent_anchor(
+                    args.anchor_path, args.source_commit, args.run_id,
+                    args.parent_id, args.receipt_parent_id,
+                ) if args.anchor_path is not None
+                else args.expected_receipt_sha256
+            )
             result = audit_from_remote_handoff(
                 transport, args.receipt_parent_id, args.parent_id,
-                args.run_id, args.source_commit,
-                args.expected_receipt_sha256,
+                args.run_id, args.source_commit, anchored_sha,
             )
         else:
             if (not args.folder_id or not args.expected_manifest_sha256
-                    or args.expected_receipt_sha256):
+                    or args.expected_receipt_sha256 or args.anchor_path is not None):
                 raise DriveArchiveRejected("missing_audit_inputs")
             result = audit_remote(
                 transport, args.parent_id, args.folder_id, args.run_id,

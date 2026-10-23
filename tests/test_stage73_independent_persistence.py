@@ -18,7 +18,7 @@ from test_stage73_drive_readback import FakeTransport, PARENT, RECEIPTS, COMMIT,
 from seal_private_capture import build_manifest, write_manifest
 from verify_stage73_private_drive_persistence import (
     DriveArchiveRejected, audit_remote, audit_from_remote_handoff,
-    main, validate_remote_manifest,
+    read_independent_anchor, main, validate_remote_manifest,
 )
 
 
@@ -124,6 +124,71 @@ class IndependentPersistenceTests(unittest.TestCase):
                 self.transport.files[file_id] = (metadata, forged)
         with self.assertRaisesRegex(DriveArchiveRejected, "receipt_anchor_digest_mismatch"):
             self.check_from_receipt()
+
+    def make_external_anchor(self):
+        from archive_private_capture_drive import (
+            write_private_receipt_anchor,
+        )
+        # Trust anchor must be outside the original disposable source.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "anchor.json"
+            data = {
+                "schema": "nexium-stage73-independent-receipt-anchor/v1",
+                "privacy": "private", "source_commit": COMMIT,
+                "run_id": "123", "capture_parent_id": PARENT,
+                "receipt_parent_id": RECEIPTS,
+                "receipt_sha256": self.external_receipt_sha256,
+                "receipt_remote_readback_verified": True,
+                "anchor_remote_retention_verified": False,
+                "guest_gpu_frames_verified": False,
+            }
+            path.write_text(json.dumps(data))
+            path.chmod(0o600)
+            return path.read_bytes()
+
+    def test_external_anchor_file_provides_receipt_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "anchor.json"
+            path.write_bytes(self.make_external_anchor())
+            path.chmod(0o600)
+            digest = read_independent_anchor(path, COMMIT, "123", PARENT, RECEIPTS)
+            self.assertEqual(digest, self.external_receipt_sha256)
+            self.assertTrue(self.check_from_receipt(
+                expected_receipt_sha256=digest)["remote_independent_readback_verified"])
+
+    def test_external_anchor_world_readable_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "anchor.json"
+            path.write_bytes(self.make_external_anchor())
+            path.chmod(0o644)
+            with self.assertRaisesRegex(DriveArchiveRejected, "anchor_unsafe"):
+                read_independent_anchor(path, COMMIT, "123", PARENT, RECEIPTS)
+
+    def test_external_anchor_symlink_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original = Path(tmp) / "original"
+            original.write_bytes(self.make_external_anchor())
+            original.chmod(0o600)
+            alias = Path(tmp) / "alias"
+            alias.symlink_to(original)
+            with self.assertRaises(DriveArchiveRejected):
+                read_independent_anchor(alias, COMMIT, "123", PARENT, RECEIPTS)
+
+    def test_external_anchor_wrong_identity_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "anchor.json"
+            path.write_bytes(self.make_external_anchor())
+            path.chmod(0o600)
+            with self.assertRaisesRegex(DriveArchiveRejected, "untrusted_anchor"):
+                read_independent_anchor(path, "d" * 40, "123", PARENT, RECEIPTS)
+            with self.assertRaisesRegex(DriveArchiveRejected, "untrusted_anchor"):
+                read_independent_anchor(path, COMMIT, "999", PARENT, RECEIPTS)
+
+    def test_external_anchor_missing_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "absent"
+            with self.assertRaisesRegex(DriveArchiveRejected, "anchor_unavailable"):
+                read_independent_anchor(path, COMMIT, "123", PARENT, RECEIPTS)
 
     def test_receipt_independent_readback_after_runner_deleted(self):
         result = self.check_from_receipt()

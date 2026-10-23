@@ -62,10 +62,24 @@ jobs:
             --data-urlencode "status=success" \
             --data-urlencode "per_page=100" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/nexium-intel-display-ipc-path-native.yml/runs")"
+          last_successful_run_id="$(printf '%s' "$runs_json" | jq -r '.workflow_runs[0].id // empty')"
           last_successful_sha="$(printf '%s' "$runs_json" | jq -r '.workflow_runs[0].head_sha // empty')"
-          if [[ -z "$last_successful_sha" ]]; then
+          if [[ -z "$last_successful_run_id" || -z "$last_successful_sha" ]]; then
             echo "native_required=true" >> "$GITHUB_OUTPUT"
             echo "No previous successful native trace; require a fresh trace."
+            exit 0
+          fi
+          # A workflow can succeed with integrated-intel-guest-graphics skipped.
+          # Only a completed successful Intel job may be used to suppress a rerun.
+          jobs_json="$(curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            --get --data-urlencode "per_page=100" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$last_successful_run_id/jobs")"
+          if ! printf '%s' "$jobs_json" | jq -e \
+            '.jobs | any(.name == "integrated-intel-guest-graphics" and .status == "completed" and .conclusion == "success")' >/dev/null; then
+            echo "native_required=true" >> "$GITHUB_OUTPUT"
+            echo "Most recent successful workflow did not execute a successful Intel guest job."
             exit 0
           fi
           if ! git merge-base --is-ancestor "$last_successful_sha" "$EXPECTED_HEAD_SHA"; then

@@ -74,8 +74,11 @@ def _separate_paths(original, backup, reference, disposable_root=None):
             raise DriveArchiveRejected("unsafe_private_parent")
     if disposable_root is not None:
         disposable = Path(disposable_root).resolve()
+        # The input anchor may come from the short-lived producer session.
+        # Only the backup and digest-reference destinations MUST survive
+        # deletion of that producer workspace.
         if any(path == disposable or disposable in path.parents
-               for path in canonical):
+               for path in canonical[1:]):
             raise DriveArchiveRejected("backup_inside_disposable_workspace")
     return paths
 

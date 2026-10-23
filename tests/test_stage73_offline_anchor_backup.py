@@ -114,6 +114,20 @@ class OfflineAnchorBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_private_parent"):
                 self.save()
 
+    def test_disposable_source_with_external_backups_is_valid(self):
+        new_source_dir = self.disposable / "private-anchor"
+        new_source_dir.mkdir()
+        ephemeral_anchor = new_source_dir / "anchor.json"
+        ephemeral_anchor.write_bytes(self.original.read_bytes())
+        ephemeral_anchor.chmod(0o600)
+        saved = backup_offline_anchor(
+            ephemeral_anchor, self.backup, self.reference,
+            disposable_root=self.disposable, **self.parameters,
+        )
+        self.assertTrue(saved["independent_copy_readback_verified"])
+        ephemeral_anchor.unlink()
+        self.assertTrue(self.restore()["independent_copy_readback_verified"])
+
     def test_copy_in_disposable_tree_rejected(self):
         backup = self.disposable / "forbidden"
         with self.assertRaisesRegex(DriveArchiveRejected, "backup_inside_disposable_workspace"):

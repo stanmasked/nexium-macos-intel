@@ -72,6 +72,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_stage73_drive_readback.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_independent_persistence.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_offline_anchor_backup.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_synthetic_drive_rehearsal.py' -v
           python3 -m unittest discover -s tests -p 'test_stage71_graphics_boot_diagnostics.py' -v
           python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
           python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v

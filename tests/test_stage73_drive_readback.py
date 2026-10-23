@@ -162,7 +162,7 @@ class Stage73DriveReadbackTests(unittest.TestCase):
     def test_shared_destination_rejected_before_remote_writes(self):
         t = FakeTransport()
         t.shared_parent = True
-        with self.assertRaisesRegex(DriveArchiveRejected, "not_writable"):
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
             upload_archive(self.report, self.manifest, PARENT, "123", t)
         self.assertEqual(len(t.calls), 1)
 

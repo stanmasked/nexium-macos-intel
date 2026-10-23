@@ -159,7 +159,7 @@ def create_run_folder(transport, parent, run_id, commit):
     if (not isinstance(folder_id, str) or not DRIVE_ID.fullmatch(folder_id)
             or data.get("name") != name or data.get("parents") != [parent]
             or data.get("mimeType") != "application/vnd.google-apps.folder"
-            or data.get("trashed") is not False):
+            or data.get("trashed") is not False or data.get("shared") is not False):
         raise DriveArchiveRejected("folder_creation_unverified")
     require_owner_only_acl(data)
     return folder_id

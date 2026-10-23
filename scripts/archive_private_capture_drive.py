@@ -81,11 +81,54 @@ def metadata_path(file_id, fields):
             urlencode({"fields": fields, "supportsAllDrives": "true"}))
 
 
+def require_owner_only_acl(item):
+    """Shared=false is not sufficient when inherited permissions exist."""
+    perms = item.get("permissions")
+    if (item.get("shared") is not False
+            or item.get("driveId") not in (None, "")
+            or not isinstance(perms, list) or len(perms) != 1
+            or not isinstance(perms[0], dict)
+            or perms[0].get("type") != "user"
+            or perms[0].get("role") != "owner"):
+        raise DriveArchiveRejected("remote_acl_not_owner_only")
+
+
+def check_private_parent_chain(transport, folder_id, *, writable):
+    """Fail closed on ancestor ACL, cycles, shared drives or invisible grants."""
+    if not isinstance(folder_id, str) or not DRIVE_ID.fullmatch(folder_id):
+        raise DriveArchiveRejected("invalid_folder")
+    visited = set()
+    current = folder_id
+    for depth in range(16):
+        if current in visited:
+            raise DriveArchiveRejected("remote_parent_cycle")
+        visited.add(current)
+        fields = ("id,mimeType,trashed,shared,driveId,parents,"
+                  "permissions(type,role),capabilities(canAddChildren)")
+        item, _ = json_response(transport, "GET", metadata_path(current, fields))
+        if (item.get("id") != current
+                or item.get("trashed") is not False
+                or item.get("mimeType") != "application/vnd.google-apps.folder"):
+            raise DriveArchiveRejected("remote_ancestor_invalid")
+        require_owner_only_acl(item)
+        if depth == 0 and writable and item.get("capabilities", {}).get("canAddChildren") is not True:
+            raise DriveArchiveRejected("remote_folder_not_writable")
+        parents = item.get("parents", [])
+        if not isinstance(parents, list) or len(parents) > 1:
+            raise DriveArchiveRejected("remote_parent_ambiguous")
+        if not parents:
+            return
+        current = parents[0]
+        if not isinstance(current, str) or not DRIVE_ID.fullmatch(current):
+            raise DriveArchiveRejected("remote_parent_invalid")
+    raise DriveArchiveRejected("remote_parent_chain_too_deep")
+
+
+
 def validate_metadata(item, *, file_id, parent_id, filename, size=None):
     if item.get("id") != file_id or item.get("name") != filename:
         raise DriveArchiveRejected("wrong_remote_identity")
-    if item.get("shared") is not False:
-        raise DriveArchiveRejected("remote_file_is_shared")
+    require_owner_only_acl(item)
     if item.get("trashed") is not False or item.get("parents") != [parent_id]:
         raise DriveArchiveRejected("wrong_remote_parent")
     if item.get("mimeType") != "application/octet-stream":
@@ -95,15 +138,7 @@ def validate_metadata(item, *, file_id, parent_id, filename, size=None):
 
 
 def check_parent(transport, folder_id):
-    if not DRIVE_ID.fullmatch(folder_id):
-        raise DriveArchiveRejected("invalid_folder")
-    fields = "id,mimeType,trashed,shared,capabilities(canAddChildren)"
-    data, _ = json_response(transport, "GET", metadata_path(folder_id, fields))
-    if (data.get("id") != folder_id or data.get("trashed") is not False
-            or data.get("mimeType") != "application/vnd.google-apps.folder"
-            or data.get("shared") is not False
-            or data.get("capabilities", {}).get("canAddChildren") is not True):
-        raise DriveArchiveRejected("remote_folder_not_writable")
+    check_private_parent_chain(transport, folder_id, writable=True)
 
 
 def create_run_folder(transport, parent, run_id, commit):
@@ -111,7 +146,7 @@ def create_run_folder(transport, parent, run_id, commit):
     data, _ = json_response(
         transport, "POST",
         "/drive/v3/files?" + urlencode({
-            "fields": "id,name,mimeType,trashed,parents,shared",
+            "fields": "id,name,mimeType,trashed,parents,shared,driveId,permissions(type,role)",
             "supportsAllDrives": "true",
         }),
         body=json.dumps({
@@ -124,8 +159,9 @@ def create_run_folder(transport, parent, run_id, commit):
     if (not isinstance(folder_id, str) or not DRIVE_ID.fullmatch(folder_id)
             or data.get("name") != name or data.get("parents") != [parent]
             or data.get("mimeType") != "application/vnd.google-apps.folder"
-            or data.get("trashed") is not False or data.get("shared") is not False):
+            or data.get("trashed") is not False):
         raise DriveArchiveRejected("folder_creation_unverified")
+    require_owner_only_acl(data)
     return folder_id
 
 
@@ -142,7 +178,7 @@ def upload_one(transport, folder_id, name, payload, digest):
         "POST",
         "/upload/drive/v3/files?" + urlencode({
             "uploadType": "resumable",
-            "fields": "id,name,mimeType,parents,trashed,size,shared",
+            "fields": "id,name,mimeType,parents,trashed,size,shared,driveId,permissions(type,role)",
             "supportsAllDrives": "true",
         }),
         body=json.dumps(init_metadata).encode(),
@@ -170,7 +206,7 @@ def upload_one(transport, folder_id, name, payload, digest):
     file_id = remote.get("id")
     if not isinstance(file_id, str) or not DRIVE_ID.fullmatch(file_id):
         raise DriveArchiveRejected("upload_id_missing")
-    fields = "id,name,mimeType,trashed,parents,size,shared"
+    fields = "id,name,mimeType,trashed,parents,size,shared,driveId,permissions(type,role)"
     verified, _ = json_response(transport, "GET", metadata_path(file_id, fields))
     validate_metadata(verified, file_id=file_id, parent_id=folder_id,
                       filename=name, size=len(payload))

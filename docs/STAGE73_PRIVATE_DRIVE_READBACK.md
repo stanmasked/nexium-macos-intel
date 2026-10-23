@@ -102,3 +102,14 @@ not an exists-check followed by os.replace. A concurrent process cannot
 replace an existing private receipt; exact collision leaves the original
 unchanged. This is separate from, and does not establish, remote persistence
 or retention.
+
+
+Privacy hardening: the trusted uploader now inspects the full Drive parent
+hierarchy to the root before sending any private payload. Every ancestor must
+expose exactly one user-owner ACL grant; shared drives, missing permissions,
+extra grants, shared ancestors and cycles fail closed. Every created folder
+and uploaded file must also expose a single owner-only ACL. This is stricter
+than shared=false alone (which does not prove that no inherited permissions
+exist). This profile is restricted to owner-authenticated private My Drive.
+A service account or delegated writer in someone else's folder requires a
+separately audited access design rather than bypassing the owner check.

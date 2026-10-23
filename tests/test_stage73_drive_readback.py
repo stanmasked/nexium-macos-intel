@@ -33,6 +33,10 @@ class FakeTransport:
         self.bad_parent = False
         self.shared_parent = False
         self.shared_capture = False
+        self.shared_ancestor = False
+        self.extra_permission = False
+        self.missing_permissions = False
+        self.ancestor_cycle = False
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -41,18 +45,29 @@ class FakeTransport:
         query = parse_qs(url.query)
         if method == "GET" and url.path in (
                 "/drive/v3/files/" + PARENT,
-                "/drive/v3/files/" + RECEIPTS):
+                "/drive/v3/files/" + RECEIPTS,
+                "/drive/v3/files/syntheticAncestor123"):
             requested_id = url.path.rsplit("/", 1)[-1]
+            ancestor = requested_id == "syntheticAncestor123"
             item = {"id": requested_id, "mimeType": "application/vnd.google-apps.folder",
-                    "trashed": False, "shared": self.shared_parent,
-                    "capabilities": {"canAddChildren": True}}
+                    "trashed": False,
+                    "shared": self.shared_ancestor if ancestor else self.shared_parent,
+                    "parents": (["syntheticAncestor123"] if not ancestor else
+                                ([PARENT] if self.ancestor_cycle else [])),
+                    "capabilities": {"canAddChildren": True},
+                    "permissions": [{"type": "user", "role": "owner"}]}
+            if self.extra_permission:
+                item["permissions"].append({"type": "anyone", "role": "reader"})
+            if self.missing_permissions:
+                del item["permissions"]
             return 200, {}, json.dumps(item).encode()
         if method == "POST" and url.path == "/drive/v3/files":
             item = json.loads(body)
             self.sequence += 1
             folder_id = "folder" + str(self.sequence).zfill(8)
             return 200, {}, json.dumps({"id": folder_id, **item,
-                                        "trashed": False, "shared": self.shared_capture}).encode()
+                                        "trashed": False, "shared": self.shared_capture,
+                                        "permissions": [{"type": "user", "role": "owner"}]}).encode()
         if method == "POST" and url.path == "/upload/drive/v3/files":
             self.pending = json.loads(body)
             self.sequence += 1
@@ -74,6 +89,7 @@ class FakeTransport:
                     "parents": ["otherPrivateParent000"] if self.bad_parent else info["parents"],
                     "mimeType": info["mimeType"], "trashed": False,
                     "shared": self.shared_capture,
+                    "permissions": [{"type": "user", "role": "owner"}],
                     "size": str(len(payload))}
             return 200, {}, json.dumps(data).encode()
         raise AssertionError("Unexpected fake HTTP call")
@@ -114,6 +130,34 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         t.bad_parent = True
         with self.assertRaisesRegex(DriveArchiveRejected, "wrong_remote_parent"):
             upload_archive(self.report, self.manifest, PARENT, "123", t)
+
+    def test_shared_ancestor_blocks_upload_before_any_write(self):
+        tr = FakeTransport()
+        tr.shared_ancestor = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(method == "POST" for method, _ in tr.calls))
+
+    def test_extra_grant_blocks_upload_before_any_write(self):
+        tr = FakeTransport()
+        tr.extra_permission = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(method == "POST" for method, _ in tr.calls))
+
+    def test_unknown_permissions_block_upload_before_any_write(self):
+        tr = FakeTransport()
+        tr.missing_permissions = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(method == "POST" for method, _ in tr.calls))
+
+    def test_parent_cycle_blocks_upload_before_any_write(self):
+        tr = FakeTransport()
+        tr.ancestor_cycle = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_parent_cycle"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(method == "POST" for method, _ in tr.calls))
 
     def test_shared_destination_rejected_before_remote_writes(self):
         t = FakeTransport()

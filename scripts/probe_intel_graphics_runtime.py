@@ -104,7 +104,10 @@ FAILURE_PREFIX_LENGTHS = {
 }
 
 
-def source_graphics_audit(report: Path, binary_sha: str, nro_sha: str) -> dict:
+def source_graphics_audit(
+    report: Path, binary_sha: str, nro_sha: str, *,
+    emit_progress_diagnostic: bool = False,
+) -> dict:
     """Verify exact original guest markers, in order, without copying raw logs."""
     smoke = read_bounded_json(report / "smoke_result.json")
     if smoke.get("emulator_sha256") != binary_sha or smoke.get("nro_sha256") != nro_sha:
@@ -130,17 +133,32 @@ def source_graphics_audit(report: Path, binary_sha: str, nro_sha: str) -> dict:
         marker = line.split(MARKER_PREFIX, 1)[1].strip()
         if marker in PROGRESS_MARKERS or marker in FAILURE_MARKERS:
             hits.append(marker)
+    positive = [p for p in PROGRESS_MARKERS if p in hits]
+    failure = [p for p in FAILURE_MARKERS if p in hits]
+    expected = list(PROGRESS_MARKERS[:len(positive)])
+    if emit_progress_diagnostic:
+        diagnostic = {
+            "schema": "nexium-stage73-original-guest-progress/v1",
+            "original_guest_progress_markers": len(positive),
+            "last_original_guest_marker": hits[-1] if hits else None,
+            "first_marker_is_graphics_start": bool(hits and hits[0] == PROGRESS_MARKERS[0]),
+            "ordered_progress_prefix_valid": positive == expected,
+            "duplicate_marker_observed": len(hits) != len(set(hits)),
+            "marker_sequence_exact": hits == positive + failure,
+            "failure_marker_count": len(failure),
+            "guest_process_status": smoke["status"],
+            "raw_logs_uploaded": False,
+        }
+        print("STAGE73_ORIGINAL_GUEST_PROGRESS_DIAGNOSTIC "
+              + json.dumps(diagnostic, sort_keys=True), flush=True)
     if not hits or hits[0] != PROGRESS_MARKERS[0]:
         raise ValueError("original libnx graphics guest start was not observed")
     if len(hits) != len(set(hits)):
         raise ValueError("duplicate original guest graphics output marker")
-    positive = [p for p in PROGRESS_MARKERS if p in hits]
-    failure = [p for p in FAILURE_MARKERS if p in hits]
     if len(failure) > 1:
         raise ValueError("ambiguous guest graphics terminal failure markers")
     # Every progress marker prior to the last observed one must be present,
     # and the exact serialized original guest event order must hold.
-    expected = list(PROGRESS_MARKERS[:len(positive)])
     if positive != expected:
         raise ValueError("original guest graphics markers skip expected stages")
     if hits != positive + failure:
@@ -327,20 +345,9 @@ def main(argv=None) -> int:
                 raise guest_run_error
             phase = "audit_original_guest_progress"
             guest = source_graphics_audit(
-                report, intel_binary["native_macho_sha256"], compiled["nro_sha256"]
+                report, intel_binary["native_macho_sha256"], compiled["nro_sha256"],
+                emit_progress_diagnostic=True,
             )
-            progress_keys = (
-                "graphics_guest_runtime_classification",
-                "original_guest_progress_markers",
-                "last_original_guest_marker",
-                "guest_framebuffer_created_observed",
-                "guest_framebuffer_end_call_returned_observed",
-                "guest_framebuffer_api_loop_complete_observed",
-                "graphics_guest_exit_status",
-            )
-            progress = {key: guest[key] for key in progress_keys}
-            print("STAGE73_ORIGINAL_GUEST_PROGRESS_DIAGNOSTIC "
-                  + json.dumps(progress, sort_keys=True), flush=True)
             print("STAGE68_GATE_ORIGINAL_GUEST_MARKER_SEQUENCE_AUDITED", flush=True)
             phase = "inspect_owned_window_evidence"
             pixels = inspect_gui_evidence(

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 import sys
 import tempfile
@@ -157,6 +159,23 @@ class Stage68ActualGuestGraphicsMarkerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly one"):
             source_graphics_audit(self.root, MACHO, NRO)
 
+
+    def test_invalid_marker_order_emits_only_bounded_progress_summary(self):
+        self.update(smoke=True, markers=(PROGRESS_MARKERS[0], PROGRESS_MARKERS[2]))
+        output = StringIO()
+        with redirect_stdout(output):
+            with self.assertRaisesRegex(ValueError, "skip expected stages"):
+                source_graphics_audit(
+                    self.root, MACHO, NRO, emit_progress_diagnostic=True
+                )
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("STAGE73_ORIGINAL_GUEST_PROGRESS_DIAGNOSTIC "))
+        diagnostic = json.loads(lines[0].split(" ", 1)[1])
+        self.assertEqual(diagnostic["last_original_guest_marker"], PROGRESS_MARKERS[2])
+        self.assertFalse(diagnostic["ordered_progress_prefix_valid"])
+        self.assertFalse(diagnostic["raw_logs_uploaded"])
+        self.assertNotIn("private", lines[0])
 
     def test_blocked_marker_is_phase_specific_and_never_exposes_exception_text(self):
         marker = safe_runtime_blocked_marker(

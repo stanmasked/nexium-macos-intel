@@ -168,23 +168,118 @@ def audit_remote(transport, parent_id, folder_id, run_id, commit, manifest_sha25
             "main_merge_approved": False}
 
 
+def audit_from_remote_handoff(transport, receipt_parent_id,
+                              capture_parent_id, run_id, commit):
+    """Locate remote receipt after runner expiry, then audit the capture itself.
+
+    Trust boundary: two previously established private, unshared Drive folders
+    and an independently supplied run ID + 40-hex source commit.
+    """
+    if (not isinstance(receipt_parent_id, str)
+            or not DRIVE_ID.fullmatch(receipt_parent_id)
+            or not isinstance(capture_parent_id, str)
+            or not DRIVE_ID.fullmatch(capture_parent_id)
+            or receipt_parent_id == capture_parent_id
+            or not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id)
+            or not isinstance(commit, str) or not COMMIT.fullmatch(commit)):
+        raise DriveArchiveRejected("invalid_handoff_anchor")
+    parent, _ = json_response(transport, "GET", metadata_path(
+        receipt_parent_id, "id,mimeType,trashed,shared"
+    ))
+    if (parent.get("id") != receipt_parent_id
+            or parent.get("mimeType") != "application/vnd.google-apps.folder"
+            or parent.get("trashed") is not False
+            or parent.get("shared") is not False):
+        raise DriveArchiveRejected("receipt_folder_not_private")
+    filename = "stage73-" + run_id + "-" + commit[:12] + "-handoff.json"
+    query = ("'" + receipt_parent_id + "' in parents and "
+             + "name = '" + filename + "' and trashed = false")
+    listing, _ = json_response(transport, "GET", "/drive/v3/files?" + urlencode({
+        "q": query, "pageSize": "100",
+        "fields": "nextPageToken,files(id,name,mimeType,parents,trashed,shared,size)",
+        "supportsAllDrives": "true",
+        "includeItemsFromAllDrives": "true",
+    }))
+    found = listing.get("files")
+    if listing.get("nextPageToken") or not isinstance(found, list) or len(found) != 1:
+        raise DriveArchiveRejected("receipt_missing_or_ambiguous")
+    item = found[0]
+    if (not isinstance(item, dict)
+            or item.get("name") != filename
+            or item.get("parents") != [receipt_parent_id]
+            or item.get("mimeType") != "application/octet-stream"
+            or item.get("trashed") is not False
+            or item.get("shared") is not False
+            or not isinstance(item.get("id"), str)
+            or not DRIVE_ID.fullmatch(item["id"])
+            or not isinstance(item.get("size"), str)
+            or not item["size"].isascii() or not item["size"].isdecimal()
+            or not 0 < int(item["size"]) <= 8192):
+        raise DriveArchiveRejected("receipt_metadata_invalid")
+    raw = remote_bytes(transport, item["id"], 8192)
+    if len(raw) != int(item["size"]):
+        raise DriveArchiveRejected("receipt_size_mismatch")
+    try:
+        receipt = json.loads(raw)
+    except (UnicodeError, ValueError) as error:
+        raise DriveArchiveRejected("receipt_invalid_json") from error
+    keys = {"schema", "privacy", "source_commit", "run_id", "parent_id",
+            "run_folder_id", "manifest_sha256", "remote_readback_verified",
+            "independent_persistence_verified", "retention_policy_verified",
+            "guest_gpu_frames_verified"}
+    if (not isinstance(receipt, dict) or set(receipt) != keys
+            or receipt.get("schema") != "nexium-stage73-private-drive-handoff/v1"
+            or receipt.get("privacy") != "private"
+            or receipt.get("source_commit") != commit
+            or receipt.get("run_id") != run_id
+            or receipt.get("parent_id") != capture_parent_id
+            or receipt.get("remote_readback_verified") is not True
+            or receipt.get("independent_persistence_verified") is not False
+            or receipt.get("retention_policy_verified") is not False
+            or receipt.get("guest_gpu_frames_verified") is not False
+            or not isinstance(receipt.get("run_folder_id"), str)
+            or not DRIVE_ID.fullmatch(receipt["run_folder_id"])
+            or receipt["run_folder_id"] in (receipt_parent_id, capture_parent_id)
+            or not isinstance(receipt.get("manifest_sha256"), str)
+            or not HEX64.fullmatch(receipt["manifest_sha256"])):
+        raise DriveArchiveRejected("untrusted_private_receipt")
+    evidence = audit_remote(
+        transport, capture_parent_id, receipt["run_folder_id"], run_id,
+        commit, receipt["manifest_sha256"],
+    )
+    if evidence["retention_policy_verified"] is not False:
+        raise DriveArchiveRejected("untrusted_retention_claim")
+    return {**evidence, "remote_receipt_readback_verified": True}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Independent private Drive read-only audit")
     parser.add_argument("--parent-id", required=True)
-    parser.add_argument("--folder-id", required=True)
+    parser.add_argument("--folder-id")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--source-commit", required=True)
-    parser.add_argument("--expected-manifest-sha256", required=True)
+    parser.add_argument("--expected-manifest-sha256")
+    parser.add_argument("--receipt-parent-id")
     args = parser.parse_args(argv)
     try:
         if (os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
                 or os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true"):
             raise DriveArchiveRejected("private_execution_required")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))
-        result = audit_remote(
-            transport, args.parent_id, args.folder_id, args.run_id,
-            args.source_commit, args.expected_manifest_sha256,
-        )
+        if args.receipt_parent_id:
+            if args.folder_id or args.expected_manifest_sha256:
+                raise DriveArchiveRejected("incompatible_audit_inputs")
+            result = audit_from_remote_handoff(
+                transport, args.receipt_parent_id, args.parent_id,
+                args.run_id, args.source_commit,
+            )
+        else:
+            if not args.folder_id or not args.expected_manifest_sha256:
+                raise DriveArchiveRejected("missing_audit_inputs")
+            result = audit_remote(
+                transport, args.parent_id, args.folder_id, args.run_id,
+                args.source_commit, args.expected_manifest_sha256,
+            )
         if result["retention_policy_verified"] is not False:
             raise DriveArchiveRejected("untrusted_retention_claim")
         print("STAGE73_PRIVATE_REMOTE_PERSISTENCE_READBACK_VERIFIED_RETENTION_UNVERIFIED")

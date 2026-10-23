@@ -8,13 +8,17 @@ import sys
 import tempfile
 import unittest
 from urllib.parse import parse_qs, urlsplit
+import re
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from archive_private_capture_drive import upload_archive
-from test_stage73_drive_readback import FakeTransport, PARENT, COMMIT, MACHO, NRO
+from archive_private_capture_drive import (
+    upload_archive, write_private_handoff, persist_private_handoff,
+)
+from test_stage73_drive_readback import FakeTransport, PARENT, RECEIPTS, COMMIT, MACHO, NRO
 from seal_private_capture import build_manifest, write_manifest
 from verify_stage73_private_drive_persistence import (
-    DriveArchiveRejected, audit_remote, main, validate_remote_manifest,
+    DriveArchiveRejected, audit_remote, audit_from_remote_handoff,
+    main, validate_remote_manifest,
 )
 
 
@@ -28,8 +32,17 @@ class PersistentFakeTransport(FakeTransport):
                 "trashed": False, "shared": self.shared_capture, "parents": [PARENT],
             }).encode()
         if method == "GET" and u.path == "/drive/v3/files":
+            q = parse_qs(u.query).get("q", [""])[0]
+            parent_match = re.search(r"'([A-Za-z0-9_-]+)' in parents", q)
+            name_match = re.search(r"name = '([^']+)'", q)
+            parent = parent_match.group(1) if parent_match else None
+            filename = name_match.group(1) if name_match else None
             records = []
             for file_id, (meta, content) in self.files.items():
+                if parent not in meta["parents"]:
+                    continue
+                if filename and meta["name"] != filename:
+                    continue
                 records.append({
                     "id": file_id, "name": meta["name"],
                     "mimeType": meta["mimeType"], "parents": meta["parents"],
@@ -56,7 +69,20 @@ class IndependentPersistenceTests(unittest.TestCase):
                        build_manifest(report, COMMIT, MACHO, NRO), report)
         self.saved_sha = hashlib.sha256(self.manifest_path.read_bytes()).hexdigest()
         self.transport = PersistentFakeTransport()
-        upload_archive(report, self.manifest_path, PARENT, "123", self.transport)
+        upload_result = upload_archive(
+            report, self.manifest_path, PARENT, "123", self.transport
+        )
+        # Store a private handoff in a separate receipt folder, before deleting
+        # all temporary capture/source files.
+        with tempfile.TemporaryDirectory() as handoff_dir:
+            receipt = Path(handoff_dir) / "handoff.json"
+            write_private_handoff(
+                receipt, report, PARENT, "123", COMMIT, upload_result
+            )
+            persist_private_handoff(
+                self.transport, receipt, RECEIPTS, PARENT,
+                "123", COMMIT, upload_result,
+            )
         # Simulate expiry/deletion of the original temporary runner.
         self.tmp.cleanup()
 
@@ -66,6 +92,50 @@ class IndependentPersistenceTests(unittest.TestCase):
                   "commit": COMMIT, "manifest_sha256": self.saved_sha}
         values.update(updates)
         return audit_remote(**values)
+
+    def check_from_receipt(self, **updates):
+        values = {"transport": self.transport, "receipt_parent_id": RECEIPTS,
+                  "capture_parent_id": PARENT, "run_id": "123",
+                  "commit": COMMIT}
+        values.update(updates)
+        return audit_from_remote_handoff(**values)
+
+    def test_receipt_independent_readback_after_runner_deleted(self):
+        result = self.check_from_receipt()
+        self.assertTrue(result["remote_receipt_readback_verified"])
+        self.assertTrue(result["remote_independent_readback_verified"])
+        self.assertFalse(result["retention_policy_verified"])
+
+    def test_receipt_tamper_fails_independent_check(self):
+        for file_id, (meta, content) in list(self.transport.files.items()):
+            if meta["parents"] == [RECEIPTS]:
+                self.transport.files[file_id] = (meta, b"altered-handoff")
+        with self.assertRaises(DriveArchiveRejected):
+            self.check_from_receipt()
+
+    def test_receipt_missing_fails_independent_check(self):
+        for file_id, (meta, _) in list(self.transport.files.items()):
+            if meta["parents"] == [RECEIPTS]:
+                self.transport.files.pop(file_id)
+        with self.assertRaisesRegex(DriveArchiveRejected, "receipt_missing_or_ambiguous"):
+            self.check_from_receipt()
+
+    def test_duplicate_receipt_fails_independent_check(self):
+        for _, (meta, content) in list(self.transport.files.items()):
+            if meta["parents"] == [RECEIPTS]:
+                self.transport.files["duplicateReceiptFile123"] = (meta, content)
+                break
+        with self.assertRaisesRegex(DriveArchiveRejected, "receipt_missing_or_ambiguous"):
+            self.check_from_receipt()
+
+    def test_shared_receipt_rejected(self):
+        self.transport.shared_capture = True
+        with self.assertRaises(DriveArchiveRejected):
+            self.check_from_receipt()
+
+    def test_remote_receipt_unmatched_commit_rejected(self):
+        with self.assertRaises(DriveArchiveRejected):
+            self.check_from_receipt(commit="d" * 40)
 
     def test_independent_readback_after_original_deleted(self):
         result = self.check()

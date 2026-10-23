@@ -23,3 +23,15 @@ NOT any future retention guarantee, access policy, backup or offsite replica.
 Both CLI programs are explicitly blocked when GITHUB_ACTIONS=true. Any future
 deployment must use a separately reviewed protected execution environment;
 nothing in this Draft PR grants permissions or sets archive_ready=true.
+
+
+After the uploader stores its private handoff in a SEPARATE Drive folder,
+the auditor can now retrieve that handoff without any local capture files.
+Use --receipt-parent-id together with the independently known exact
+--source-commit, --run-id and --parent-id. The auditor requires exactly one
+unshared handoff with the expected fixed-vocabulary schema and then rechecks
+EVERY original capture file using the manifest SHA-256 from the handoff.
+The original runner may already be deleted. No secrets, file IDs, or private
+contents are printed. Remote readback at this instant is not a retention policy
+guarantee. Independent execution on trusted, non-GitHub infrastructure remains
+required, and Stage73's real capture gate remains disabled.

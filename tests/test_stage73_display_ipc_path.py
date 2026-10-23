@@ -594,6 +594,30 @@ class Stage73WorkflowTriggerTests(unittest.TestCase):
         )
         self.assertIn("needs.current-head.outputs.is_current == 'true'", workflow)
 
+    def test_native_trace_cache_requires_successful_executed_intel_job(self):
+        workflow_path = (
+            Path(__file__).resolve().parents[1]
+            / ".github" / "workflows"
+            / "nexium-intel-display-ipc-path-native.yml"
+        )
+        workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertIn("last_successful_run_id", workflow)
+        self.assertIn(
+            "/actions/runs/$last_successful_run_id/jobs", workflow
+        )
+        self.assertIn(
+            '.name == "integrated-intel-guest-graphics"', workflow
+        )
+        self.assertIn(
+            '.status == "completed" and .conclusion == "success"', workflow
+        )
+        # Never substitute a workflow-level Success for guest-run proof.
+        self.assertIn(
+            'needs.private-archive-readiness.outputs.archive_ready == \'true\'',
+            workflow,
+        )
+        self.assertIn('echo "archive_ready=false"', workflow)
+
 
 class Stage73IntegratedPythonFailureSummaryTests(unittest.TestCase):
     def test_failure_summary_keeps_counts_and_safe_case_ids_only(self):

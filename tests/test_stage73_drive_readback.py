@@ -13,10 +13,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from seal_private_capture import build_manifest, write_manifest
 from archive_private_capture_drive import (
     DriveArchiveRejected, upload_archive, upload_one, read_sealed_file,
-    read_private_manifest_bytes, write_private_handoff, main, HOST,
+    read_private_manifest_bytes, write_private_handoff,
+    persist_private_handoff, main, HOST,
 )
 
 PARENT = "privateParent123456"
+RECEIPTS = "privateReceipts123456"
 COMMIT = "a" * 40
 NRO = "b" * 64
 MACHO = "c" * 64
@@ -36,8 +38,11 @@ class FakeTransport:
         self.calls.append((method, path))
         url = urlsplit(path)
         query = parse_qs(url.query)
-        if method == "GET" and url.path == "/drive/v3/files/" + PARENT:
-            item = {"id": PARENT, "mimeType": "application/vnd.google-apps.folder",
+        if method == "GET" and url.path in (
+                "/drive/v3/files/" + PARENT,
+                "/drive/v3/files/" + RECEIPTS):
+            requested_id = url.path.rsplit("/", 1)[-1]
+            item = {"id": requested_id, "mimeType": "application/vnd.google-apps.folder",
                     "trashed": False, "shared": self.shared_parent,
                     "capabilities": {"canAddChildren": True}}
             return 200, {}, json.dumps(item).encode()
@@ -258,6 +263,75 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         self.manifest.symlink_to(outside)
         with self.assertRaises(DriveArchiveRejected):
             read_private_manifest_bytes(self.manifest, manifest)
+
+    def make_receipt(self, transport=None):
+        transport = transport or FakeTransport()
+        uploaded = upload_archive(self.report, self.manifest, PARENT, "123", transport)
+        private_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(private_temp.cleanup)
+        receipt = Path(private_temp.name) / "stage73-handoff.json"
+        write_private_handoff(receipt, self.report, PARENT, "123", COMMIT, uploaded)
+        return transport, uploaded, receipt
+
+    def test_private_handoff_persisted_to_distinct_drive_folder(self):
+        transport, uploaded, receipt = self.make_receipt()
+        result = persist_private_handoff(
+            transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
+        self.assertTrue(result["private_receipt_readback_verified"])
+        self.assertFalse(result["retention_policy_verified"])
+        self.assertEqual(len(transport.files), 4)
+        receipt_meta = [
+            (meta, content) for meta, content in transport.files.values()
+            if meta["parents"] == [RECEIPTS]
+        ]
+        self.assertEqual(len(receipt_meta), 1)
+        self.assertEqual(json.loads(receipt_meta[0][1])["run_folder_id"],
+                         uploaded["private_run_folder_id"])
+
+    def test_private_receipt_folder_must_differ_from_capture(self):
+        transport, uploaded, receipt = self.make_receipt()
+        before = len(transport.calls)
+        with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_receipt_destination"):
+            persist_private_handoff(
+                transport, receipt, PARENT, PARENT, "123", COMMIT, uploaded)
+        self.assertEqual(len(transport.calls), before)
+
+    def test_private_receipt_tamper_blocks_network(self):
+        transport, uploaded, receipt = self.make_receipt()
+        receipt.write_bytes(b"forged private receipt")
+        before = len(transport.calls)
+        with self.assertRaises(DriveArchiveRejected):
+            persist_private_handoff(
+                transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
+        self.assertEqual(len(transport.calls), before)
+
+    def test_private_receipt_symlink_blocks_network(self):
+        transport, uploaded, receipt = self.make_receipt()
+        other = receipt.parent / "other"
+        other.write_bytes(receipt.read_bytes())
+        receipt.unlink()
+        receipt.symlink_to(other)
+        before = len(transport.calls)
+        with self.assertRaises(DriveArchiveRejected):
+            persist_private_handoff(
+                transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
+        self.assertEqual(len(transport.calls), before)
+
+    def test_shared_private_receipt_folder_blocks_upload(self):
+        transport, uploaded, receipt = self.make_receipt()
+        transport.shared_parent = True
+        before = len(transport.files)
+        with self.assertRaisesRegex(DriveArchiveRejected, "not_writable"):
+            persist_private_handoff(
+                transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
+        self.assertEqual(len(transport.files), before)
+
+    def test_private_receipt_readback_mismatch_fails(self):
+        transport, uploaded, receipt = self.make_receipt()
+        transport.bad_media = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "readback_mismatch"):
+            persist_private_handoff(
+                transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
 
     def test_private_server_resumable_url_only(self):
         t = FakeTransport()

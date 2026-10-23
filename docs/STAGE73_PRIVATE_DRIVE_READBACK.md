@@ -58,3 +58,17 @@ manifest SHA-256 for the independent persistence auditor. Do not store this
 receipt in a transient runner directory; place a copy in the project's
 private 00_Manifest_and_SHA256 Drive area by an independently trusted
 archival process. An absent or unpersisted receipt is NOT backup proof.
+
+
+New fail-closed private receipt storage requirement:
+The trusted CLI requires --receipt-parent-id pointing to a separate, private
+Drive folder (NOT the capture parent). After the original capture bytes and
+manifest have been read back, it creates the 0600 local handoff, uploads the
+handoff to the receipt folder and reads that upload back by full SHA-256.
+A missing, modified, symlinked, shared or unverified handoff aborts without a
+successful completion marker. The private receipt is essential for locating
+the archive after the disposable source directory disappears.
+The existing dedicated private Stage73 receipt folder must be configured
+only at protected runtime; never embed its ID or tokens into public code.
+Independent persistence and long-term retention both remain explicitly false
+until later separate validation.

@@ -312,6 +312,55 @@ def write_private_handoff(path, report, parent_id, run_id, commit, upload_result
             os.unlink(tmp)
 
 
+def persist_private_handoff(transport, path, receipt_parent_id,
+                            capture_parent_id, run_id, commit, upload_result):
+    """Upload the private handoff to a DISTINCT private folder with read-back.
+
+    A locally sealed report and verified payload uploads alone are not
+    sufficient: the receipt must survive the disposable runner as well.
+    """
+    remote_folder = upload_result.get("private_run_folder_id")
+    manifest_sha = upload_result.get("private_manifest_sha256")
+    if (not isinstance(receipt_parent_id, str)
+            or not DRIVE_ID.fullmatch(receipt_parent_id)
+            or receipt_parent_id in (capture_parent_id, remote_folder)
+            or not isinstance(capture_parent_id, str)
+            or not DRIVE_ID.fullmatch(capture_parent_id)
+            or not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id)
+            or not isinstance(commit, str) or not COMMIT.fullmatch(commit)
+            or not isinstance(remote_folder, str)
+            or not DRIVE_ID.fullmatch(remote_folder)
+            or not isinstance(manifest_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha)
+            or upload_result.get("readback_verified") is not True
+            or upload_result.get("retention_verified") is not False):
+        raise DriveArchiveRejected("unsafe_receipt_destination")
+    expected = {
+        "schema": "nexium-stage73-private-drive-handoff/v1",
+        "privacy": "private",
+        "source_commit": commit,
+        "run_id": run_id,
+        "parent_id": capture_parent_id,
+        "run_folder_id": remote_folder,
+        "manifest_sha256": manifest_sha,
+        "remote_readback_verified": True,
+        "independent_persistence_verified": False,
+        "retention_policy_verified": False,
+        "guest_gpu_frames_verified": False,
+    }
+    raw = read_private_manifest_bytes(Path(path), expected)
+    if len(raw) > 8192:
+        raise DriveArchiveRejected("oversized_private_receipt")
+    # Check BOTH privacy and writability of the separate receipt folder.
+    check_parent(transport, receipt_parent_id)
+    name = "stage73-" + run_id + "-" + commit[:12] + "-handoff.json"
+    upload_one(transport, receipt_parent_id, name, raw,
+               hashlib.sha256(raw).hexdigest())
+    return {"private_receipt_readback_verified": True,
+            "independent_persistence_verified": False,
+            "retention_policy_verified": False}
+
+
 def upload_archive(report, manifest_path, parent_id, run_id, transport):
     if not RUN_ID.fullmatch(run_id):
         raise DriveArchiveRejected("invalid_run_id")
@@ -358,6 +407,7 @@ def main(argv=None):
     parser.add_argument("--parent-id", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--receipt-path", type=Path)
+    parser.add_argument("--receipt-parent-id")
     args = parser.parse_args(argv)
     try:
         # A code-controlled env toggle alone is not a trust boundary. While
@@ -367,17 +417,26 @@ def main(argv=None):
             raise DriveArchiveRejected("github_runner_forbidden")
         if os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true":
             raise DriveArchiveRejected("uploader_not_armed")
-        if args.receipt_path is None:
+        if args.receipt_path is None or not args.receipt_parent_id:
             raise DriveArchiveRejected("private_handoff_required")
+        if (not DRIVE_ID.fullmatch(args.receipt_parent_id)
+                or args.receipt_parent_id == args.parent_id):
+            raise DriveArchiveRejected("unsafe_receipt_destination")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))
         result = upload_archive(args.report, args.manifest,
                                 args.parent_id, args.run_id, transport)
         manifest_data = json.loads(args.manifest.read_text(encoding="utf-8"))
         write_private_handoff(args.receipt_path, args.report, args.parent_id,
                               args.run_id, manifest_data["source_commit"], result)
-        if result["retention_verified"] is not False:
+        handoff = persist_private_handoff(
+            transport, args.receipt_path, args.receipt_parent_id,
+            args.parent_id, args.run_id, manifest_data["source_commit"], result,
+        )
+        if (result["retention_verified"] is not False
+                or handoff["independent_persistence_verified"] is not False
+                or handoff["retention_policy_verified"] is not False):
             raise DriveArchiveRejected("retention_claim_invalid")
-        print("STAGE73_REMOTE_SHA256_READBACK_VERIFIED_RETENTION_UNVERIFIED")
+        print("STAGE73_REMOTE_CAPTURE_AND_HANDOFF_READBACK_VERIFIED_RETENTION_UNVERIFIED")
         return 0
     except (DriveArchiveRejected, OSError, ValueError, TypeError, KeyError):
         print("STAGE73_PRIVATE_DRIVE_ARCHIVE_BLOCKED", file=sys.stderr)

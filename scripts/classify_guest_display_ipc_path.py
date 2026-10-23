@@ -25,14 +25,18 @@ ALLOWED_STATUSES = frozenset({
 # These are literal, allowlisted signatures from the pinned public NeXium
 # service-manager/IPC/IGBP source paths. Never print matching log lines.
 IPC_REQUEST_PATTERNS = (
-    ("service_manager", re.compile(r'IPC request service="(sm:)" cmd=(\d+)')),
-    ("vi_u", re.compile(r'IPC request service="(vi:u)" cmd=(\d+)')),
-    ("display_service", re.compile(r'IPC request service="(IApplicationDisplayService)" cmd=(\d+)')),
-    ("binder", re.compile(r'IPC request service="(IHOSBinderDriver)" cmd=(\d+)')),
-    ("nvdrv", re.compile(r'IPC request service="(nvdrv(?::[ast])?)" cmd=(\d+)')),
+    ("service_manager", re.compile(r'IPC request service=\"(sm:)\" cmd=(\d+)')),
+    ("vi_u", re.compile(r'IPC request service=\"(vi:u)\" cmd=(\d+)')),
+    ("vi_m", re.compile(r'IPC request service=\"(vi:m)\" cmd=(\d+)')),
+    ("vi_s", re.compile(r'IPC request service=\"(vi:s)\" cmd=(\d+)')),
+    ("display_service", re.compile(r'IPC request service=\"(IApplicationDisplayService)\" cmd=(\d+)')),
+    ("binder", re.compile(r'IPC request service=\"(IHOSBinderDriver)\" cmd=(\d+)')),
+    ("nvdrv", re.compile(r'IPC request service=\"(nvdrv(?::[ast])?)\" cmd=(\d+)')),
 )
+VI_SERVICES = frozenset(("vi:u", "vi:m", "vi:s"))
+
 # The pinned dispatcher maps SM command 0 to RegisterClient and command 1
-# to GetServiceHandle. Only cmd=1 can anchor a vi:u handle acquisition path.
+# to GetServiceHandle. Only cmd=1 can anchor a VI service handle acquisition path.
 SERVICE_MANAGER_ANY_REQUEST = re.compile(
     r'IPC request service="sm:" cmd=\d+\b'
 )
@@ -42,7 +46,7 @@ SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST = re.compile(
 SM_GET_SERVICE_HANDLE_EVENT = re.compile(r"SM::GetServiceHandle '([^']*)'")
 IPC_RESPONSE_PATTERN = re.compile(
     r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
-    r"service=(sm:|vi:u|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\d+)"
+    r"service=(sm:|vi:u|vi:m|vi:s|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\d+)"
 )
 # Correlate BufferQueue evidence by the binder ID printed by the pinned source.
 # Never expose that ID in the sanitized classification result.
@@ -89,6 +93,8 @@ def last_ipc_request_summary(data: str) -> dict:
         stage = {
             "service_manager": "service_manager_request_last_observed",
             "vi_u": "vi_u_request_last_observed",
+            "vi_m": "vi_m_request_last_observed",
+            "vi_s": "vi_s_request_last_observed",
             "display_service": "display_service_request_last_observed",
             "binder": "binder_transaction_request_last_observed",
             "nvdrv": "nvdrv_request_last_observed",
@@ -103,7 +109,11 @@ def last_ipc_request_summary(data: str) -> dict:
 EVIDENCE = {
     "ipc_request_marker_observed": 'IPC request service="',
     "vi_u_service_handle_requested": "SM::GetServiceHandle 'vi:u'",
+    "vi_m_service_handle_requested": "SM::GetServiceHandle 'vi:m'",
+    "vi_s_service_handle_requested": "SM::GetServiceHandle 'vi:s'",
     "vi_u_ipc_request_observed": 'IPC request service="vi:u" cmd=',
+    "vi_m_ipc_request_observed": 'IPC request service="vi:m" cmd=',
+    "vi_s_ipc_request_observed": 'IPC request service="vi:s" cmd=',
     "display_service_subsession_returned": "IApplicationDisplayService sub-session handle=",
     "display_binder_session_cmd_100_request_observed": 'IPC request service="IApplicationDisplayService" cmd=100',
     "display_binder_session_cmd_103_request_observed": 'IPC request service="IApplicationDisplayService" cmd=103',
@@ -181,36 +191,50 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         evidence[name] for name in DOWNSTREAM_IPC_EVIDENCE
     )
 
-    def iter_vi_u_handle_requests():
+    def iter_vi_handle_requests():
         # The request log contains the command but not its input bytes. Pair a
         # cmd=1 request only with the next service-manager handler event, and
-        # reject it if another SM request intervenes. This conservative order
-        # check avoids reusing an unrelated cmd=1 to explain a later vi:u marker.
+        # reject it if another SM request intervenes. VI exposes user, manager
+        # and system service variants; each can return the display-service
+        # subsession according to the pinned dispatcher map.
         for request_match in SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST.finditer(data):
             handle_match = SM_GET_SERVICE_HANDLE_EVENT.search(data, request_match.end())
-            if handle_match is None or handle_match.group(1) != "vi:u":
+            if handle_match is None or handle_match.group(1) not in VI_SERVICES:
                 continue
             next_request = SERVICE_MANAGER_ANY_REQUEST.search(data, request_match.end())
             if next_request is not None and next_request.start() < handle_match.start():
                 continue
-            yield request_match.start(), handle_match.start()
+            yield request_match.start(), handle_match.start(), handle_match.group(1)
 
-    def find_expected_ancestry() -> tuple[int, int, int, int] | None:
+    def find_expected_ancestry() -> tuple[int, int, int, int, str] | None:
         # Logs can contain unrelated or repeated service-manager requests.
-        # Search for a complete ordered chain rather than binding to the first
-        # global sm: request. This still does not claim thread-level correlation.
-        for sm_request, vi_handle in iter_vi_u_handle_requests():
-            vi_request = after('IPC request service="vi:u" cmd=', vi_handle)
+        # Search for a complete ordered chain through whichever allowlisted VI
+        # service variant was actually requested.
+        for sm_request, vi_handle, vi_service in iter_vi_handle_requests():
+            vi_request = after(f'IPC request service="{vi_service}" cmd=', vi_handle)
             if vi_request is None:
                 continue
             display_subsession = after(
                 "IApplicationDisplayService sub-session handle=", vi_request
             )
             if display_subsession is not None:
-                return sm_request, vi_handle, vi_request, display_subsession
+                return sm_request, vi_handle, vi_request, display_subsession, vi_service
         return None
 
     ancestry = find_expected_ancestry()
+    variant_evidence = (
+        ("vi_u", evidence["vi_u_service_handle_requested"] or evidence["vi_u_ipc_request_observed"]),
+        ("vi_m", evidence["vi_m_service_handle_requested"] or evidence["vi_m_ipc_request_observed"]),
+        ("vi_s", evidence["vi_s_service_handle_requested"] or evidence["vi_s_ipc_request_observed"]),
+    )
+    observed_variants = [name for name, seen in variant_evidence if seen]
+    observed_vi_service_variant = (
+        {"vi:u": "vi_u", "vi:m": "vi_m", "vi:s": "vi_s"}[ancestry[4]]
+        if ancestry is not None
+        else observed_variants[0] if len(observed_variants) == 1
+        else "multiple_or_unresolved" if observed_variants
+        else "not_observed"
+    )
     sequence_inconsistent = downstream_ipc_observed and ancestry is None
     if sequence_inconsistent:
         # The response signature can exist in the log without a validated
@@ -218,24 +242,25 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         if (evidence["display_cmd_2020_response_observed"]
                 or evidence["display_cmd_2030_response_observed"]):
             native_window_response_status = "observed_but_unattributed"
-        # Downstream markers exist, but the required ordered vi:u ancestry
+        # Downstream markers exist, but the required ordered VI-display ancestry
         # cannot be established. Do not misreport this as an early stop.
         stage = "ipc_sequence_inconsistent_or_cross_path"
     elif not evidence["ipc_request_marker_observed"]:
         stage = "ipc_request_markers_not_observed"
     else:
         if ancestry is not None:
-            sm_request, vi_handle, vi_request, display_subsession = ancestry
+            sm_request, vi_handle, vi_request, display_subsession, vi_service = ancestry
         else:
-            paired_handle = next(iter(iter_vi_u_handle_requests()), None)
+            paired_handle = next(iter(iter_vi_handle_requests()), None)
             if paired_handle is not None:
-                sm_request, vi_handle = paired_handle
+                sm_request, vi_handle, vi_service = paired_handle
             else:
                 sm_match = SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST.search(data)
                 sm_request = sm_match.start() if sm_match is not None else -1
                 vi_handle = None
+                vi_service = None
             vi_request = (
-                after('IPC request service="vi:u" cmd=', vi_handle)
+                after(f'IPC request service="{vi_service}" cmd=', vi_handle)
                 if vi_handle is not None else None
             )
             display_subsession = (
@@ -250,19 +275,31 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                 else "service_manager_request_not_observed"
             )
         elif vi_handle is None:
-            unpaired_vi_handle = any(
-                match.group(1) == "vi:u"
+            unpaired_vi_services = [
+                match.group(1)
                 for match in SM_GET_SERVICE_HANDLE_EVENT.finditer(data)
-            )
-            stage = (
-                "vi_u_service_handle_marker_without_correlated_cmd1"
-                if unpaired_vi_handle
-                else "before_vi_u_service_handle_observed"
-            )
+                if match.group(1) in VI_SERVICES
+            ]
+            if "vi:u" in unpaired_vi_services:
+                stage = "vi_u_service_handle_marker_without_correlated_cmd1"
+            elif unpaired_vi_services:
+                stage = "vi_service_handle_marker_without_correlated_cmd1"
+            elif evidence["vi_m_ipc_request_observed"] or evidence["vi_s_ipc_request_observed"]:
+                stage = "before_vi_service_handle_observed"
+            else:
+                stage = "before_vi_u_service_handle_observed"
         elif vi_request is None:
-            stage = "vi_u_handle_created_ipc_request_not_observed"
+            stage = (
+                "vi_u_handle_created_ipc_request_not_observed"
+                if vi_service == "vi:u"
+                else "vi_service_handle_created_ipc_request_not_observed"
+            )
         elif display_subsession is None:
-            stage = "vi_u_ipc_request_display_subsession_not_observed"
+            stage = (
+                "vi_u_ipc_request_display_subsession_not_observed"
+                if vi_service == "vi:u"
+                else "vi_ipc_request_display_subsession_not_observed"
+            )
         else:
             binder_session_request_pattern = re.compile(
                 r'IPC request service="IApplicationDisplayService" cmd=(100|103)\b'
@@ -462,9 +499,13 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                 else:
                                     stage = "igbp_dequeue_retry_or_timeout_observed"
     return {
-        "schema": "nexium-stage73-display-ipc-path/v1",
+        "schema": "nexium-stage73-display-ipc-path/v2",
         "observed_stage": stage,
-        "expected_vi_u_display_ancestry_observed": ancestry is not None,
+        "observed_vi_service_variant": observed_vi_service_variant,
+        "expected_vi_display_ancestry_observed": ancestry is not None,
+        "expected_vi_u_display_ancestry_observed": (
+            ancestry is not None and ancestry[4] == "vi:u"
+        ),
         "downstream_ipc_without_expected_ancestry": sequence_inconsistent,
         "probe_process_status": receipt["status"],
         **last_ipc_request_summary(data),

@@ -38,11 +38,11 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.write_log()
         return inspect_guest_display_ipc_path(self.root, MACHO, NRO)
 
-    def set_through(self, stage):
+    def set_through(self, stage, vi_service="vi:u"):
         stages = [
             'IPC request service="sm:" cmd=1',
-            "SM::GetServiceHandle 'vi:u' data_off=0x20",
-            'IPC request service="vi:u" cmd=2 in_data=0 is_domain=false',
+            f"SM::GetServiceHandle '{vi_service}' data_off=0x20",
+            f'IPC request service="{vi_service}" cmd=2 in_data=0 is_domain=false',
             "→ IApplicationDisplayService sub-session handle=0x101",
             'IPC request service="IApplicationDisplayService" cmd=100 in_data=0 is_domain=false',
             "→ IHOSBinderDriver sub-session handle=0x102",
@@ -138,7 +138,45 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(3)
         self.assertEqual(self.inspect()["observed_stage"], "vi_u_ipc_request_display_subsession_not_observed")
 
+    def test_vi_m_service_path_is_not_misclassified_as_cross_path(self):
+        self.set_through(13, "vi:m")
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertEqual(result["observed_vi_service_variant"], "vi_m")
+        self.assertTrue(result["expected_vi_display_ancestry_observed"])
+        self.assertFalse(result["expected_vi_u_display_ancestry_observed"])
+        self.assertFalse(result["downstream_ipc_without_expected_ancestry"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
+    def test_vi_s_service_path_is_not_misclassified_as_cross_path(self):
+        self.set_through(13, "vi:s")
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertEqual(result["observed_vi_service_variant"], "vi_s")
+        self.assertTrue(result["expected_vi_display_ancestry_observed"])
+        self.assertFalse(result["expected_vi_u_display_ancestry_observed"])
+        self.assertFalse(result["downstream_ipc_without_expected_ancestry"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
+    def test_last_ipc_request_summary_recognizes_vi_m(self):
+        result = last_ipc_request_summary("\n".join((
+            'IPC request service="vi:m" cmd=2 in_data=0 is_domain=false',
+            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=vi:m cmd=2 rc=0x00000000 response_len=0 response_first64= in_data_first32=",
+        )))
+        self.assertEqual(result["last_ipc_request_stage"], "vi_m_request_last_observed")
+        self.assertTrue(result["last_ipc_request_response_after_request"])
+
+    def test_last_ipc_request_summary_recognizes_vi_s(self):
+        result = last_ipc_request_summary("\n".join((
+            'IPC request service="vi:s" cmd=2 in_data=0 is_domain=false',
+            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=vi:s cmd=2 rc=0x00000000 response_len=0 response_first64= in_data_first32=",
+        )))
+        self.assertEqual(result["last_ipc_request_stage"], "vi_s_request_last_observed")
+        self.assertTrue(result["last_ipc_request_response_after_request"])
+
     def test_display_subsession_without_either_followup_branch(self):
+        self.set_through(4)
+        self.assertEqual(self.inspect()["observed_stage"], "display_subsession_binder_or_native_window_request_not_observed")    def test_display_subsession_without_either_followup_branch(self):
         self.set_through(4)
         self.assertEqual(self.inspect()["observed_stage"], "display_subsession_binder_or_native_window_request_not_observed")
 

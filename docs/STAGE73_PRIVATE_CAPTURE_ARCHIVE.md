@@ -20,3 +20,10 @@ the entire flow with synthetic data before opening the archive_ready gate.
 Original inputs/captures stay immutable. Derived reports remain separate.
 Never upload raw logs, capture manifests or screenshots to public GitHub
 Actions artifacts. All work stays in Draft; main is unchanged.
+
+
+Immutability hardening: the local manifest now uses atomic exclusive creation
+instead of overwrite-style os.replace(). An existing regular file or dangling
+symlink is never clobbered; a late write race fails closed. If a seal is
+re-attempted, use a new unique private output path rather than overwriting
+evidence from a previous run.

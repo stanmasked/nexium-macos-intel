@@ -121,7 +121,12 @@ def write_manifest(path, manifest, root):
             out.write("\n")
             out.flush()
             os.fsync(out.fileno())
-        os.replace(temporary, path)
+        # link(2) is an atomic, exclusive publish: neither an existing
+        # manifest nor a symlink created after the first check is replaced.
+        try:
+            os.link(temporary, path)
+        except FileExistsError as error:
+            raise ArchiveRejected("manifest_collision") from error
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

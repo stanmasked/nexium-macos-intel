@@ -95,3 +95,10 @@ trusted backup process must copy it to a protected location independently
 controlled from the capture and receipt Drive folders, verify the copied SHA,
 and confirm recovery after temporary runner deletion. Until then, both
 retention and the readiness gate remain unverified/false.
+
+
+The local private handoff receipt also uses atomic exclusive publication,
+not an exists-check followed by os.replace. A concurrent process cannot
+replace an existing private receipt; exact collision leaves the original
+unchanged. This is separate from, and does not establish, remote persistence
+or retention.

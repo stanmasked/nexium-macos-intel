@@ -111,6 +111,32 @@ class Stage73PrivateArchiveTests(unittest.TestCase):
         with self.assertRaises(ArchiveRejected):
             write_manifest(self.report / "manifest.json", data, self.report)
 
+    def test_manifest_never_overwrites_existing_destination(self):
+        self.manifest.write_bytes(b"immutable prior evidence")
+        with self.assertRaises(ArchiveRejected):
+            self.seal()
+        self.assertEqual(self.manifest.read_bytes(), b"immutable prior evidence")
+
+    def test_manifest_rejects_dangling_symlink_destination(self):
+        self.manifest.symlink_to(self.root / "missing-old-evidence")
+        with self.assertRaises(ArchiveRejected):
+            self.seal()
+        self.assertTrue(self.manifest.is_symlink())
+
+    def test_manifest_atomic_collision_does_not_overwrite(self):
+        from unittest.mock import patch
+        real_link = os.link
+
+        def late_writer(src, target, *args, **kwargs):
+            Path(target).write_bytes(b"racing prior manifest")
+            return real_link(src, target, *args, **kwargs)
+
+        with patch("seal_private_capture.os.link", side_effect=late_writer):
+            with self.assertRaisesRegex(ArchiveRejected, "manifest_collision"):
+                self.seal()
+        self.assertEqual(self.manifest.read_bytes(), b"racing prior manifest")
+        self.assertEqual(list(self.root.glob(".stage73-*")), [])
+
     def test_manifest_traversal_rejected(self):
         data = self.seal()
         data["files"][0]["path"] = "../outside"

@@ -248,6 +248,36 @@ class Stage73DriveReadbackTests(unittest.TestCase):
                 write_private_handoff(path, self.report, PARENT, "123", COMMIT, result)
             self.assertEqual(path.read_text(), "existing private archive receipt")
 
+    def test_private_handoff_atomic_collision_does_not_overwrite(self):
+        from unittest.mock import patch
+        transport = FakeTransport()
+        upload = upload_archive(self.report, self.manifest, PARENT, "123", transport)
+        with tempfile.TemporaryDirectory() as private_dir:
+            target = Path(private_dir) / "handoff.json"
+            actual_link = os.link
+
+            def late_writer(src, dest, *args, **kwargs):
+                Path(dest).write_bytes(b"previous secure receipt")
+                return actual_link(src, dest, *args, **kwargs)
+
+            with patch("archive_private_capture_drive.os.link", side_effect=late_writer):
+                with self.assertRaisesRegex(DriveArchiveRejected, "private_handoff_collision"):
+                    write_private_handoff(target, self.report, PARENT,
+                                          "123", COMMIT, upload)
+            self.assertEqual(target.read_bytes(), b"previous secure receipt")
+            self.assertEqual(list(Path(private_dir).glob(".stage73-private-*")), [])
+
+    def test_private_handoff_dangling_symlink_not_followed(self):
+        transport = FakeTransport()
+        upload = upload_archive(self.report, self.manifest, PARENT, "123", transport)
+        with tempfile.TemporaryDirectory() as private_dir:
+            target = Path(private_dir) / "handoff.json"
+            target.symlink_to(Path(private_dir) / "missing")
+            with self.assertRaises(DriveArchiveRejected):
+                write_private_handoff(target, self.report, PARENT, "123",
+                                      COMMIT, upload)
+            self.assertTrue(target.is_symlink())
+
     def test_private_manifest_reader_uses_sealed_bytes(self):
         manifest = json.loads(self.manifest.read_text())
         self.assertEqual(read_private_manifest_bytes(self.manifest, manifest),

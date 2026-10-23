@@ -304,9 +304,12 @@ def write_private_handoff(path, report, parent_id, run_id, commit, upload_result
             out.write("\n")
             out.flush()
             os.fsync(out.fileno())
-        if path.exists() or path.is_symlink():
-            raise DriveArchiveRejected("private_handoff_collision")
-        os.replace(tmp, path)
+        # Never overwrite an existing handoff: checking exists() before
+        # os.replace() would allow a concurrent file/symlink swap.
+        try:
+            os.link(tmp, path)
+        except FileExistsError as error:
+            raise DriveArchiveRejected("private_handoff_collision") from error
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)

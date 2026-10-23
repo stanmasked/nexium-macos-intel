@@ -189,8 +189,6 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
 
     def test_display_subsession_without_either_followup_branch(self):
         self.set_through(4)
-        self.assertEqual(self.inspect()["observed_stage"], "display_subsession_binder_or_native_window_request_not_observed")    def test_display_subsession_without_either_followup_branch(self):
-        self.set_through(4)
         self.assertEqual(self.inspect()["observed_stage"], "display_subsession_binder_or_native_window_request_not_observed")
 
     def test_native_window_branch_without_binder_session_request(self):

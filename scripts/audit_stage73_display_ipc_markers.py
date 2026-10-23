@@ -33,6 +33,8 @@ SOURCE_TEMPLATES = {
 }
 
 SOURCE_COMMAND_MAPS = {
+    "sm_cmd_0_register_client": "0 => dispatch_sm_register_client(kernel, tls_buf, cmif_data_off, cmif_data_len, parsed_ctx),",
+    "sm_cmd_1_get_service_handle": "1 => dispatch_sm_get_service_handle(",
     "display_binder_cmd_100": '("IApplicationDisplayService", 100) => Some("IHOSBinderDriver"),',
     "display_binder_cmd_103": '("IApplicationDisplayService", 103) => Some("IHOSBinderDriver"),',
     "native_window_cmd_2020": '("IApplicationDisplayService", 2020)',

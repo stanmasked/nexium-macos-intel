@@ -33,9 +33,13 @@ IPC_REQUEST_PATTERNS = (
 )
 # The pinned dispatcher maps SM command 0 to RegisterClient and command 1
 # to GetServiceHandle. Only cmd=1 can anchor a vi:u handle acquisition path.
+SERVICE_MANAGER_ANY_REQUEST = re.compile(
+    r'IPC request service="sm:" cmd=\d+\b'
+)
 SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST = re.compile(
     r'IPC request service="sm:" cmd=1\b'
 )
+SM_GET_SERVICE_HANDLE_EVENT = re.compile(r"SM::GetServiceHandle '([^']*)'")
 IPC_RESPONSE_PATTERN = re.compile(
     r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
     r"service=(sm:|vi:u|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\d+)"
@@ -177,15 +181,25 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         evidence[name] for name in DOWNSTREAM_IPC_EVIDENCE
     )
 
+    def iter_vi_u_handle_requests():
+        # The request log contains the command but not its input bytes. Pair a
+        # cmd=1 request only with the next service-manager handler event, and
+        # reject it if another SM request intervenes. This conservative order
+        # check avoids reusing an unrelated cmd=1 to explain a later vi:u marker.
+        for request_match in SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST.finditer(data):
+            handle_match = SM_GET_SERVICE_HANDLE_EVENT.search(data, request_match.end())
+            if handle_match is None or handle_match.group(1) != "vi:u":
+                continue
+            next_request = SERVICE_MANAGER_ANY_REQUEST.search(data, request_match.end())
+            if next_request is not None and next_request.start() < handle_match.start():
+                continue
+            yield request_match.start(), handle_match.start()
+
     def find_expected_ancestry() -> tuple[int, int, int, int] | None:
         # Logs can contain unrelated or repeated service-manager requests.
         # Search for a complete ordered chain rather than binding to the first
         # global sm: request. This still does not claim thread-level correlation.
-        for match in SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST.finditer(data):
-            sm_request = match.start()
-            vi_handle = after("SM::GetServiceHandle 'vi:u'", sm_request)
-            if vi_handle is None:
-                continue
+        for sm_request, vi_handle in iter_vi_u_handle_requests():
             vi_request = after('IPC request service="vi:u" cmd=', vi_handle)
             if vi_request is None:
                 continue
@@ -213,12 +227,13 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         if ancestry is not None:
             sm_request, vi_handle, vi_request, display_subsession = ancestry
         else:
-            sm_match = SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST.search(data)
-            sm_request = sm_match.start() if sm_match is not None else -1
-            vi_handle = (
-                after("SM::GetServiceHandle 'vi:u'", sm_request)
-                if sm_request >= 0 else None
-            )
+            paired_handle = next(iter(iter_vi_u_handle_requests()), None)
+            if paired_handle is not None:
+                sm_request, vi_handle = paired_handle
+            else:
+                sm_match = SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST.search(data)
+                sm_request = sm_match.start() if sm_match is not None else -1
+                vi_handle = None
             vi_request = (
                 after('IPC request service="vi:u" cmd=', vi_handle)
                 if vi_handle is not None else None
@@ -235,7 +250,15 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                 else "service_manager_request_not_observed"
             )
         elif vi_handle is None:
-            stage = "before_vi_u_service_handle_observed"
+            unpaired_vi_handle = any(
+                match.group(1) == "vi:u"
+                for match in SM_GET_SERVICE_HANDLE_EVENT.finditer(data)
+            )
+            stage = (
+                "vi_u_service_handle_marker_without_correlated_cmd1"
+                if unpaired_vi_handle
+                else "before_vi_u_service_handle_observed"
+            )
         elif vi_request is None:
             stage = "vi_u_handle_created_ipc_request_not_observed"
         elif display_subsession is None:

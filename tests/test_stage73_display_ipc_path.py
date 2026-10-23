@@ -89,6 +89,20 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         )
         self.assertFalse(self.inspect()["expected_vi_u_display_ancestry_observed"])
 
+    def test_unrelated_cmd_one_cannot_be_reused_for_unpaired_vi_u_handler(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=1 in_data=8 is_domain=false',
+            "SM::GetServiceHandle 'appletOE' data_off=0x20",
+            "SM::GetServiceHandle 'vi:u' data_off=0x20",
+            'IPC request service="vi:u" cmd=2 in_data=0 is_domain=false',
+        ))
+        result = self.inspect()
+        self.assertEqual(
+            result["observed_stage"],
+            "vi_u_service_handle_marker_without_correlated_cmd1",
+        )
+        self.assertFalse(result["expected_vi_u_display_ancestry_observed"])
+
     def test_legacy_unmatched_vi_service_marker_does_not_count(self):
         self.data = ('IPC request service="sm:" cmd=1\n'
                      'sm:GetServiceHandle name=vi:u raw=0000000000000000')

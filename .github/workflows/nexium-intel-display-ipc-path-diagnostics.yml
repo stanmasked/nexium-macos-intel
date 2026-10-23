@@ -70,6 +70,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_stage73_scoped_ipc_patch.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_private_archive.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_drive_readback.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_independent_persistence.py' -v
           python3 -m unittest discover -s tests -p 'test_stage71_graphics_boot_diagnostics.py' -v
           python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
           python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v

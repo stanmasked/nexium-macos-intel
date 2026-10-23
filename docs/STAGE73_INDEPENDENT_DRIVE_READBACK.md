@@ -57,3 +57,10 @@ Do NOT use both anchor options simultaneously. An anchor file derived from
 the remote Drive receipt is not independent; it must originate from the
 trusted uploader and survive on separately controlled storage. This still
 does not prove long-term retention, backup replication, or GPU execution.
+
+
+The independent readback now repeats the same owner-only ACL checks for
+the receipt folder, capture run folder, capture parent and inherited parent
+chain before trusting a remote archive. Inherited sharing, extra reader
+grants, invisible permissions and shared drives cause a failed readback
+rather than an archive-ready claim, even if the bytes still match.

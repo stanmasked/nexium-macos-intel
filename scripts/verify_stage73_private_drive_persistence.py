@@ -16,7 +16,8 @@ from urllib.parse import urlencode
 
 from archive_private_capture_drive import (
     GoogleTransport, DriveArchiveRejected, DRIVE_ID, COMMIT, RUN_ID,
-    json_response, metadata_path,
+    json_response, metadata_path, require_owner_only_acl,
+    check_private_parent_chain,
 )
 from seal_private_capture import (
     SCHEMA, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, LOG_RE, _relative,
@@ -84,7 +85,7 @@ def list_run_files(transport, folder_id):
     query = "'" + folder_id + "' in parents and trashed = false"
     path = "/drive/v3/files?" + urlencode({
         "q": query, "pageSize": "100",
-        "fields": "nextPageToken,files(id,name,mimeType,parents,trashed,shared,size)",
+        "fields": "nextPageToken,files(id,name,mimeType,parents,trashed,shared,size,driveId,permissions(type,role))",
         "supportsAllDrives": "true",
         "includeItemsFromAllDrives": "true",
     })
@@ -108,6 +109,7 @@ def list_run_files(transport, folder_id):
                 or item.get("shared") is not False
                 or item.get("mimeType") != "application/octet-stream"):
             raise DriveArchiveRejected("invalid_remote_listing")
+        require_owner_only_acl(item)
         byte_size = item.get("size")
         if not isinstance(byte_size, str) or not byte_size.isascii() or not byte_size.isdecimal():
             raise DriveArchiveRejected("invalid_remote_listing_size")
@@ -128,7 +130,7 @@ def audit_remote(transport, parent_id, folder_id, run_id, commit, manifest_sha25
             or not HEX64.fullmatch(manifest_sha256)):
         raise DriveArchiveRejected("invalid_audit_identity")
     remote_folder, _ = json_response(transport, "GET", metadata_path(
-        folder_id, "id,name,mimeType,trashed,shared,parents"))
+        folder_id, "id,name,mimeType,trashed,shared,parents,driveId,permissions(type,role)"))
     if (remote_folder.get("id") != folder_id
             or remote_folder.get("name") != "stage73-" + run_id + "-" + commit[:12]
             or remote_folder.get("mimeType") != "application/vnd.google-apps.folder"
@@ -136,6 +138,9 @@ def audit_remote(transport, parent_id, folder_id, run_id, commit, manifest_sha25
             or remote_folder.get("shared") is not False
             or remote_folder.get("parents") != [parent_id]):
         raise DriveArchiveRejected("remote_folder_mismatch")
+    require_owner_only_acl(remote_folder)
+    check_private_parent_chain(transport, parent_id, writable=False)
+    check_private_parent_chain(transport, folder_id, writable=False)
     children = list_run_files(transport, folder_id)
     manifest_meta = children.get(MANIFEST_NAME)
     if manifest_meta is None:
@@ -189,20 +194,22 @@ def audit_from_remote_handoff(transport, receipt_parent_id,
             or not isinstance(expected_receipt_sha256, str)
             or not HEX64.fullmatch(expected_receipt_sha256)):
         raise DriveArchiveRejected("invalid_handoff_anchor")
+    check_private_parent_chain(transport, receipt_parent_id, writable=False)
     parent, _ = json_response(transport, "GET", metadata_path(
-        receipt_parent_id, "id,mimeType,trashed,shared"
+        receipt_parent_id, "id,mimeType,trashed,shared,driveId,permissions(type,role)"
     ))
     if (parent.get("id") != receipt_parent_id
             or parent.get("mimeType") != "application/vnd.google-apps.folder"
             or parent.get("trashed") is not False
             or parent.get("shared") is not False):
         raise DriveArchiveRejected("receipt_folder_not_private")
+    require_owner_only_acl(parent)
     filename = "stage73-" + run_id + "-" + commit[:12] + "-handoff.json"
     query = ("'" + receipt_parent_id + "' in parents and "
              + "name = '" + filename + "' and trashed = false")
     listing, _ = json_response(transport, "GET", "/drive/v3/files?" + urlencode({
         "q": query, "pageSize": "100",
-        "fields": "nextPageToken,files(id,name,mimeType,parents,trashed,shared,size)",
+        "fields": "nextPageToken,files(id,name,mimeType,parents,trashed,shared,size,driveId,permissions(type,role))",
         "supportsAllDrives": "true",
         "includeItemsFromAllDrives": "true",
     }))
@@ -222,6 +229,7 @@ def audit_from_remote_handoff(transport, receipt_parent_id,
             or not item["size"].isascii() or not item["size"].isdecimal()
             or not 0 < int(item["size"]) <= 8192):
         raise DriveArchiveRejected("receipt_metadata_invalid")
+    require_owner_only_acl(item)
     raw = remote_bytes(transport, item["id"], 8192)
     if len(raw) != int(item["size"]):
         raise DriveArchiveRejected("receipt_size_mismatch")

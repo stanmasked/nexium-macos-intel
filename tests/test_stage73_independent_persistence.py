@@ -30,6 +30,7 @@ class PersistentFakeTransport(FakeTransport):
                 "id": "folder00000001", "name": "stage73-123-" + COMMIT[:12],
                 "mimeType": "application/vnd.google-apps.folder",
                 "trashed": False, "shared": self.shared_capture, "parents": [PARENT],
+                "permissions": [{"type": "user", "role": "owner"}],
             }).encode()
         if method == "GET" and u.path == "/drive/v3/files":
             q = parse_qs(u.query).get("q", [""])[0]
@@ -47,6 +48,7 @@ class PersistentFakeTransport(FakeTransport):
                     "id": file_id, "name": meta["name"],
                     "mimeType": meta["mimeType"], "parents": meta["parents"],
                     "trashed": False, "shared": self.shared_capture,
+                    "permissions": [{"type": "user", "role": "owner"}],
                     "size": str(len(content)),
                 })
             return 200, {}, json.dumps({"files": records}).encode()
@@ -189,6 +191,21 @@ class IndependentPersistenceTests(unittest.TestCase):
             path = Path(tmp) / "absent"
             with self.assertRaisesRegex(DriveArchiveRejected, "anchor_unavailable"):
                 read_independent_anchor(path, COMMIT, "123", PARENT, RECEIPTS)
+
+    def test_shared_ancestor_blocks_post_runner_recovery(self):
+        self.transport.shared_ancestor = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            self.check_from_receipt()
+
+    def test_extra_parent_grant_blocks_post_runner_recovery(self):
+        self.transport.extra_permission = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            self.check_from_receipt()
+
+    def test_missing_parent_acl_blocks_post_runner_recovery(self):
+        self.transport.missing_permissions = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            self.check_from_receipt()
 
     def test_receipt_independent_readback_after_runner_deleted(self):
         result = self.check_from_receipt()

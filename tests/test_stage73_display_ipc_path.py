@@ -87,6 +87,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertEqual(result["observed_stage"], "ipc_sequence_inconsistent_or_cross_path")
         self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
         self.assertFalse(result["expected_vi_u_display_ancestry_observed"])
+        self.assertEqual(result["native_window_response_status"], "observed_but_unattributed")
         self.assertFalse(result["guest_gpu_frames_verified"])
         self.assertNotIn("256", json.dumps(result))
 

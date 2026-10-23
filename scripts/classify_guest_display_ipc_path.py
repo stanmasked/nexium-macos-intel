@@ -194,6 +194,11 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
     ancestry = find_expected_ancestry()
     sequence_inconsistent = downstream_ipc_observed and ancestry is None
     if sequence_inconsistent:
+        # The response signature can exist in the log without a validated
+        # request ancestry. Report it as present but unattributed, not absent.
+        if (evidence["display_cmd_2020_response_observed"]
+                or evidence["display_cmd_2030_response_observed"]):
+            native_window_response_status = "observed_but_unattributed"
         # Downstream markers exist, but the required ordered vi:u ancestry
         # cannot be established. Do not misreport this as an early stop.
         stage = "ipc_sequence_inconsistent_or_cross_path"

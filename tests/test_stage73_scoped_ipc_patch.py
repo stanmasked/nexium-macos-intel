@@ -125,8 +125,15 @@ class Stage73ScopedIpcPatchTests(unittest.TestCase):
             native_workflow,
         )
         self.assertIn("id: scope", native_workflow)
+        self.assertIn("fetch-depth: 0", native_workflow)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", native_workflow)
         self.assertIn(
-            'git diff-tree --no-commit-id --name-only -r "$EXPECTED_HEAD_SHA"',
+            "actions/workflows/nexium-intel-display-ipc-path-native.yml/runs",
+            native_workflow,
+        )
+        self.assertIn('git merge-base --is-ancestor "$last_successful_sha" "$EXPECTED_HEAD_SHA"', native_workflow)
+        self.assertIn(
+            'git diff --name-only "$last_successful_sha" "$EXPECTED_HEAD_SHA"',
             native_workflow,
         )
         self.assertIn(

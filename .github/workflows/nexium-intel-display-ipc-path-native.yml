@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
       - name: Verify Stage73 revision is current
         id: freshness
@@ -48,14 +48,36 @@ jobs:
         if: steps.freshness.outputs.is_current == 'true'
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH_NAME: ${{ github.head_ref }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-          mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r "$EXPECTED_HEAD_SHA")
+          runs_json="$(curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            --get \
+            --data-urlencode "branch=$BRANCH_NAME" \
+            --data-urlencode "status=success" \
+            --data-urlencode "per_page=100" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/nexium-intel-display-ipc-path-native.yml/runs")"
+          last_successful_sha="$(printf '%s' "$runs_json" | jq -r '.workflow_runs[0].head_sha // empty')"
+          if [[ -z "$last_successful_sha" ]]; then
+            echo "native_required=true" >> "$GITHUB_OUTPUT"
+            echo "No previous successful native trace; require a fresh trace."
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$last_successful_sha" "$EXPECTED_HEAD_SHA"; then
+            echo "native_required=true" >> "$GITHUB_OUTPUT"
+            echo "Last successful native trace is not an ancestor; require a fresh trace."
+            exit 0
+          fi
+          mapfile -t changed_paths < <(git diff --name-only "$last_successful_sha" "$EXPECTED_HEAD_SHA")
           if (( ${#changed_paths[@]} == 0 )); then
-            echo "Cannot classify an empty Stage73 commit diff." >&2
-            exit 1
+            echo "native_required=false" >> "$GITHUB_OUTPUT"
+            echo "This exact revision already has a successful native trace."
+            exit 0
           fi
           native_required=false
           for path in "${changed_paths[@]}"; do
@@ -70,9 +92,9 @@ jobs:
           done
           echo "native_required=$native_required" >> "$GITHUB_OUTPUT"
           if [[ "$native_required" == "true" ]]; then
-            echo "Commit includes native-relevant source; continue with trace."
+            echo "Changes since the last successful native trace require a new run."
           else
-            echo "Config/test-only commit; skip the expensive native trace."
+            echo "Only allowlisted classifier/workflow fixture paths changed since the last successful native trace."
           fi
       - name: Download source-identical Stage71 public libnx NRO seed
         if: steps.freshness.outputs.is_current == 'true' && steps.scope.outputs.native_required == 'true'

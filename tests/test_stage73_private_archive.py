@@ -4,8 +4,11 @@ import io
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from seal_private_capture import (
     ArchiveRejected, build_manifest, write_manifest, verify_manifest,
     main, MAX_FILE_BYTES, MAX_FILES,

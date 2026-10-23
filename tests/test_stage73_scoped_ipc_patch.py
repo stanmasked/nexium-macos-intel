@@ -28,8 +28,6 @@ class Stage73ScopedIpcPatchTests(unittest.TestCase):
         self.receipt = self.tmp / "receipt" / "display-ipc.json"
         self.original = (
             "fn send_sync_request() {\n" + ANCHOR + "\n"
-            "        static SEEN: OnceLock<Mutex<HashSet<(String, u32)>>> = OnceLock::new();\n"
-            "        let key = (dispatch_target.clone(), cmd_id);\n"
             + SEEN_TYPE_ANCHOR + "\n"
             + RESPONSE_KEY_ANCHOR + "\n"
             + RESPONSE_FORMAT_ANCHOR + "\n"

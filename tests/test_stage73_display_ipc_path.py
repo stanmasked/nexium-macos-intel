@@ -64,6 +64,31 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.data = 'IPC request service="sm:" cmd=1'
         self.assertEqual(self.inspect()["observed_stage"], "before_vi_u_service_handle_observed")
 
+    def test_register_client_cmd_zero_does_not_anchor_vi_u_service_handle(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=0 in_data=0 is_domain=false',
+            "SM::GetServiceHandle 'vi:u' data_off=0x20",
+            'IPC request service="vi:u" cmd=2 in_data=0 is_domain=false',
+            "→ IApplicationDisplayService sub-session handle=0x101",
+            'IPC request service="IApplicationDisplayService" cmd=100 in_data=0 is_domain=false',
+        ))
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "ipc_sequence_inconsistent_or_cross_path")
+        self.assertFalse(result["expected_vi_u_display_ancestry_observed"])
+        self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
+
+    def test_cmd_ten_does_not_match_service_manager_get_handle_cmd_one(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=10 in_data=0 is_domain=false',
+            "SM::GetServiceHandle 'vi:u' data_off=0x20",
+            'IPC request service="vi:u" cmd=2 in_data=0 is_domain=false',
+        ))
+        self.assertEqual(
+            self.inspect()["observed_stage"],
+            "service_manager_get_service_handle_request_not_observed",
+        )
+        self.assertFalse(self.inspect()["expected_vi_u_display_ancestry_observed"])
+
     def test_legacy_unmatched_vi_service_marker_does_not_count(self):
         self.data = ('IPC request service="sm:" cmd=1\n'
                      'sm:GetServiceHandle name=vi:u raw=0000000000000000')

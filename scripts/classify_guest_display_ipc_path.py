@@ -31,6 +31,11 @@ IPC_REQUEST_PATTERNS = (
     ("binder", re.compile(r'IPC request service="(IHOSBinderDriver)" cmd=(\d+)')),
     ("nvdrv", re.compile(r'IPC request service="(nvdrv(?::[ast])?)" cmd=(\d+)')),
 )
+# The pinned dispatcher maps SM command 0 to RegisterClient and command 1
+# to GetServiceHandle. Only cmd=1 can anchor a vi:u handle acquisition path.
+SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST = re.compile(
+    r'IPC request service="sm:" cmd=1\b'
+)
 IPC_RESPONSE_PATTERN = re.compile(
     r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
     r"service=(sm:|vi:u|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\d+)"
@@ -176,7 +181,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         # Logs can contain unrelated or repeated service-manager requests.
         # Search for a complete ordered chain rather than binding to the first
         # global sm: request. This still does not claim thread-level correlation.
-        for match in re.finditer(r'IPC request service="sm:" cmd=', data):
+        for match in SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST.finditer(data):
             sm_request = match.start()
             vi_handle = after("SM::GetServiceHandle 'vi:u'", sm_request)
             if vi_handle is None:
@@ -208,7 +213,8 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         if ancestry is not None:
             sm_request, vi_handle, vi_request, display_subsession = ancestry
         else:
-            sm_request = data.find('IPC request service="sm:" cmd=')
+            sm_match = SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST.search(data)
+            sm_request = sm_match.start() if sm_match is not None else -1
             vi_handle = (
                 after("SM::GetServiceHandle 'vi:u'", sm_request)
                 if sm_request >= 0 else None
@@ -222,7 +228,12 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                 if vi_request is not None else None
             )
         if sm_request < 0:
-            stage = "service_manager_request_not_observed"
+            any_sm_request = re.search(r'IPC request service="sm:" cmd=\d+\b', data)
+            stage = (
+                "service_manager_get_service_handle_request_not_observed"
+                if any_sm_request is not None
+                else "service_manager_request_not_observed"
+            )
         elif vi_handle is None:
             stage = "before_vi_u_service_handle_observed"
         elif vi_request is None:

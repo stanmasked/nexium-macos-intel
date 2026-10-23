@@ -158,6 +158,18 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["downstream_ipc_without_expected_ancestry"])
         self.assertFalse(result["guest_gpu_frames_verified"])
 
+    def test_unmapped_vi_command_does_not_anchor_display_ancestry(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=1 in_data=0 is_domain=false',
+            "SM::GetServiceHandle 'vi:m' data_off=0x20",
+            'IPC request service="vi:m" cmd=10 in_data=0 is_domain=false',
+            "→ IApplicationDisplayService sub-session handle=0x101",
+            'IPC request service="IApplicationDisplayService" cmd=100 in_data=0 is_domain=false',
+        ))
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "ipc_sequence_inconsistent_or_cross_path")
+        self.assertFalse(result["expected_vi_display_ancestry_observed"])
+        self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
     def test_last_ipc_request_summary_recognizes_vi_m(self):
         result = last_ipc_request_summary("\n".join((
             'IPC request service="vi:m" cmd=2 in_data=0 is_domain=false',

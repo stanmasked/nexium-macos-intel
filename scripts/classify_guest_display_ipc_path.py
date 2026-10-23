@@ -211,7 +211,16 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         # Search for a complete ordered chain through whichever allowlisted VI
         # service variant was actually requested.
         for sm_request, vi_handle, vi_service in iter_vi_handle_requests():
-            vi_request = after(f'IPC request service="{vi_service}" cmd=', vi_handle)
+            # Only commands 0-3 are audited in the pinned dispatcher as returning
+            # IApplicationDisplayService. Other VI commands must not anchor ancestry.
+            vi_request_match = re.search(
+                r'IPC request service="' + re.escape(vi_service) + r'" cmd=(?:0|1|2|3)\b',
+                data[vi_handle + 1:],
+            )
+            vi_request = (
+                vi_handle + 1 + vi_request_match.start()
+                if vi_request_match is not None else None
+            )
             if vi_request is None:
                 continue
             display_subsession = after(

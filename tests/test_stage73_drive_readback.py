@@ -74,7 +74,8 @@ class FakeTransport:
             if self.missing_permissions:
                 del item["permissions"]
             if (self.parent_metadata_missing and requested_id == PARENT
-                    or self.actual_root_without_parents and ancestor):
+                    or self.actual_root_without_parents and ancestor
+                    and not self.ancestor_cycle):
                 del item["parents"]
             return 200, {}, json.dumps(item).encode()
         if method == "POST" and url.path == "/drive/v3/files":

@@ -37,12 +37,23 @@ class FakeTransport:
         self.extra_permission = False
         self.missing_permissions = False
         self.ancestor_cycle = False
+        self.parent_metadata_missing = False
+        self.forged_root_identity = False
+        self.shared_root_alias = False
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
         self.calls.append((method, path))
         url = urlsplit(path)
         query = parse_qs(url.query)
+        if method == "GET" and url.path == "/drive/v3/files/root":
+            return 200, {}, json.dumps({
+                "id": "differentRoot123456" if self.forged_root_identity
+                      else "syntheticAncestor123",
+                "mimeType": "application/vnd.google-apps.folder",
+                "trashed": False, "shared": self.shared_root_alias,
+                "permissions": [{"type": "user", "role": "owner"}],
+            }).encode()
         if method == "GET" and url.path in (
                 "/drive/v3/files/" + PARENT,
                 "/drive/v3/files/" + RECEIPTS,
@@ -60,6 +71,8 @@ class FakeTransport:
                 item["permissions"].append({"type": "anyone", "role": "reader"})
             if self.missing_permissions:
                 del item["permissions"]
+            if self.parent_metadata_missing and requested_id == PARENT:
+                del item["parents"]
             return 200, {}, json.dumps(item).encode()
         if method == "POST" and url.path == "/drive/v3/files":
             item = json.loads(body)
@@ -130,6 +143,35 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         t.bad_parent = True
         with self.assertRaisesRegex(DriveArchiveRejected, "wrong_remote_parent"):
             upload_archive(self.report, self.manifest, PARENT, "123", t)
+
+    def test_ancestry_requires_parent_metadata_not_guessing_root(self):
+        tr = FakeTransport()
+        tr.parent_metadata_missing = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_parent_metadata_missing"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(m == "POST" for m, _ in tr.calls))
+
+    def test_terminal_parent_requires_real_drive_root_identity(self):
+        tr = FakeTransport()
+        tr.forged_root_identity = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_root_identity_unverified"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(m == "POST" for m, _ in tr.calls))
+
+    def test_shared_my_drive_root_blocks_upload(self):
+        tr = FakeTransport()
+        tr.shared_root_alias = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(m == "POST" for m, _ in tr.calls))
+
+    def test_ancestry_checks_real_root_alias_before_upload(self):
+        tr = FakeTransport()
+        upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertTrue(any(
+            method == "GET" and path.startswith("/drive/v3/files/root?")
+            for method, path in tr.calls
+        ))
 
     def test_shared_ancestor_blocks_upload_before_any_write(self):
         tr = FakeTransport()

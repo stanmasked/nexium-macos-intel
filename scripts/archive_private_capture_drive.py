@@ -113,10 +113,26 @@ def check_private_parent_chain(transport, folder_id, *, writable):
         require_owner_only_acl(item)
         if depth == 0 and writable and item.get("capabilities", {}).get("canAddChildren") is not True:
             raise DriveArchiveRejected("remote_folder_not_writable")
-        parents = item.get("parents", [])
+        # A missing parents field MUST NOT be treated as proof this is
+        # My Drive root. Google may omit fields on restricted permissions.
+        # Authenticate the terminal node against the API's special root
+        # alias before allowing the ancestry walk to finish.
+        parents = item.get("parents")
+        if parents is None:
+            raise DriveArchiveRejected("remote_parent_metadata_missing")
         if not isinstance(parents, list) or len(parents) > 1:
             raise DriveArchiveRejected("remote_parent_ambiguous")
         if not parents:
+            root_fields = "id,mimeType,trashed,shared,driveId,permissions(type,role)"
+            real_root, _ = json_response(
+                transport, "GET",
+                "/drive/v3/files/root?" + urlencode({"fields": root_fields}),
+            )
+            if (real_root.get("id") != current
+                    or real_root.get("mimeType") != "application/vnd.google-apps.folder"
+                    or real_root.get("trashed") is not False):
+                raise DriveArchiveRejected("remote_root_identity_unverified")
+            require_owner_only_acl(real_root)
             return
         current = parents[0]
         if not isinstance(current, str) or not DRIVE_ID.fullmatch(current):

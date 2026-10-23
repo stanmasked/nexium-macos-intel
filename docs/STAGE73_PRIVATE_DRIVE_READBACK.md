@@ -113,3 +113,10 @@ than shared=false alone (which does not prove that no inherited permissions
 exist). This profile is restricted to owner-authenticated private My Drive.
 A service account or delegated writer in someone else's folder requires a
 separately audited access design rather than bypassing the owner check.
+
+
+Root ancestry fix: a Drive folder with an omitted parents field is
+NOT considered My Drive root. The preflight now requires an explicit parent
+list and verifies an empty list against Google Drive's reserved root alias
+and owner-only ACL. A forged terminal node, hidden parent field or shared
+root fails before remote POST. This blocks truncated ACL-chain inspection.

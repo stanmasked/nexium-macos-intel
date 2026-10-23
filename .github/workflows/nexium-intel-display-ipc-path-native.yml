@@ -135,7 +135,7 @@ jobs:
           name: stage73-public-original-libnx-framebuffer-nro
           path: stage73-graphics/framebuffer.nro
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
 
 
   private-archive-readiness:

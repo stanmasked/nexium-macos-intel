@@ -68,6 +68,27 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.data = ('IPC request service="sm:" cmd=1\n'
                      'sm:GetServiceHandle name=vi:u raw=0000000000000000')
         self.assertEqual(self.inspect()["observed_stage"], "before_vi_u_service_handle_observed")
+        self.assertFalse(self.inspect()["downstream_ipc_without_expected_ancestry"])
+
+    def test_downstream_ipc_without_ordered_vi_u_ancestry_is_not_misclassified_as_early_stop(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=1',
+            "IApplicationDisplayService sub-session handle=0x101",
+            'IPC request service="IApplicationDisplayService" cmd=100 in_data=0 is_domain=false',
+            'IPC request service="IApplicationDisplayService" cmd=2020 in_data=8 is_domain=false',
+            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020 rc=0x00000000 response_len=12 response_first64=53,46,43,4f,00,00,00,00,00,00,00,00 in_data_first32=00",
+            "IHOSBinderDriver sub-session handle=0x102",
+            'IPC request service="IHOSBinderDriver" cmd=3 in_data=8 is_domain=false',
+            "IGBP::Connect binder=256 api=1 1280x720",
+            "IGBP::RequestBuffer binder=256 slot=0",
+            "IGBP::QueueBuffer binder=256 swap_interval=1 (was None)",
+        ))
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "ipc_sequence_inconsistent_or_cross_path")
+        self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
+        self.assertFalse(result["expected_vi_u_display_ancestry_observed"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("256", json.dumps(result))
 
     def test_vi_handle_without_vi_ipc_request(self):
         self.set_through(2)

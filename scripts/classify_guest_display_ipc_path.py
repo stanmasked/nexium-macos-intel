@@ -116,6 +116,23 @@ EVIDENCE = {
 }
 
 
+DOWNSTREAM_IPC_EVIDENCE = (
+    "display_service_subsession_returned",
+    "display_binder_session_cmd_100_request_observed",
+    "display_binder_session_cmd_103_request_observed",
+    "display_cmd_2020_request_observed",
+    "display_cmd_2030_request_observed",
+    "binder_subsession_returned",
+    "binder_cmd_0_request_observed",
+    "binder_cmd_3_request_observed",
+    "igbp_connect_observed",
+    "igbp_request_buffer_observed",
+    "igbp_dequeue_retry_marker_observed",
+    "igbp_dequeue_timeout_marker_observed",
+    "igbp_queue_buffer_observed",
+)
+
+
 def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                    nro_sha: str) -> dict:
     # The report directory is part of the trust boundary too: rejecting only
@@ -151,227 +168,265 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
     def regex_after(pattern: re.Pattern[str], position: int) -> re.Match[str] | None:
         return pattern.search(data, position + 1)
 
-    if not evidence["ipc_request_marker_observed"]:
-        stage = "ipc_request_markers_not_observed"
-    else:
-        sm_request = data.find('IPC request service="sm:" cmd=')
-        if sm_request < 0:
-            stage = "service_manager_request_not_observed"
-        else:
+    downstream_ipc_observed = any(
+        evidence[name] for name in DOWNSTREAM_IPC_EVIDENCE
+    )
+
+    def find_expected_ancestry() -> tuple[int, int, int, int] | None:
+        # Logs can contain unrelated or repeated service-manager requests.
+        # Search for a complete ordered chain rather than binding to the first
+        # global sm: request. This still does not claim thread-level correlation.
+        for match in re.finditer(r'IPC request service="sm:" cmd=', data):
+            sm_request = match.start()
             vi_handle = after("SM::GetServiceHandle 'vi:u'", sm_request)
             if vi_handle is None:
-                stage = "before_vi_u_service_handle_observed"
-            else:
-                vi_request = after('IPC request service="vi:u" cmd=', vi_handle)
-                if vi_request is None:
-                    stage = "vi_u_handle_created_ipc_request_not_observed"
+                continue
+            vi_request = after('IPC request service="vi:u" cmd=', vi_handle)
+            if vi_request is None:
+                continue
+            display_subsession = after(
+                "IApplicationDisplayService sub-session handle=", vi_request
+            )
+            if display_subsession is not None:
+                return sm_request, vi_handle, vi_request, display_subsession
+        return None
+
+    ancestry = find_expected_ancestry()
+    sequence_inconsistent = downstream_ipc_observed and ancestry is None
+    if sequence_inconsistent:
+        # Downstream markers exist, but the required ordered vi:u ancestry
+        # cannot be established. Do not misreport this as an early stop.
+        stage = "ipc_sequence_inconsistent_or_cross_path"
+    elif not evidence["ipc_request_marker_observed"]:
+        stage = "ipc_request_markers_not_observed"
+    else:
+        if ancestry is not None:
+            sm_request, vi_handle, vi_request, display_subsession = ancestry
+        else:
+            sm_request = data.find('IPC request service="sm:" cmd=')
+            vi_handle = (
+                after("SM::GetServiceHandle 'vi:u'", sm_request)
+                if sm_request >= 0 else None
+            )
+            vi_request = (
+                after('IPC request service="vi:u" cmd=', vi_handle)
+                if vi_handle is not None else None
+            )
+            display_subsession = (
+                after("IApplicationDisplayService sub-session handle=", vi_request)
+                if vi_request is not None else None
+            )
+        if sm_request < 0:
+            stage = "service_manager_request_not_observed"
+        elif vi_handle is None:
+            stage = "before_vi_u_service_handle_observed"
+        elif vi_request is None:
+            stage = "vi_u_handle_created_ipc_request_not_observed"
+        elif display_subsession is None:
+            stage = "vi_u_ipc_request_display_subsession_not_observed"
+        else:
+            binder_session_request_pattern = re.compile(
+                r'IPC request service="IApplicationDisplayService" cmd=(100|103)\b'
+            )
+            binder_session_request = regex_after(
+                binder_session_request_pattern, display_subsession
+            )
+            binder_subsession = (
+                after(
+                    "IHOSBinderDriver sub-session handle=",
+                    binder_session_request.start(),
+                )
+                if binder_session_request is not None else None
+            )
+
+            native_window_request_pattern = re.compile(
+                r'IPC request service="IApplicationDisplayService" cmd=(2020|2030)\b'
+            )
+            native_window_request = regex_after(
+                native_window_request_pattern, display_subsession
+            )
+            native_window_response = None
+            if native_window_request is not None:
+                native_window_cmd = native_window_request.group(1)
+                native_window_response_pattern = re.compile(
+                    r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
+                    r"service=IApplicationDisplayService cmd="
+                    + re.escape(native_window_cmd)
+                    + r"\b"
+                )
+                response_match = regex_after(
+                    native_window_response_pattern,
+                    native_window_request.start(),
+                )
+                if response_match is None:
+                    native_window_response_status = "no_response"
                 else:
-                    display_subsession = after(
-                        "IApplicationDisplayService sub-session handle=", vi_request
+                    same_command_request_pattern = re.compile(
+                        r'IPC request service="IApplicationDisplayService" cmd='
+                        + re.escape(native_window_cmd)
+                        + r'\b'
                     )
-                    if display_subsession is None:
-                        stage = "vi_u_ipc_request_display_subsession_not_observed"
+                    repeated_request = same_command_request_pattern.search(
+                        data, native_window_request.end(), response_match.start()
+                    )
+                    if repeated_request is not None:
+                        # The first-occurrence response is not correlated to a
+                        # request/thread ID. A second outstanding request makes
+                        # the response unsafe to attribute to the first request.
+                        native_window_response_status = "ambiguous"
                     else:
-                        binder_session_request_pattern = re.compile(
-                            r'IPC request service="IApplicationDisplayService" cmd=(100|103)\b'
+                        line_end = data.find("\n", response_match.start())
+                        if line_end < 0:
+                            line_end = len(data)
+                        response_line = data[response_match.start():line_end]
+                        rc_match = re.search(r"\brc=(0x[0-9a-fA-F]{8})\b", response_line)
+                        response_len_match = re.search(r"\bresponse_len=([0-9]{1,20})\b", response_line)
+                        preview_match = re.search(
+                            r"\bresponse_first64=([0-9a-fA-F,]{0,191})\s+in_data_first32=",
+                            response_line,
                         )
-                        binder_session_request = regex_after(
-                            binder_session_request_pattern, display_subsession
-                        )
-                        binder_subsession = (
-                            after(
-                                "IHOSBinderDriver sub-session handle=",
-                                binder_session_request.start(),
-                            )
-                            if binder_session_request is not None else None
-                        )
-
-                        native_window_request_pattern = re.compile(
-                            r'IPC request service="IApplicationDisplayService" cmd=(2020|2030)\b'
-                        )
-                        native_window_request = regex_after(
-                            native_window_request_pattern, display_subsession
-                        )
-                        native_window_response = None
-                        if native_window_request is not None:
-                            native_window_cmd = native_window_request.group(1)
-                            native_window_response_pattern = re.compile(
-                                r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
-                                r"service=IApplicationDisplayService cmd="
-                                + re.escape(native_window_cmd)
-                                + r"\b"
-                            )
-                            response_match = regex_after(
-                                native_window_response_pattern,
-                                native_window_request.start(),
-                            )
-                            if response_match is None:
-                                native_window_response_status = "no_response"
-                            else:
-                                same_command_request_pattern = re.compile(
-                                    r'IPC request service="IApplicationDisplayService" cmd='
-                                    + re.escape(native_window_cmd)
-                                    + r'\b'
-                                )
-                                repeated_request = same_command_request_pattern.search(
-                                    data, native_window_request.end(), response_match.start()
-                                )
-                                if repeated_request is not None:
-                                    # The first-occurrence response is not correlated to a
-                                    # request/thread ID. A second outstanding request makes
-                                    # the response unsafe to attribute to the first request.
-                                    native_window_response_status = "ambiguous"
-                                else:
-                                    line_end = data.find("\n", response_match.start())
-                                    if line_end < 0:
-                                        line_end = len(data)
-                                    response_line = data[response_match.start():line_end]
-                                    rc_match = re.search(r"\brc=(0x[0-9a-fA-F]{8})\b", response_line)
-                                    response_len_match = re.search(r"\bresponse_len=([0-9]{1,20})\b", response_line)
-                                    preview_match = re.search(
-                                        r"\bresponse_first64=([0-9a-fA-F,]{0,191})\s+in_data_first32=",
-                                        response_line,
-                                    )
-                                    if (rc_match is None or response_len_match is None
-                                            or preview_match is None):
-                                        native_window_response_status = "unverified"
-                                    else:
-                                        response_len = int(response_len_match.group(1))
-                                        preview_text = preview_match.group(1)
-                                        preview_tokens = preview_text.split(",") if preview_text else []
-                                        valid_preview = (
-                                            response_len <= MAX_DISPLAY_IPC_RESPONSE_BYTES
-                                            and len(preview_tokens) == min(response_len, 64)
-                                            and all(re.fullmatch(r"[0-9a-fA-F]{2}", token)
-                                                    for token in preview_tokens)
-                                        )
-                                        if not valid_preview:
-                                            native_window_response_status = "unverified"
-                                        else:
-                                            preview_bytes = bytes(
-                                                int(token, 16) for token in preview_tokens
-                                            )
-                                            sfco_offset = preview_bytes.find(b"SFCO")
-                                            if sfco_offset < 0 or sfco_offset + 12 > len(preview_bytes):
-                                                # svc.rs defaults its logged rc to zero if SFCO
-                                                # is absent; that fallback is not success proof.
-                                                native_window_response_status = "unverified"
-                                            else:
-                                                header_rc = int.from_bytes(
-                                                    preview_bytes[sfco_offset + 8:sfco_offset + 12],
-                                                    "little",
-                                                )
-                                                logged_rc = int(rc_match.group(1), 16)
-                                                if header_rc != logged_rc:
-                                                    native_window_response_status = "unverified"
-                                                elif header_rc == 0:
-                                                    native_window_response_status = "success"
-                                                    native_window_response = response_match
-                                                else:
-                                                    native_window_response_status = "failure"
-
-                        pending_branches = []
-                        if binder_session_request is not None and binder_subsession is None:
-                            pending_branches.append((
-                                binder_session_request.start(),
-                                "display_service_binder_subsession_not_observed",
-                            ))
-                        if native_window_request is not None and native_window_response is None:
-                            response_stage = {
-                                "no_response": "native_window_request_response_not_observed",
-                                "failure": "native_window_request_failed_response_observed",
-                                "unverified": "native_window_request_response_status_unverified",
-                                "ambiguous": "native_window_request_response_correlation_ambiguous",
-                            }.get(
-                                native_window_response_status,
-                                "native_window_request_response_status_unverified",
-                            )
-                            pending_branches.append((
-                                native_window_request.start(),
-                                response_stage,
-                            ))
-
-                        if pending_branches:
-                            stage = max(pending_branches)[1]
-                        elif binder_session_request is None and native_window_request is None:
-                            stage = "display_subsession_binder_or_native_window_request_not_observed"
-                        elif binder_session_request is None:
-                            stage = "display_subsession_binder_session_request_not_observed"
-                        elif binder_subsession is None:
-                            stage = "display_service_binder_subsession_not_observed"
-                        elif native_window_request is None:
-                            stage = "binder_subsession_created_native_window_request_not_observed"
-                        elif native_window_response is None:
-                            stage = "native_window_request_response_not_observed"
+                        if (rc_match is None or response_len_match is None
+                                or preview_match is None):
+                            native_window_response_status = "unverified"
                         else:
-                            ready_after = max(binder_subsession, native_window_response.start())
-                            binder_transaction_pattern = re.compile(
-                                r'IPC request service="IHOSBinderDriver" cmd=(0|3)\b'
+                            response_len = int(response_len_match.group(1))
+                            preview_text = preview_match.group(1)
+                            preview_tokens = preview_text.split(",") if preview_text else []
+                            valid_preview = (
+                                response_len <= MAX_DISPLAY_IPC_RESPONSE_BYTES
+                                and len(preview_tokens) == min(response_len, 64)
+                                and all(re.fullmatch(r"[0-9a-fA-F]{2}", token)
+                                        for token in preview_tokens)
                             )
-                            binder_transaction = regex_after(
-                                binder_transaction_pattern, ready_after
-                            )
-                            if binder_transaction is None:
-                                stage = "display_and_native_window_ready_binder_transact_not_observed"
+                            if not valid_preview:
+                                native_window_response_status = "unverified"
                             else:
-                                connect_match = regex_after(
-                                    IGBP_CONNECT_PATTERN, binder_transaction.start()
+                                preview_bytes = bytes(
+                                    int(token, 16) for token in preview_tokens
                                 )
-                                if connect_match is None:
-                                    stage = "binder_transact_igbp_connect_not_observed"
+                                sfco_offset = preview_bytes.find(b"SFCO")
+                                if sfco_offset < 0 or sfco_offset + 12 > len(preview_bytes):
+                                    # svc.rs defaults its logged rc to zero if SFCO
+                                    # is absent; that fallback is not success proof.
+                                    native_window_response_status = "unverified"
                                 else:
-                                    connect_binder = connect_match.group(1)
-                                    buffer_matches = list(
-                                        IGBP_REQUEST_BUFFER_PATTERN.finditer(
-                                            data, connect_match.end()
-                                        )
+                                    header_rc = int.from_bytes(
+                                        preview_bytes[sfco_offset + 8:sfco_offset + 12],
+                                        "little",
                                     )
-                                    request_buffer_match = next(
-                                        (match for match in buffer_matches
-                                         if match.group(1) == connect_binder),
-                                        None,
-                                    )
-                                    if request_buffer_match is None:
-                                        if buffer_matches:
-                                            stage = "igbp_connect_request_buffer_binder_mismatch"
-                                        else:
-                                            stage = "igbp_connect_request_buffer_not_observed"
+                                    logged_rc = int(rc_match.group(1), 16)
+                                    if header_rc != logged_rc:
+                                        native_window_response_status = "unverified"
+                                    elif header_rc == 0:
+                                        native_window_response_status = "success"
+                                        native_window_response = response_match
                                     else:
-                                        request_buffer = request_buffer_match.end()
-                                        operation_patterns = (
-                                            ("queue", IGBP_QUEUE_BUFFER_PATTERN),
-                                            ("dequeue_retry", IGBP_DEQUEUE_RETRY_PATTERN),
-                                            ("dequeue_timeout", IGBP_DEQUEUE_TIMEOUT_PATTERN),
-                                        )
-                                        later_operations = []
-                                        other_binder_operations = []
-                                        for operation_kind, pattern in operation_patterns:
-                                            for match in pattern.finditer(data, request_buffer):
-                                                item = (match.start(), operation_kind)
-                                                if match.group(1) == connect_binder:
-                                                    later_operations.append(item)
-                                                else:
-                                                    other_binder_operations.append(item)
-                                        if not later_operations:
-                                            if other_binder_operations:
-                                                stage = (
-                                                    "igbp_request_buffer_other_binder_activity_"
-                                                    "unverified"
-                                                )
-                                            else:
-                                                stage = (
-                                                    "igbp_request_buffer_observed_later_buffer_operations_"
-                                                    "unverified_at_debug_level"
-                                                )
-                                        else:
-                                            _, last_operation = max(later_operations)
-                                            if last_operation == "queue":
-                                                stage = "igbp_queue_observed_not_gpu_proof"
-                                            else:
-                                                stage = "igbp_dequeue_retry_or_timeout_observed"
+                                        native_window_response_status = "failure"
+
+            pending_branches = []
+            if binder_session_request is not None and binder_subsession is None:
+                pending_branches.append((
+                    binder_session_request.start(),
+                    "display_service_binder_subsession_not_observed",
+                ))
+            if native_window_request is not None and native_window_response is None:
+                response_stage = {
+                    "no_response": "native_window_request_response_not_observed",
+                    "failure": "native_window_request_failed_response_observed",
+                    "unverified": "native_window_request_response_status_unverified",
+                    "ambiguous": "native_window_request_response_correlation_ambiguous",
+                }.get(
+                    native_window_response_status,
+                    "native_window_request_response_status_unverified",
+                )
+                pending_branches.append((
+                    native_window_request.start(),
+                    response_stage,
+                ))
+
+            if pending_branches:
+                stage = max(pending_branches)[1]
+            elif binder_session_request is None and native_window_request is None:
+                stage = "display_subsession_binder_or_native_window_request_not_observed"
+            elif binder_session_request is None:
+                stage = "display_subsession_binder_session_request_not_observed"
+            elif binder_subsession is None:
+                stage = "display_service_binder_subsession_not_observed"
+            elif native_window_request is None:
+                stage = "binder_subsession_created_native_window_request_not_observed"
+            elif native_window_response is None:
+                stage = "native_window_request_response_not_observed"
+            else:
+                ready_after = max(binder_subsession, native_window_response.start())
+                binder_transaction_pattern = re.compile(
+                    r'IPC request service="IHOSBinderDriver" cmd=(0|3)\b'
+                )
+                binder_transaction = regex_after(
+                    binder_transaction_pattern, ready_after
+                )
+                if binder_transaction is None:
+                    stage = "display_and_native_window_ready_binder_transact_not_observed"
+                else:
+                    connect_match = regex_after(
+                        IGBP_CONNECT_PATTERN, binder_transaction.start()
+                    )
+                    if connect_match is None:
+                        stage = "binder_transact_igbp_connect_not_observed"
+                    else:
+                        connect_binder = connect_match.group(1)
+                        buffer_matches = list(
+                            IGBP_REQUEST_BUFFER_PATTERN.finditer(
+                                data, connect_match.end()
+                            )
+                        )
+                        request_buffer_match = next(
+                            (match for match in buffer_matches
+                             if match.group(1) == connect_binder),
+                            None,
+                        )
+                        if request_buffer_match is None:
+                            if buffer_matches:
+                                stage = "igbp_connect_request_buffer_binder_mismatch"
+                            else:
+                                stage = "igbp_connect_request_buffer_not_observed"
+                        else:
+                            request_buffer = request_buffer_match.end()
+                            operation_patterns = (
+                                ("queue", IGBP_QUEUE_BUFFER_PATTERN),
+                                ("dequeue_retry", IGBP_DEQUEUE_RETRY_PATTERN),
+                                ("dequeue_timeout", IGBP_DEQUEUE_TIMEOUT_PATTERN),
+                            )
+                            later_operations = []
+                            other_binder_operations = []
+                            for operation_kind, pattern in operation_patterns:
+                                for match in pattern.finditer(data, request_buffer):
+                                    item = (match.start(), operation_kind)
+                                    if match.group(1) == connect_binder:
+                                        later_operations.append(item)
+                                    else:
+                                        other_binder_operations.append(item)
+                            if not later_operations:
+                                if other_binder_operations:
+                                    stage = (
+                                        "igbp_request_buffer_other_binder_activity_"
+                                        "unverified"
+                                    )
+                                else:
+                                    stage = (
+                                        "igbp_request_buffer_observed_later_buffer_operations_"
+                                        "unverified_at_debug_level"
+                                    )
+                            else:
+                                _, last_operation = max(later_operations)
+                                if last_operation == "queue":
+                                    stage = "igbp_queue_observed_not_gpu_proof"
+                                else:
+                                    stage = "igbp_dequeue_retry_or_timeout_observed"
     return {
         "schema": "nexium-stage73-display-ipc-path/v1",
         "observed_stage": stage,
+        "expected_vi_u_display_ancestry_observed": ancestry is not None,
+        "downstream_ipc_without_expected_ancestry": sequence_inconsistent,
         "probe_process_status": receipt["status"],
         **last_ipc_request_summary(data),
         "native_window_response_status": native_window_response_status,

@@ -57,6 +57,41 @@ FAILURE_MARKERS = (
 GUEST_LOG_MAX = 4 * 1024 * 1024
 EXPECTED_NRO_MAX = 2 * 1024 * 1024
 
+SAFE_FAILURE_PHASES = frozenset({
+    "validate_intel_host", "validate_public_guest_nro",
+    "audit_reviewed_pr_stack", "build_virtual_merge",
+    "extract_virtual_source", "integrated_python_tests",
+    "compile_native_intel", "run_original_graphics_guest",
+    "inspect_original_graphics_boot", "inspect_guest_display_ipc_path",
+    "audit_original_guest_progress", "inspect_owned_window_evidence",
+    "verify_checkout_head", "emit_runtime_report",
+})
+
+
+def safe_runtime_blocked_marker(phase: str, error: BaseException) -> str:
+    """Emit only a fixed phase and broad exception category, never exception text."""
+    safe_phase = phase if phase in SAFE_FAILURE_PHASES else "unknown"
+    if isinstance(error, subprocess.TimeoutExpired):
+        reason = "TimeoutExpired"
+    elif isinstance(error, tarfile.TarError):
+        reason = "TarError"
+    elif isinstance(error, UnicodeError):
+        reason = "UnicodeError"
+    elif isinstance(error, OSError):
+        reason = "OSError"
+    elif isinstance(error, ValueError):
+        reason = "ValueError"
+    elif isinstance(error, KeyError):
+        reason = "KeyError"
+    elif isinstance(error, TypeError):
+        reason = "TypeError"
+    else:
+        reason = "OtherError"
+    return (
+        "STAGE68_GUEST_GRAPHICS_RUNTIME_BLOCKED "
+        f"phase={safe_phase} reason={reason}"
+    )
+
 # The guest C source dictates which progress prefix may immediately precede
 # each terminal error. This makes impossible success/failure combinations
 # fail closed rather than merely accepting an ordered *subset* of markers.
@@ -194,6 +229,7 @@ def main(argv=None) -> int:
     parser.add_argument("--guest-nro", required=True, type=Path)
     parser.add_argument("--guest-source", required=True, type=Path)
     args = parser.parse_args(argv)
+    phase = "validate_intel_host"
     try:
         intel = subprocess.run(
             ["sysctl", "-n", "hw.optional.arm64"],
@@ -204,8 +240,10 @@ def main(argv=None) -> int:
             intel.returncode == 0 and intel.stdout.strip() == "1",
         )
         # Reject symlinks on caller paths BEFORE making absolute.
+        phase = "validate_public_guest_nro"
         compiled = validate_compiled_public_probe(args.guest_nro, args.guest_source)
         nro = args.guest_nro.absolute()
+        phase = "audit_reviewed_pr_stack"
         snapshot = collect_live(
             args.repository, os.environ.get("GH_TOKEN", ""), top_pr=args.top_pr,
         )
@@ -221,6 +259,7 @@ def main(argv=None) -> int:
                 break
             node = heads[node["base"]]
         ordered.reverse()
+        phase = "build_virtual_merge"
         combined = compute_virtual_tree(
             args.git_repo, snapshot["main_sha"], ordered,
             args.expected_head_sha,
@@ -231,11 +270,14 @@ def main(argv=None) -> int:
             src, work, report = root / "source", root / "native", root / "report"
             src.mkdir()
             work.mkdir()
+            phase = "extract_virtual_source"
             files = extract_virtual_source(args.git_repo, combined, src)
+            phase = "integrated_python_tests"
             tests = execute_integrated_tests(src, min_tests=497)
             print("STAGE68_GATE_INTEGRATED_PYTHON_PASS", flush=True)
             build_env = dict(os.environ)
             build_env["NEXIUM_DISPLAY_IPC_TRACE"] = "1"
+            phase = "compile_native_intel"
             intel_binary = compile_native_intel(
                 src, work,
                 host_system=platform.system(), host_arch=platform.machine(),
@@ -246,18 +288,25 @@ def main(argv=None) -> int:
                 raise ValueError("Stage73 scoped IPC request log patch not bound to Intel build")
             print("STAGE73_SCOPED_IPC_REQUEST_LOG_PATCH_VERIFIED", flush=True)
             binary = work / "nexium" / "target" / "x86_64-apple-darwin" / "release" / "nexium"
+            guest_run_error = None
+            phase = "run_original_graphics_guest"
             try:
                 run_graphics_guest(src, binary, nro, report)
+            except (OSError, ValueError, KeyError, TypeError, UnicodeError,
+                    subprocess.TimeoutExpired, tarfile.TarError) as error:
+                guest_run_error = error
             finally:
                 # Print ONLY pre-allowlisted original boot category and booleans.
                 # The raw emulator console, FileLogger and PNGs remain private.
                 if (report / "smoke_result.json").is_file():
+                    phase = "inspect_original_graphics_boot"
                     boot = inspect_original_graphics_boot(
                         report, intel_binary["native_macho_sha256"],
                         compiled["nro_sha256"],
                     )
                     print("STAGE71_ORIGINAL_GRAPHICS_BOOT_DIAGNOSTIC "
                           + json.dumps(boot, sort_keys=True), flush=True)
+                    phase = "inspect_guest_display_ipc_path"
                     try:
                         ipc = inspect_guest_display_ipc_path(
                             report, intel_binary["native_macho_sha256"],
@@ -273,17 +322,36 @@ def main(argv=None) -> int:
                           flush=True)
                     print("STAGE73_GUEST_DISPLAY_IPC_RECEIPT_UNAVAILABLE",
                           flush=True)
+            if guest_run_error is not None:
+                phase = "run_original_graphics_guest"
+                raise guest_run_error
+            phase = "audit_original_guest_progress"
             guest = source_graphics_audit(
                 report, intel_binary["native_macho_sha256"], compiled["nro_sha256"]
             )
+            progress_keys = (
+                "graphics_guest_runtime_classification",
+                "original_guest_progress_markers",
+                "last_original_guest_marker",
+                "guest_framebuffer_created_observed",
+                "guest_framebuffer_end_call_returned_observed",
+                "guest_framebuffer_api_loop_complete_observed",
+                "graphics_guest_exit_status",
+            )
+            progress = {key: guest[key] for key in progress_keys}
+            print("STAGE73_ORIGINAL_GUEST_PROGRESS_DIAGNOSTIC "
+                  + json.dumps(progress, sort_keys=True), flush=True)
             print("STAGE68_GATE_ORIGINAL_GUEST_MARKER_SEQUENCE_AUDITED", flush=True)
+            phase = "inspect_owned_window_evidence"
             pixels = inspect_gui_evidence(
                 report, intel_binary["native_macho_sha256"], compiled["nro_sha256"],
                 allow_nonzero_guest=True,
             )
+        phase = "verify_checkout_head"
         check = git(args.git_repo, "rev-parse", "HEAD")
         if check.returncode != 0 or check.stdout.strip() != args.expected_head_sha:
             raise ValueError("original checked out Git HEAD changed")
+        phase = "emit_runtime_report"
         print(json.dumps({
             "schema": "nexium-stage68-integrated-original-guest-graphics/v1",
             "stacked_draft_prs": len(ordered),
@@ -302,8 +370,8 @@ def main(argv=None) -> int:
         print("STAGE68_GUEST_GRAPHICS_RUNTIME_DIAGNOSTIC_PASS_NOT_GPU_CERTIFICATION")
         return 0
     except (OSError, ValueError, KeyError, TypeError, UnicodeError,
-            subprocess.TimeoutExpired, tarfile.TarError):
-        print("STAGE68_GUEST_GRAPHICS_RUNTIME_BLOCKED", file=sys.stderr)
+            subprocess.TimeoutExpired, tarfile.TarError) as error:
+        print(safe_runtime_blocked_marker(phase, error), file=sys.stderr)
         return 2
 
 

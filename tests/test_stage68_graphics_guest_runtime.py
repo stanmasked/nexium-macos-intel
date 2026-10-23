@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from probe_intel_graphics_runtime import (
     FAILURE_MARKERS, PROGRESS_MARKERS, MARKER_PREFIX,
-    source_graphics_audit,
+    safe_runtime_blocked_marker, source_graphics_audit,
 )
 from observe_intel_integrated_window import inspect_gui_evidence
 
@@ -156,6 +156,24 @@ class Stage68ActualGuestGraphicsMarkerTests(unittest.TestCase):
         (self.log_dir / "nexium-another.log").write_text("other process")
         with self.assertRaisesRegex(ValueError, "exactly one"):
             source_graphics_audit(self.root, MACHO, NRO)
+
+
+    def test_blocked_marker_is_phase_specific_and_never_exposes_exception_text(self):
+        marker = safe_runtime_blocked_marker(
+            "audit_original_guest_progress", ValueError("private raw log text")
+        )
+        self.assertEqual(
+            marker,
+            "STAGE68_GUEST_GRAPHICS_RUNTIME_BLOCKED "
+            "phase=audit_original_guest_progress reason=ValueError",
+        )
+        self.assertNotIn("private raw log text", marker)
+        unknown = safe_runtime_blocked_marker(
+            "untrusted/private/path", ValueError("do not expose")
+        )
+        self.assertIn("phase=unknown", unknown)
+        self.assertNotIn("untrusted/private/path", unknown)
+        self.assertNotIn("do not expose", unknown)
 
 
 if __name__ == "__main__":

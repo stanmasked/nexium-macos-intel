@@ -398,7 +398,7 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         transport, uploaded, receipt = self.make_receipt()
         transport.shared_parent = True
         before = len(transport.files)
-        with self.assertRaisesRegex(DriveArchiveRejected, "not_writable"):
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
             persist_private_handoff(
                 transport, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
         self.assertEqual(len(transport.files), before)

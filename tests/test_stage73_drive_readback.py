@@ -27,6 +27,8 @@ class FakeTransport:
         self.sequence = 0
         self.bad_media = False
         self.bad_parent = False
+        self.shared_parent = False
+        self.shared_capture = False
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -35,14 +37,15 @@ class FakeTransport:
         query = parse_qs(url.query)
         if method == "GET" and url.path == "/drive/v3/files/" + PARENT:
             item = {"id": PARENT, "mimeType": "application/vnd.google-apps.folder",
-                    "trashed": False, "capabilities": {"canAddChildren": True}}
+                    "trashed": False, "shared": self.shared_parent,
+                    "capabilities": {"canAddChildren": True}}
             return 200, {}, json.dumps(item).encode()
         if method == "POST" and url.path == "/drive/v3/files":
             item = json.loads(body)
             self.sequence += 1
             folder_id = "folder" + str(self.sequence).zfill(8)
             return 200, {}, json.dumps({"id": folder_id, **item,
-                                        "trashed": False}).encode()
+                                        "trashed": False, "shared": self.shared_capture}).encode()
         if method == "POST" and url.path == "/upload/drive/v3/files":
             self.pending = json.loads(body)
             self.sequence += 1
@@ -63,6 +66,7 @@ class FakeTransport:
             data = {"id": file_id, "name": info["name"],
                     "parents": ["otherPrivateParent000"] if self.bad_parent else info["parents"],
                     "mimeType": info["mimeType"], "trashed": False,
+                    "shared": self.shared_capture,
                     "size": str(len(payload))}
             return 200, {}, json.dumps(data).encode()
         raise AssertionError("Unexpected fake HTTP call")
@@ -102,6 +106,19 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         t = FakeTransport()
         t.bad_parent = True
         with self.assertRaisesRegex(DriveArchiveRejected, "wrong_remote_parent"):
+            upload_archive(self.report, self.manifest, PARENT, "123", t)
+
+    def test_shared_destination_rejected_before_remote_writes(self):
+        t = FakeTransport()
+        t.shared_parent = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "not_writable"):
+            upload_archive(self.report, self.manifest, PARENT, "123", t)
+        self.assertEqual(len(t.calls), 1)
+
+    def test_new_folder_with_shared_permission_rejected(self):
+        t = FakeTransport()
+        t.shared_capture = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "folder_creation_unverified"):
             upload_archive(self.report, self.manifest, PARENT, "123", t)
 
     def test_local_tamper_before_upload_fails_without_network(self):

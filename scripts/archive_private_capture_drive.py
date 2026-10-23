@@ -82,6 +82,8 @@ def metadata_path(file_id, fields):
 def validate_metadata(item, *, file_id, parent_id, filename, size=None):
     if item.get("id") != file_id or item.get("name") != filename:
         raise DriveArchiveRejected("wrong_remote_identity")
+    if item.get("shared") is not False:
+        raise DriveArchiveRejected("remote_file_is_shared")
     if item.get("trashed") is not False or item.get("parents") != [parent_id]:
         raise DriveArchiveRejected("wrong_remote_parent")
     if item.get("mimeType") != "application/octet-stream":
@@ -93,10 +95,11 @@ def validate_metadata(item, *, file_id, parent_id, filename, size=None):
 def check_parent(transport, folder_id):
     if not DRIVE_ID.fullmatch(folder_id):
         raise DriveArchiveRejected("invalid_folder")
-    fields = "id,mimeType,trashed,capabilities(canAddChildren)"
+    fields = "id,mimeType,trashed,shared,capabilities(canAddChildren)"
     data, _ = json_response(transport, "GET", metadata_path(folder_id, fields))
     if (data.get("id") != folder_id or data.get("trashed") is not False
             or data.get("mimeType") != "application/vnd.google-apps.folder"
+            or data.get("shared") is not False
             or data.get("capabilities", {}).get("canAddChildren") is not True):
         raise DriveArchiveRejected("remote_folder_not_writable")
 
@@ -106,7 +109,7 @@ def create_run_folder(transport, parent, run_id, commit):
     data, _ = json_response(
         transport, "POST",
         "/drive/v3/files?" + urlencode({
-            "fields": "id,name,mimeType,trashed,parents",
+            "fields": "id,name,mimeType,trashed,parents,shared",
             "supportsAllDrives": "true",
         }),
         body=json.dumps({
@@ -119,7 +122,7 @@ def create_run_folder(transport, parent, run_id, commit):
     if (not isinstance(folder_id, str) or not DRIVE_ID.fullmatch(folder_id)
             or data.get("name") != name or data.get("parents") != [parent]
             or data.get("mimeType") != "application/vnd.google-apps.folder"
-            or data.get("trashed") is not False):
+            or data.get("trashed") is not False or data.get("shared") is not False):
         raise DriveArchiveRejected("folder_creation_unverified")
     return folder_id
 
@@ -137,7 +140,7 @@ def upload_one(transport, folder_id, name, payload, digest):
         "POST",
         "/upload/drive/v3/files?" + urlencode({
             "uploadType": "resumable",
-            "fields": "id,name,mimeType,parents,trashed,size",
+            "fields": "id,name,mimeType,parents,trashed,size,shared",
             "supportsAllDrives": "true",
         }),
         body=json.dumps(init_metadata).encode(),
@@ -165,7 +168,7 @@ def upload_one(transport, folder_id, name, payload, digest):
     file_id = remote.get("id")
     if not isinstance(file_id, str) or not DRIVE_ID.fullmatch(file_id):
         raise DriveArchiveRejected("upload_id_missing")
-    fields = "id,name,mimeType,trashed,parents,size"
+    fields = "id,name,mimeType,trashed,parents,size,shared"
     verified, _ = json_response(transport, "GET", metadata_path(file_id, fields))
     validate_metadata(verified, file_id=file_id, parent_id=folder_id,
                       filename=name, size=len(payload))

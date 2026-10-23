@@ -32,3 +32,11 @@ until full end-to-end verification on synthetic content succeeds.
 The already-created project Drive structure uses separate private folders for
 originals, raw captures, manifests and aggregate reports. Do not share its
 private contents in a public GitHub repository. Stage73 remains Draft.
+
+Additional fail-closed privacy gate: before creating the run folder the Drive
+parent metadata must explicitly report shared=false and writable folder
+capabilities. The created folder and every uploaded file must also return
+shared=false. A shared or unknown ACL blocks the upload, even if checksums
+would match. This prototype is intended for private My Drive contexts;
+service-account/shared-folder configurations need an independently reviewed
+privacy design rather than bypassing this check.

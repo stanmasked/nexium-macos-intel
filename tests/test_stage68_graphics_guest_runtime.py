@@ -90,8 +90,45 @@ class Stage68ActualGuestGraphicsMarkerTests(unittest.TestCase):
         report = source_graphics_audit(self.root, MACHO, NRO)
         self.assertTrue(report["guest_framebuffer_api_loop_complete_observed"])
         self.assertTrue(report["guest_framebuffer_end_call_returned_observed"])
+        self.assertTrue(report["guest_framebuffer_api_calls_completed_observed"])
+        self.assertTrue(report["guest_framebuffer_runtime_completed"])
+        self.assertEqual(report["emulator_process_status"], "exited_zero_unverified")
+        self.assertEqual(report["guest_exit_status"], "not_observed")
+        self.assertFalse(report["emulator_process_timeout_unverified"])
         self.assertFalse(report["guest_gpu_frames_verified"])
         self.assertFalse(report["commercial_gameplay_verified"])
+
+    def test_complete_guest_framebuffer_calls_with_live_emulator_timeout_are_valid_diagnostic(self):
+        self.smoke["status"] = "timeout_alive_unverified"
+        self.update(smoke=True, markers=PROGRESS_MARKERS)
+        report = source_graphics_audit(self.root, MACHO, NRO)
+        self.assertEqual(
+            report["graphics_guest_runtime_classification"],
+            "all_guest_framebuffer_api_calls_returned",
+        )
+        self.assertTrue(report["guest_framebuffer_api_calls_completed_observed"])
+        self.assertTrue(report["guest_framebuffer_runtime_completed"])
+        self.assertTrue(report["emulator_process_timeout_unverified"])
+        self.assertEqual(report["emulator_process_status"], "timeout_alive_unverified")
+        self.assertEqual(report["guest_exit_status"], "not_observed")
+        self.assertFalse(report["guest_gpu_frames_verified"])
+        self.assertFalse(report["commercial_gameplay_verified"])
+
+    def test_guest_failure_marker_is_valid_when_host_emulator_remains_alive(self):
+        self.smoke["status"] = "timeout_alive_unverified"
+        self.update(smoke=True, markers=(
+            *PROGRESS_MARKERS[:2], FAILURE_MARKERS[1],
+        ))
+        report = source_graphics_audit(self.root, MACHO, NRO)
+        self.assertEqual(
+            report["graphics_guest_runtime_classification"],
+            "explicit_guest_framebuffer_failure",
+        )
+        self.assertEqual(report["original_guest_failure_marker"], FAILURE_MARKERS[1])
+        self.assertTrue(report["emulator_process_timeout_unverified"])
+        self.assertEqual(report["guest_exit_status"], "not_observed")
+        self.assertFalse(report["guest_framebuffer_runtime_completed"])
+        self.assertFalse(report["guest_gpu_frames_verified"])
 
     def test_compiled_marker_bytes_without_original_log_do_not_pass(self):
         self.update(markers=())

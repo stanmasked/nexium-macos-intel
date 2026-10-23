@@ -108,7 +108,7 @@ def source_graphics_audit(
     report: Path, binary_sha: str, nro_sha: str, *,
     emit_progress_diagnostic: bool = False,
 ) -> dict:
-    """Verify exact original guest markers, in order, without copying raw logs."""
+    """Audit guest markers separately from the lifetime of the host emulator."""
     smoke = read_bounded_json(report / "smoke_result.json")
     if smoke.get("emulator_sha256") != binary_sha or smoke.get("nro_sha256") != nro_sha:
         raise ValueError("source-bound guest graphic identity mismatch")
@@ -138,7 +138,7 @@ def source_graphics_audit(
     expected = list(PROGRESS_MARKERS[:len(positive)])
     if emit_progress_diagnostic:
         diagnostic = {
-            "schema": "nexium-stage73-original-guest-progress/v1",
+            "schema": "nexium-stage73-original-guest-progress/v2",
             "original_guest_progress_markers": len(positive),
             "last_original_guest_marker": hits[-1] if hits else None,
             "first_marker_is_graphics_start": bool(hits and hits[0] == PROGRESS_MARKERS[0]),
@@ -146,7 +146,8 @@ def source_graphics_audit(
             "duplicate_marker_observed": len(hits) != len(set(hits)),
             "marker_sequence_exact": hits == positive + failure,
             "failure_marker_count": len(failure),
-            "guest_process_status": smoke["status"],
+            "emulator_process_status": smoke["status"],
+            "guest_exit_status_observed": False,
             "raw_logs_uploaded": False,
         }
         print("STAGE73_ORIGINAL_GUEST_PROGRESS_DIAGNOSTIC "
@@ -165,45 +166,49 @@ def source_graphics_audit(
         raise ValueError("original guest graphics markers in impossible order")
     if failure and PROGRESS_MARKERS[-1] in positive:
         raise ValueError("successful and failed terminal graphics states overlap")
-    if PROGRESS_MARKERS[-1] in positive and smoke.get("status") != "exited_zero_unverified":
-        raise ValueError("guest completion marker without successful process exit")
     status = smoke.get("status")
     if failure:
         name = failure[0]
         if len(positive) not in FAILURE_PREFIX_LENGTHS[name]:
             raise ValueError("guest framebuffer failure impossible at observed API stage")
-        if status != "exited_nonzero":
-            raise ValueError("original guest failure marker without nonzero process exit")
+        # These are guest-originated OutputDebugString markers. The smoke
+        # status belongs to the host emulator process and cannot veto or
+        # confirm the guest's framebuffer failure state.
         classified = "explicit_guest_framebuffer_failure"
     elif PROGRESS_MARKERS[-1] in positive:
-        if status != "exited_zero_unverified":
-            raise ValueError("original guest success marker without zero process exit")
+        # The last guest marker is emitted after framebufferClose and all
+        # framebuffer API calls. It does not prove GPU presentation or the
+        # guest's actual return status, and the emulator may remain alive.
         classified = "all_guest_framebuffer_api_calls_returned"
     elif status == "timeout_alive_unverified":
-        # This is diagnostic only. Never treat a partial prefix as success.
+        # The emulator is still alive and the guest emitted only a partial
+        # marker prefix. This is diagnostic only, never a rendering pass.
         classified = "partial_guest_progress_timeout_unverified"
     else:
-        raise ValueError("guest process exited without an explicit graphics terminal marker")
+        # The host emulator exited before the guest's terminal marker. Do not
+        # infer a guest exit code or turn incomplete evidence into a hard error.
+        classified = "partial_guest_progress_emulator_exited_without_terminal_marker"
+    api_calls_complete = PROGRESS_MARKERS[-1] in positive
+    emulator_status = status
     return {
-        "schema": "nexium-stage68-original-guest-framebuffer-markers/v1",
+        "schema": "nexium-stage68-original-guest-framebuffer-markers/v2",
         "original_libnx_graphics_guest_started": True,
         "original_guest_progress_markers": len(positive),
         "graphics_guest_runtime_classification": classified,
-        "guest_framebuffer_runtime_completed": (
-            classified == "all_guest_framebuffer_api_calls_returned"
+        "guest_framebuffer_runtime_completed": api_calls_complete,
+        "guest_framebuffer_api_calls_completed_observed": api_calls_complete,
+        "emulator_process_timeout_unverified": (
+            emulator_status == "timeout_alive_unverified"
         ),
-        "guest_runtime_timeout_unverified": (
-            classified == "partial_guest_progress_timeout_unverified"
-        ),
+        "guest_exit_status": "not_observed",
+        "emulator_process_status": emulator_status,
         "last_original_guest_marker": hits[-1],
         "original_guest_failure_marker": failure[0] if failure else None,
         "guest_framebuffer_created_observed":
             "STAGE67_GUEST_FRAMEBUFFER_CREATED" in positive,
         "guest_framebuffer_end_call_returned_observed":
             "STAGE67_GUEST_FRAME_B_PRESENTED_CALL_RETURNED" in positive,
-        "guest_framebuffer_api_loop_complete_observed":
-            PROGRESS_MARKERS[-1] in positive,
-        "graphics_guest_exit_status": smoke["status"],
+        "guest_framebuffer_api_loop_complete_observed": api_calls_complete,
         "guest_gpu_frames_verified": False,
         "commercial_gameplay_verified": False,
         "physical_controller_verified": False,
@@ -231,8 +236,9 @@ def run_graphics_guest(source: Path, binary: Path, nro: Path, report: Path) -> N
         )
     except subprocess.TimeoutExpired:
         raise ValueError("original graphics NRO smoke harness exceeded budget") from None
-    # Guest returns nonzero if framebuffer service is not yet implemented:
-    # that *is diagnostic data*, provided source_graphics_audit authenticates it.
+    # This child return code belongs to the smoke harness/host emulator, not
+    # to the guest NRO. Guest framebuffer failures are classified only from
+    # authenticated private guest markers in source_graphics_audit().
     if child.returncode not in (0, 2):
         raise ValueError("original graphics NRO smoke harness failed unexpectedly")
 

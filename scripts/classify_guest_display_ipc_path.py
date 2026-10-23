@@ -44,6 +44,13 @@ SERVICE_MANAGER_GET_SERVICE_HANDLE_REQUEST = re.compile(
     r'IPC request service="sm:" cmd=1\b'
 )
 SM_GET_SERVICE_HANDLE_EVENT = re.compile(r"SM::GetServiceHandle '([^']*)'")
+SM_RETURN_HANDLE_PATTERN = re.compile(r"SM: returning handle (0x[0-9a-fA-F]+) for service '([^']+)'")
+SESSION_IPC_REQUEST_PATTERN = re.compile(
+    r'IPC request service="([^"]+)" cmd=(\d+) session=(0x[0-9a-fA-F]+)\b'
+)
+SUBSESSION_PARENT_PATTERN = re.compile(
+    r"([A-Za-z][A-Za-z0-9]*) sub-session handle=(0x[0-9a-fA-F]+) parent_session=(0x[0-9a-fA-F]+)"
+)
 IPC_RESPONSE_PATTERN = re.compile(
     r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
     r"service=(sm:|vi:u|vi:m|vi:s|IApplicationDisplayService|IHOSBinderDriver|nvdrv(?::[ast])?) cmd=(\d+)"
@@ -206,13 +213,60 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                 continue
             yield request_match.start(), handle_match.start(), handle_match.group(1)
 
+    session_correlation_fields_observed = SESSION_IPC_REQUEST_PATTERN.search(data) is not None
+    session_correlation = {
+        "vi_service_handle_return_correlated": False if session_correlation_fields_observed else None,
+        "vi_request_session_correlated": False if session_correlation_fields_observed else None,
+        "display_subsession_parent_correlated": False if session_correlation_fields_observed else None,
+    }
+
     def find_expected_ancestry() -> tuple[int, int, int, int, str] | None:
-        # Logs can contain unrelated or repeated service-manager requests.
-        # Search for a complete ordered chain through whichever allowlisted VI
-        # service variant was actually requested.
+        # When session IDs are available, ordering alone is insufficient:
+        # correlate the SM-returned VI handle to the VI request, then require
+        # the returned display sub-session to name that same parent session.
+        if session_correlation_fields_observed:
+            for sm_request, vi_handle, vi_service in iter_vi_handle_requests():
+                returned = SM_RETURN_HANDLE_PATTERN.search(data, vi_handle)
+                if returned is None or returned.group(2) != vi_service:
+                    continue
+                next_request = SERVICE_MANAGER_ANY_REQUEST.search(data, vi_handle + 1)
+                if next_request is not None and next_request.start() < returned.start():
+                    continue
+                session_correlation["vi_service_handle_return_correlated"] = True
+                returned_handle = int(returned.group(1), 16)
+                vi_request_match = next(
+                    (
+                        match for match in SESSION_IPC_REQUEST_PATTERN.finditer(data, returned.end())
+                        if match.group(1) == vi_service
+                        and int(match.group(3), 16) == returned_handle
+                        and int(match.group(2)) in (0, 1, 2, 3)
+                    ),
+                    None,
+                )
+                if vi_request_match is None:
+                    continue
+                session_correlation["vi_request_session_correlated"] = True
+                display_subsession_match = next(
+                    (
+                        match for match in SUBSESSION_PARENT_PATTERN.finditer(
+                            data, vi_request_match.end()
+                        )
+                        if match.group(1) == "IApplicationDisplayService"
+                        and int(match.group(3), 16) == returned_handle
+                    ),
+                    None,
+                )
+                if display_subsession_match is None:
+                    continue
+                session_correlation["display_subsession_parent_correlated"] = True
+                return (
+                    sm_request, vi_handle, vi_request_match.start(),
+                    display_subsession_match.start(), vi_service,
+                )
+            return None
+
+        # Compatibility for older synthetic fixtures without session fields.
         for sm_request, vi_handle, vi_service in iter_vi_handle_requests():
-            # Only commands 0-3 are audited in the pinned dispatcher as returning
-            # IApplicationDisplayService. Other VI commands must not anchor ancestry.
             vi_request_match = re.search(
                 r'IPC request service="' + re.escape(vi_service) + r'" cmd=(?:0|1|2|3)\b',
                 data[vi_handle + 1:],
@@ -508,9 +562,13 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                 else:
                                     stage = "igbp_dequeue_retry_or_timeout_observed"
     return {
-        "schema": "nexium-stage73-display-ipc-path/v2",
+        "schema": "nexium-stage73-display-ipc-path/v3",
         "observed_stage": stage,
         "observed_vi_service_variant": observed_vi_service_variant,
+        "session_correlation_fields_observed": session_correlation_fields_observed,
+        "vi_service_handle_return_correlated": session_correlation["vi_service_handle_return_correlated"],
+        "vi_request_session_correlated": session_correlation["vi_request_session_correlated"],
+        "display_subsession_parent_correlated": session_correlation["display_subsession_parent_correlated"],
         "expected_vi_display_ancestry_observed": ancestry is not None,
         "expected_vi_u_display_ancestry_observed": (
             ancestry is not None and ancestry[4] == "vi:u"

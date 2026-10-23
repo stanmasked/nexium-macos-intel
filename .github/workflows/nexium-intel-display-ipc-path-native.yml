@@ -138,9 +138,32 @@ jobs:
           retention-days: 30
 
 
-  integrated-intel-guest-graphics:
+  private-archive-readiness:
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.prepare-public-framebuffer-nro.outputs.is_current == 'true' && needs.prepare-public-framebuffer-nro.outputs.native_required == 'true'
     needs: [prepare-public-framebuffer-nro]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      archive_ready: ${{ steps.guard.outputs.archive_ready }}
+    steps:
+      - name: Require verified private archive before creating raw capture
+        id: guard
+        env:
+          ARCHIVE_UPLOAD_VERIFIED: ${{ vars.NEXIUM_PRIVATE_ARCHIVE_UPLOAD_VERIFIED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$ARCHIVE_UPLOAD_VERIFIED" == "true" ]]; then
+            echo "archive_ready=true" >> "$GITHUB_OUTPUT"
+            echo "Private evidence archive path is marked verified."
+          else
+            echo "archive_ready=false" >> "$GITHUB_OUTPUT"
+            echo "Private Google Drive archive path is not verified; native capture is blocked before raw evidence is created."
+          fi
+
+  integrated-intel-guest-graphics:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.prepare-public-framebuffer-nro.outputs.is_current == 'true' && needs.prepare-public-framebuffer-nro.outputs.native_required == 'true' && needs.private-archive-readiness.outputs.archive_ready == 'true'
+    needs: [prepare-public-framebuffer-nro, private-archive-readiness]
     runs-on: macos-15-intel
     timeout-minutes: 110
     steps:

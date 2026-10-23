@@ -173,14 +173,16 @@ def compile_native_intel(source: Path, work_dir: Path, *,
         except (OSError, UnicodeError, json.JSONDecodeError):
             raise ValueError("scoped display IPC source-patch receipt malformed") from None
         if (
-            trace_receipt.get("schema") != "nexium-stage73-scoped-ipc-log-patch/v1"
+            trace_receipt.get("schema") != "nexium-stage73-scoped-ipc-session-correlation-patch/v2"
             or trace_receipt.get("upstream_commit") != PINNED_UPSTREAM_SHA
             or trace_receipt.get("source_relative_path") != "nexium-kernel/src/kernel/svc.rs"
             or trace_receipt.get("original_git_blob_sha1") != "d3996cb1fb0871733c9d3adc9d106acdfd333273"
             or not re.fullmatch(r"[0-9a-f]{40}", str(trace_receipt.get("patched_git_blob_sha1", "")))
-            or trace_receipt.get("exact_log_anchor_matches") != 1
-            or trace_receipt.get("trace_to_debug_replacements") != 1
-            or trace_receipt.get("only_ipc_request_log_level_changed") is not True
+            or trace_receipt.get("exact_log_anchor_matches") != 4
+            or trace_receipt.get("exact_source_transform_count") != 8
+            or trace_receipt.get("trace_to_debug_replacements") != 2
+            or trace_receipt.get("session_correlation_fields_added") is not True
+            or trace_receipt.get("only_diagnostic_logging_changed") is not True
             or trace_receipt.get("guest_or_service_behavior_changed") is not False
             or trace_receipt.get("raw_logs_uploaded") is not False
             or trace_receipt.get("main_merge_approved") is not False
@@ -200,7 +202,7 @@ def compile_native_intel(source: Path, work_dir: Path, *,
         trace_report = {
             "display_ipc_trace_patch_applied": True,
             "display_ipc_trace_patch_source_blob_sha1": trace_receipt["patched_git_blob_sha1"],
-            "display_ipc_trace_patch_exact_single_anchor": True,
+            "display_ipc_trace_patch_exact_anchors_verified": True,
             "display_ipc_trace_patch_final_source_bound": True,
         }
     elif trace_receipt_path.exists() or trace_receipt_path.is_symlink():

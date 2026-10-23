@@ -171,6 +171,62 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["expected_vi_display_ancestry_observed"])
         self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
 
+    def test_session_handles_correlate_vi_request_to_display_subsession(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=1 in_data=0 is_domain=false',
+            "SM::GetServiceHandle 'vi:m' data_off=0x20",
+            "SM: returning handle 0x10 for service 'vi:m'",
+            'IPC request service="vi:m" cmd=0 session=0x10 in_data=0 is_domain=false',
+            "→ IApplicationDisplayService sub-session handle=0x20 parent_session=0x10",
+            'IPC request service="IApplicationDisplayService" cmd=100 session=0x20 in_data=0 is_domain=false',
+            'IPC request service="IApplicationDisplayService" cmd=2020 session=0x20 in_data=0 is_domain=false',
+            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) service=IApplicationDisplayService cmd=2020 session=0x20 rc=0x00000000 response_len=12 response_first64=53,46,43,4f,00,00,00,00,00,00,00,00 in_data_first32=",
+        ))
+        result = self.inspect()
+        self.assertTrue(result["session_correlation_fields_observed"])
+        self.assertTrue(result["vi_service_handle_return_correlated"])
+        self.assertTrue(result["vi_request_session_correlated"])
+        self.assertTrue(result["display_subsession_parent_correlated"])
+        self.assertTrue(result["expected_vi_display_ancestry_observed"])
+        self.assertEqual(result["observed_vi_service_variant"], "vi_m")
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("0x10", json.dumps(result))
+        self.assertNotIn("0x20", json.dumps(result))
+
+    def test_mismatched_vi_session_handle_does_not_anchor_display_ancestry(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=1 in_data=0 is_domain=false',
+            "SM::GetServiceHandle 'vi:m' data_off=0x20",
+            "SM: returning handle 0x10 for service 'vi:m'",
+            'IPC request service="vi:m" cmd=0 session=0x11 in_data=0 is_domain=false',
+            "→ IApplicationDisplayService sub-session handle=0x20 parent_session=0x11",
+            'IPC request service="IApplicationDisplayService" cmd=100 session=0x20 in_data=0 is_domain=false',
+            'IGBP::RequestBuffer binder=7 slot=0',
+        ))
+        result = self.inspect()
+        self.assertTrue(result["session_correlation_fields_observed"])
+        self.assertTrue(result["vi_service_handle_return_correlated"])
+        self.assertFalse(result["vi_request_session_correlated"])
+        self.assertFalse(result["display_subsession_parent_correlated"])
+        self.assertFalse(result["expected_vi_display_ancestry_observed"])
+        self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
+        self.assertEqual(result["observed_stage"], "ipc_sequence_inconsistent_or_cross_path")
+
+    def test_subsession_parent_mismatch_is_not_accepted_as_vi_ancestry(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=1 in_data=0 is_domain=false',
+            "SM::GetServiceHandle 'vi:s' data_off=0x20",
+            "SM: returning handle 0x30 for service 'vi:s'",
+            'IPC request service="vi:s" cmd=2 session=0x30 in_data=0 is_domain=false',
+            "→ IApplicationDisplayService sub-session handle=0x40 parent_session=0x99",
+            'IPC request service="IApplicationDisplayService" cmd=100 session=0x40 in_data=0 is_domain=false',
+        ))
+        result = self.inspect()
+        self.assertTrue(result["vi_request_session_correlated"])
+        self.assertFalse(result["display_subsession_parent_correlated"])
+        self.assertFalse(result["expected_vi_display_ancestry_observed"])
+        self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
+
     def test_last_ipc_request_summary_recognizes_vi_m(self):
         result = last_ipc_request_summary("\n".join((
             'IPC request service="vi:m" cmd=2 in_data=0 is_domain=false',

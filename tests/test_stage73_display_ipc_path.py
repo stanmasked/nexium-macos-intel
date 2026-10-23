@@ -471,7 +471,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
 
 
 class Stage73WorkflowTriggerTests(unittest.TestCase):
-    def test_classifier_triggers_on_ready_for_review_but_still_gates_drafts(self):
+    def test_classifier_runs_on_draft_prs_and_gates_superseded_heads(self):
         workflow_path = (
             Path(__file__).resolve().parents[1]
             / ".github" / "workflows"
@@ -482,7 +482,11 @@ class Stage73WorkflowTriggerTests(unittest.TestCase):
             workflow,
             r"(?m)^    types: \[opened, synchronize, reopened, ready_for_review\]$",
         )
-        self.assertIn("github.event.pull_request.draft == false", workflow)
+        self.assertNotIn("github.event.pull_request.draft == false", workflow)
+        self.assertIn(
+            "github.head_ref == 'work/intel-stage73-display-ipc-path-final'",
+            workflow,
+        )
         self.assertIn("needs.current-head.outputs.is_current == 'true'", workflow)
 
 

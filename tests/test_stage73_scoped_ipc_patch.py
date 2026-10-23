@@ -115,6 +115,18 @@ class Stage73ScopedIpcPatchTests(unittest.TestCase):
             'base_env.get("NEXIUM_DISPLAY_IPC_TRACE") == "1"',
             builder,
         )
+        native_workflow = (
+            repo_root / ".github" / "workflows"
+            / "nexium-intel-display-ipc-path-native.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("paths-ignore:", native_workflow)
+        for ignored_path in (
+            ".github/workflows/nexium-intel-display-ipc-path-diagnostics.yml",
+            ".github/workflows/nexium-intel-display-ipc-path-native.yml",
+            "tests/test_stage73_display_ipc_path.py",
+            "tests/test_stage73_scoped_ipc_patch.py",
+        ):
+            self.assertIn(f"- '{ignored_path}'", native_workflow)
     def test_receipt_does_not_claim_runtime_or_gpu_success(self):
         report = self.patch()
         self.assertFalse(report.get("guest_gpu_frames_verified", False))

@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   current-head:
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && github.event.pull_request.draft == false
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
@@ -38,7 +38,7 @@ jobs:
 
   guest-display-ipc-classification:
     needs: current-head
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && github.event.pull_request.draft == false && needs.current-head.outputs.is_current == 'true'
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

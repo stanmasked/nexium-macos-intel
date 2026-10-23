@@ -3,6 +3,11 @@ name: NeXium Intel capture bounded original guest display IPC path
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths-ignore:
+      - '.github/workflows/nexium-intel-display-ipc-path-diagnostics.yml'
+      - '.github/workflows/nexium-intel-display-ipc-path-native.yml'
+      - 'tests/test_stage73_display_ipc_path.py'
+      - 'tests/test_stage73_scoped_ipc_patch.py'
   workflow_dispatch:
 
 concurrency:

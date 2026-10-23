@@ -12,7 +12,7 @@ from urllib.parse import urlsplit, parse_qs
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from seal_private_capture import build_manifest, write_manifest
 from archive_private_capture_drive import (
-    DriveArchiveRejected, upload_archive, upload_one, main, HOST,
+    DriveArchiveRejected, upload_archive, upload_one, read_sealed_file, main, HOST,
 )
 
 PARENT = "privateParent123456"
@@ -152,6 +152,66 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         with self.assertRaises(DriveArchiveRejected):
             upload_one(t, "folder00000001", "synthetic.log", b"fake", "a" * 64)
         self.assertEqual(t.calls, [])
+
+    def test_descriptor_read_rejects_swapped_log_symlink(self):
+        import os
+        data = self.log.read_bytes()
+        other = self.root / "outside-private-synthetic.txt"
+        other.write_bytes(data)
+        self.log.unlink()
+        self.log.symlink_to(other)
+        with self.assertRaises(DriveArchiveRejected):
+            read_sealed_file(self.report, "data-root/logs/nexium-synthetic.log",
+                             len(data), hashlib.sha256(data).hexdigest())
+
+    def test_descriptor_read_rejects_swapped_parent_symlink(self):
+        old = self.report / "data-root/logs"
+        backup = self.root / "original-synthetic-logs"
+        data = self.log.read_bytes()
+        old.rename(backup)
+        old.symlink_to(backup, target_is_directory=True)
+        with self.assertRaises(DriveArchiveRejected):
+            read_sealed_file(self.report, "data-root/logs/nexium-synthetic.log",
+                             len(data), hashlib.sha256(data).hexdigest())
+
+    def test_descriptor_read_rejects_hardlink(self):
+        import os
+        outside = self.root / "second-hardlink"
+        os.link(self.log, outside)
+        data = self.log.read_bytes()
+        with self.assertRaises(DriveArchiveRejected):
+            read_sealed_file(self.report, "data-root/logs/nexium-synthetic.log",
+                             len(data), hashlib.sha256(data).hexdigest())
+
+    def test_descriptor_read_checks_exact_size_and_digest(self):
+        data = self.log.read_bytes()
+        path = "data-root/logs/nexium-synthetic.log"
+        self.assertEqual(read_sealed_file(self.report, path, len(data),
+                                         hashlib.sha256(data).hexdigest()), data)
+        with self.assertRaises(DriveArchiveRejected):
+            read_sealed_file(self.report, path, len(data), "f" * 64)
+        with self.assertRaises(DriveArchiveRejected):
+            read_sealed_file(self.report, path, len(data) + 1,
+                             hashlib.sha256(data).hexdigest())
+
+    def test_traversal_never_reads_local_file(self):
+        with self.assertRaises(DriveArchiveRejected):
+            read_sealed_file(self.report, "../outside", 1, "f" * 64)
+
+    def test_github_actions_env_blocks_even_when_armed(self):
+        from unittest.mock import patch
+        with patch.dict("os.environ", {
+            "GITHUB_ACTIONS": "true",
+            "NEXIUM_PRIVATE_ARCHIVE_ARMED": "true",
+            "NEXIUM_DRIVE_ACCESS_TOKEN": "synthetic-token",
+        }):
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                status = main(["--report", str(self.report),
+                               "--manifest", str(self.manifest),
+                               "--parent-id", PARENT, "--run-id", "123"])
+            self.assertEqual(status, 1)
+            self.assertEqual(stderr.getvalue(), "STAGE73_PRIVATE_DRIVE_ARCHIVE_BLOCKED\n")
 
     def test_private_server_resumable_url_only(self):
         t = FakeTransport()

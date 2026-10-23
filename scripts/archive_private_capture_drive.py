@@ -11,10 +11,11 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 from urllib.parse import urlsplit, urlencode
 
-from seal_private_capture import verify_manifest, MAX_FILE_BYTES, ArchiveRejected
+from seal_private_capture import verify_manifest, MAX_FILE_BYTES, ArchiveRejected, _relative
 
 HOST = "www.googleapis.com"
 DRIVE_ID = re.compile(r"[A-Za-z0-9_-]{10,128}\Z")
@@ -183,6 +184,57 @@ def upload_one(transport, folder_id, name, payload, digest):
     return file_id
 
 
+
+def read_sealed_file(root, relative, expected_size, digest):
+    """Read a manifest-bound file using no-follow directory/file descriptors.
+
+    Resolve each child via dir_fd, so replacing a parent with a symlink
+    between the manifest scan and upload cannot redirect the read.
+    """
+    if (not _relative(relative) or type(expected_size) is not int
+            or not 0 <= expected_size <= MAX_FILE_BYTES
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+        raise DriveArchiveRejected("invalid_sealed_entry")
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    opened = []
+    try:
+        opened.append(os.open(root, directory_flags))
+        for component in relative.split("/")[:-1]:
+            opened.append(os.open(component, directory_flags, dir_fd=opened[-1]))
+        file_fd = os.open(relative.split("/")[-1], file_flags, dir_fd=opened[-1])
+        opened.append(file_fd)
+        stat_before = os.fstat(file_fd)
+        if (not stat.S_ISREG(stat_before.st_mode) or stat_before.st_nlink != 1
+                or stat_before.st_size != expected_size):
+            raise DriveArchiveRejected("unsafe_local_file")
+        chunks = []
+        size = 0
+        while True:
+            block = os.read(file_fd, min(1048576, expected_size - size + 1))
+            if not block:
+                break
+            size += len(block)
+            if size > expected_size:
+                raise DriveArchiveRejected("local_file_changed")
+            chunks.append(block)
+        stat_after = os.fstat(file_fd)
+        if (stat_before.st_size != stat_after.st_size
+                or stat_before.st_mtime_ns != stat_after.st_mtime_ns
+                or stat_before.st_ctime_ns != stat_after.st_ctime_ns):
+            raise DriveArchiveRejected("local_file_changed")
+        data = b"".join(chunks)
+        if size != expected_size or hashlib.sha256(data).hexdigest() != digest:
+            raise DriveArchiveRejected("local_file_changed")
+        return data
+    except OSError as error:
+        raise DriveArchiveRejected("local_file_unsafe_or_missing") from error
+    finally:
+        for descriptor in reversed(opened):
+            os.close(descriptor)
+
+
 def upload_archive(report, manifest_path, parent_id, run_id, transport):
     if not RUN_ID.fullmatch(run_id):
         raise DriveArchiveRejected("invalid_run_id")
@@ -203,11 +255,8 @@ def upload_archive(report, manifest_path, parent_id, run_id, transport):
         # No arbitrary traversal: the locally sealed manifest has already been
         # validated; repeat it to catch changes between reads.
         verify_manifest(report, manifest_path)
-        source = report / entry["path"]
-        if source.is_symlink() or not source.is_file():
-            raise DriveArchiveRejected("invalid_local_file")
-        data = source.read_bytes()
-        name = str(index).zfill(3) + "-" + source.name
+        data = read_sealed_file(report, entry["path"], entry["bytes"], entry["sha256"])
+        name = str(index).zfill(3) + "-" + entry["path"].rsplit("/", 1)[-1]
         upload_one(transport, folder_id, name, data, entry["sha256"])
         count += 1
     verify_manifest(report, manifest_path)
@@ -228,6 +277,11 @@ def main(argv=None):
     parser.add_argument("--run-id", required=True)
     args = parser.parse_args(argv)
     try:
+        # A code-controlled env toggle alone is not a trust boundary. While
+        # the uploader is experimental, forbid all GitHub-hosted execution.
+        # Run only from an independently reviewed, isolated private machine.
+        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+            raise DriveArchiveRejected("github_runner_forbidden")
         if os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true":
             raise DriveArchiveRejected("uploader_not_armed")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))

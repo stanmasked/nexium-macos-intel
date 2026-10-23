@@ -40,3 +40,12 @@ shared=false. A shared or unknown ACL blocks the upload, even if checksums
 would match. This prototype is intended for private My Drive contexts;
 service-account/shared-folder configurations need an independently reviewed
 privacy design rather than bypassing this check.
+
+Hardening checkpoint: the uploader now reads each capture entry through
+directory-relative O_NOFOLLOW descriptors and checks inode regularity,
+hardlink count, size, timestamps and digest before any upload. This closes
+path/symlink switching between the seal scan and the network operation.
+The experimental CLI explicitly blocks execution under GITHUB_ACTIONS=true,
+even with the arm switch set; CI runs only the synthetic mock transport tests.
+A future verified, protected deployment requires a separately reviewed release
+workflow, not a flag change on this Draft PR.

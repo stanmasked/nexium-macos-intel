@@ -147,7 +147,8 @@ class Stage73ScopedIpcPatchTests(unittest.TestCase):
         self.assertIn('git merge-base --is-ancestor "$last_successful_sha" "$EXPECTED_HEAD_SHA"', native_workflow)
         self.assertIn('git diff --name-only "$last_successful_sha" "$EXPECTED_HEAD_SHA"', native_workflow)
         self.assertIn("needs.prepare-public-framebuffer-nro.outputs.native_required == 'true'", native_workflow)
-        self.assertIn("vars.NEXIUM_PRIVATE_ARCHIVE_UPLOAD_VERIFIED", native_workflow)
+        self.assertIn('echo "archive_ready=false" >> "$GITHUB_OUTPUT"', native_workflow)
+        self.assertIn("refusing to create a new raw capture", native_workflow)
         self.assertIn("needs.private-archive-readiness.outputs.archive_ready == 'true'", native_workflow)
         for scoped_path in (
             ".github/workflows/nexium-intel-display-ipc-path-diagnostics.yml",

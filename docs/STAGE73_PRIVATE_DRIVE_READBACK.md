@@ -49,3 +49,12 @@ The experimental CLI explicitly blocks execution under GITHUB_ACTIONS=true,
 even with the arm switch set; CI runs only the synthetic mock transport tests.
 A future verified, protected deployment requires a separately reviewed release
 workflow, not a flag change on this Draft PR.
+
+The upload command additionally requires --receipt-path, pointing to an
+existing secure directory outside the whole disposable guest work tree.
+After remote byte read-back, it writes an atomic 0600 PRIVATE handoff record,
+never to stdout. That record contains the exact remote folder ID and original
+manifest SHA-256 for the independent persistence auditor. Do not store this
+receipt in a transient runner directory; place a copy in the project's
+private 00_Manifest_and_SHA256 Drive area by an independently trusted
+archival process. An absent or unpersisted receipt is NOT backup proof.

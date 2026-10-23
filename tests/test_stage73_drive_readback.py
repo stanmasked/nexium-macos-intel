@@ -12,7 +12,8 @@ from urllib.parse import urlsplit, parse_qs
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from seal_private_capture import build_manifest, write_manifest
 from archive_private_capture_drive import (
-    DriveArchiveRejected, upload_archive, upload_one, read_sealed_file, main, HOST,
+    DriveArchiveRejected, upload_archive, upload_one, read_sealed_file,
+    read_private_manifest_bytes, write_private_handoff, main, HOST,
 )
 
 PARENT = "privateParent123456"
@@ -212,6 +213,51 @@ class Stage73DriveReadbackTests(unittest.TestCase):
                                "--parent-id", PARENT, "--run-id", "123"])
             self.assertEqual(status, 1)
             self.assertEqual(stderr.getvalue(), "STAGE73_PRIVATE_DRIVE_ARCHIVE_BLOCKED\n")
+
+    def test_private_handoff_outside_disposable_runner(self):
+        result = upload_archive(self.report, self.manifest, PARENT, "123", FakeTransport())
+        # Separate from the disposable work tree rooted at self.root.
+        with tempfile.TemporaryDirectory() as private_dir:
+            path = Path(private_dir) / "handoff.json"
+            write_private_handoff(path, self.report, PARENT, "123", COMMIT, result)
+            record = json.loads(path.read_text())
+            self.assertEqual(record["manifest_sha256"], result["private_manifest_sha256"])
+            self.assertEqual(record["run_folder_id"], result["private_run_folder_id"])
+            self.assertFalse(record["independent_persistence_verified"])
+            self.assertFalse(record["retention_policy_verified"])
+            self.assertFalse(record["guest_gpu_frames_verified"])
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_private_handoff_cannot_lie_inside_disposable_tree(self):
+        result = upload_archive(self.report, self.manifest, PARENT, "123", FakeTransport())
+        with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_private_handoff_path"):
+            write_private_handoff(self.root / "handoff.json", self.report,
+                                  PARENT, "123", COMMIT, result)
+
+    def test_private_handoff_cannot_overwrite(self):
+        result = upload_archive(self.report, self.manifest, PARENT, "123", FakeTransport())
+        with tempfile.TemporaryDirectory() as private_dir:
+            path = Path(private_dir) / "handoff.json"
+            path.write_text("existing private archive receipt")
+            with self.assertRaises(DriveArchiveRejected):
+                write_private_handoff(path, self.report, PARENT, "123", COMMIT, result)
+            self.assertEqual(path.read_text(), "existing private archive receipt")
+
+    def test_private_manifest_reader_uses_sealed_bytes(self):
+        manifest = json.loads(self.manifest.read_text())
+        self.assertEqual(read_private_manifest_bytes(self.manifest, manifest),
+                         self.manifest.read_bytes())
+        with self.assertRaises(DriveArchiveRejected):
+            read_private_manifest_bytes(self.manifest, {"source_commit": "forged"})
+
+    def test_private_manifest_reader_refuses_link(self):
+        manifest = json.loads(self.manifest.read_text())
+        outside = self.root / "outside-manifest"
+        outside.write_bytes(self.manifest.read_bytes())
+        self.manifest.unlink()
+        self.manifest.symlink_to(outside)
+        with self.assertRaises(DriveArchiveRejected):
+            read_private_manifest_bytes(self.manifest, manifest)
 
     def test_private_server_resumable_url_only(self):
         t = FakeTransport()

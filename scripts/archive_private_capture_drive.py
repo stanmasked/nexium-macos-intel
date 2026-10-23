@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import tempfile
 from urllib.parse import urlsplit, urlencode
 
 from seal_private_capture import verify_manifest, MAX_FILE_BYTES, ArchiveRejected, _relative
@@ -235,6 +236,82 @@ def read_sealed_file(root, relative, expected_size, digest):
             os.close(descriptor)
 
 
+
+def read_private_manifest_bytes(path, expected):
+    """Read the sealed private manifest without following a swapped symlink."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+        try:
+            before = os.fstat(fd)
+            if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                    or before.st_size > 24576):
+                raise DriveArchiveRejected("unsafe_private_manifest")
+            payload = os.read(fd, 24577)
+            after = os.fstat(fd)
+            if (len(payload) != before.st_size or len(payload) > 24576
+                    or before.st_mtime_ns != after.st_mtime_ns
+                    or before.st_ctime_ns != after.st_ctime_ns):
+                raise DriveArchiveRejected("changed_private_manifest")
+        finally:
+            os.close(fd)
+    except OSError as error:
+        raise DriveArchiveRejected("unreadable_private_manifest") from error
+    try:
+        parsed = json.loads(payload)
+    except (UnicodeError, ValueError) as error:
+        raise DriveArchiveRejected("invalid_private_manifest") from error
+    if parsed != expected:
+        raise DriveArchiveRejected("changed_private_manifest")
+    return payload
+
+
+def write_private_handoff(path, report, parent_id, run_id, commit, upload_result):
+    """Store PRIVATE receipt outside the entire disposable guest work tree."""
+    path = Path(path)
+    work_root = report.parent.resolve()
+    resolved = path.resolve()
+    if (resolved == work_root or work_root in resolved.parents
+            or path.exists() or path.is_symlink()
+            or not path.parent.is_dir() or path.parent.is_symlink()):
+        raise DriveArchiveRejected("unsafe_private_handoff_path")
+    folder = upload_result.get("private_run_folder_id")
+    manifest_sha = upload_result.get("private_manifest_sha256")
+    if (not isinstance(folder, str) or not DRIVE_ID.fullmatch(folder)
+            or not isinstance(manifest_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha)
+            or upload_result.get("readback_verified") is not True
+            or upload_result.get("retention_verified") is not False):
+        raise DriveArchiveRejected("untrusted_private_handoff")
+    receipt = {
+        "schema": "nexium-stage73-private-drive-handoff/v1",
+        "privacy": "private",
+        "source_commit": commit,
+        "run_id": run_id,
+        "parent_id": parent_id,
+        "run_folder_id": folder,
+        "manifest_sha256": manifest_sha,
+        "remote_readback_verified": True,
+        "independent_persistence_verified": False,
+        "retention_policy_verified": False,
+        "guest_gpu_frames_verified": False,
+    }
+    descriptor, tmp = tempfile.mkstemp(prefix=".stage73-private-", dir=path.parent)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as out:
+            json.dump(receipt, out, sort_keys=True, separators=(",", ":"))
+            out.write("\n")
+            out.flush()
+            os.fsync(out.fileno())
+        if path.exists() or path.is_symlink():
+            raise DriveArchiveRejected("private_handoff_collision")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
 def upload_archive(report, manifest_path, parent_id, run_id, transport):
     if not RUN_ID.fullmatch(run_id):
         raise DriveArchiveRejected("invalid_run_id")
@@ -260,13 +337,18 @@ def upload_archive(report, manifest_path, parent_id, run_id, transport):
         upload_one(transport, folder_id, name, data, entry["sha256"])
         count += 1
     verify_manifest(report, manifest_path)
-    raw = manifest_path.read_bytes()
+    raw = read_private_manifest_bytes(manifest_path, manifest)
+    manifest_sha = hashlib.sha256(raw).hexdigest()
     upload_one(transport, folder_id, "stage73-private-manifest.json",
-               raw, hashlib.sha256(raw).hexdigest())
+               raw, manifest_sha)
     # Remote retention/access policy must be independently verified; do not
     # set archive_ready or remote_retention_verified here.
     return {"readback_verified": True, "retention_verified": False,
-            "uploaded_files": count + 1}
+            "uploaded_files": count + 1,
+            # These values MUST only be written to an independently persisted
+            # private handoff receipt; never print the result object.
+            "private_run_folder_id": folder_id,
+            "private_manifest_sha256": manifest_sha}
 
 
 def main(argv=None):
@@ -275,6 +357,7 @@ def main(argv=None):
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--parent-id", required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--receipt-path", type=Path)
     args = parser.parse_args(argv)
     try:
         # A code-controlled env toggle alone is not a trust boundary. While
@@ -284,9 +367,14 @@ def main(argv=None):
             raise DriveArchiveRejected("github_runner_forbidden")
         if os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true":
             raise DriveArchiveRejected("uploader_not_armed")
+        if args.receipt_path is None:
+            raise DriveArchiveRejected("private_handoff_required")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))
         result = upload_archive(args.report, args.manifest,
                                 args.parent_id, args.run_id, transport)
+        manifest_data = json.loads(args.manifest.read_text(encoding="utf-8"))
+        write_private_handoff(args.receipt_path, args.report, args.parent_id,
+                              args.run_id, manifest_data["source_commit"], result)
         if result["retention_verified"] is not False:
             raise DriveArchiveRejected("retention_claim_invalid")
         print("STAGE73_REMOTE_SHA256_READBACK_VERIFIED_RETENTION_UNVERIFIED")

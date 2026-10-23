@@ -27,7 +27,7 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
         self.backup = self.a / "anchor.json"
         self.reference = self.b / "digest.json"
         self.transport = PersistentFakeTransport()
-        self.args = (self.transport, PARENT, RECEIPTS, "91234",
+        self.args = (self.transport, PARENT, RECEIPTS, "123",
                      COMMIT, self.backup, self.reference)
 
     def test_synthetic_full_roundtrip_after_runner_expiry(self):
@@ -72,14 +72,14 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
         reference = self.a / "reference.json"
         with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_synthetic_backup_paths"):
             run_synthetic_rehearsal(
-                self.transport, PARENT, RECEIPTS, "91234",
+                self.transport, PARENT, RECEIPTS, "123",
                 COMMIT, self.backup, reference)
         self.assertFalse(self.transport.calls)
 
     def test_bad_parent_identity_rejected_before_network(self):
         with self.assertRaisesRegex(DriveArchiveRejected, "invalid_synthetic_rehearsal_inputs"):
             run_synthetic_rehearsal(
-                self.transport, PARENT, PARENT, "91234",
+                self.transport, PARENT, PARENT, "123",
                 COMMIT, self.backup, self.reference)
         self.assertFalse(self.transport.calls)
 
@@ -102,7 +102,7 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
         opts = [
             "--capture-parent-id", PARENT,
             "--receipt-parent-id", RECEIPTS,
-            "--run-id", "91234", "--source-commit", COMMIT,
+            "--run-id", "123", "--source-commit", COMMIT,
             "--backup", str(self.backup), "--reference", str(self.reference),
         ]
         with patch.dict(os.environ, {"GITHUB_ACTIONS": "true",

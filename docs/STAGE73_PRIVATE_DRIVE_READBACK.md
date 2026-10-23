@@ -120,3 +120,12 @@ NOT considered My Drive root. The preflight now requires an explicit parent
 list and verifies an empty list against Google Drive's reserved root alias
 and owner-only ACL. A forged terminal node, hidden parent field or shared
 root fails before remote POST. This blocks truncated ACL-chain inspection.
+
+
+Real Drive compatibility correction: direct metadata inspection of the
+actual My Drive root showed that it can omit its parents field entirely.
+Missing parents therefore enters the root alias identity and ACL validation,
+rather than unconditionally aborting. Only the actual root returned through
+the reserved files/root alias may end the walk; missing parents on any
+non-root ancestor fail closed. A mock now reproduces the omitted parents
+field of a real root.

@@ -118,9 +118,10 @@ def check_private_parent_chain(transport, folder_id, *, writable):
         # Authenticate the terminal node against the API's special root
         # alias before allowing the ancestry walk to finish.
         parents = item.get("parents")
-        if parents is None:
-            raise DriveArchiveRejected("remote_parent_metadata_missing")
-        if not isinstance(parents, list) or len(parents) > 1:
+        # Google Drive omits parents for the ACTUAL My Drive root. A missing
+        # parent on every other node must still fail against the root alias.
+        if parents is not None and (not isinstance(parents, list)
+                                    or len(parents) > 1):
             raise DriveArchiveRejected("remote_parent_ambiguous")
         if not parents:
             root_fields = "id,mimeType,trashed,shared,driveId,permissions(type,role)"

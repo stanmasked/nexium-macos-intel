@@ -73,7 +73,7 @@ IGBP_QUEUE_BUFFER_PATTERN = re.compile(r"IGBP::QueueBuffer binder=(\d+)\b")
 # (service, session, command). Do not attribute another session's first reply
 # to the latest request merely because its service and command match.
 # None represents an *unscoped* legacy log, never a wildcard.
-IPC_LINE_SESSION_PATTERN = re.compile(r"\\bsession=(0x[0-9a-fA-F]+)\\b")
+IPC_LINE_SESSION_PATTERN = re.compile(r"\bsession=(0x[0-9a-fA-F]+)\b")
 
 
 def last_ipc_request_summary(data: str) -> dict:

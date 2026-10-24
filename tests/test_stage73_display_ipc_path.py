@@ -648,17 +648,22 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertNotIn("0x30", json.dumps(result))
         self.assertNotIn("256", json.dumps(result))
 
-    def test_other_session_binder_transaction_does_not_make_connect_ambiguous(self):
+    def test_interleaved_other_session_binder_transaction_makes_connect_ambiguous(self):
         self.set_scoped_window_path()
         marker = 'IPC request service="IHOSBinderDriver" cmd=0 session=0x30 in_data=0'
         self.data = self.data.replace(
             marker, marker + '\nIPC request service="IHOSBinderDriver" '
             'cmd=3 session=0x31 in_data=0', 1)
         result = self.inspect()
-        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertEqual(
+            result["observed_stage"],
+            "binder_transaction_igbp_connect_correlation_ambiguous",
+        )
         self.assertTrue(result["binder_transaction_session_correlated"])
         self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("0x30", json.dumps(result))
         self.assertNotIn("0x31", json.dumps(result))
+        self.assertNotIn("256", json.dumps(result))
 
     def test_same_binder_reconnect_before_request_buffer_is_ambiguous(self):
         self.set_scoped_window_path()

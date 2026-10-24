@@ -702,26 +702,17 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                     if connect_match is None:
                         stage = "binder_transact_igbp_connect_not_observed"
                     else:
-                        # The debug log has no Binder transaction/request ID.
-                        # If another transaction on the same Binder session
-                        # starts before Connect, do not attribute that Connect
-                        # to the first transaction by order alone.
-                        if binder_session is None:
-                            interleaved_binder_transaction = next(
-                                binder_transaction_pattern.finditer(
-                                    data, binder_transaction.end(),
-                                    connect_match.start()),
-                                None,
-                            )
-                        else:
-                            interleaved_binder_transaction = next((
-                                match for match in SESSION_IPC_REQUEST_PATTERN.finditer(
-                                    data, binder_transaction.end(),
-                                    connect_match.start())
-                                if match.group(1) == "IHOSBinderDriver"
-                                and int(match.group(2)) in (0, 3)
-                                and int(match.group(3), 16) == binder_session
-                            ), None)
+                        # The debug log has no Binder transaction/request ID,
+                        # and Connect has no session field. Any intervening Binder
+                        # transaction (including one from another session) can
+                        # own the next Connect, so ordering alone cannot establish
+                        # attribution. Fail closed rather than borrowing it.
+                        interleaved_binder_transaction = next(
+                            binder_transaction_pattern.finditer(
+                                data, binder_transaction.end(),
+                                connect_match.start()),
+                            None,
+                        )
                         if interleaved_binder_transaction is not None:
                             stage = "binder_transaction_igbp_connect_correlation_ambiguous"
                         else:

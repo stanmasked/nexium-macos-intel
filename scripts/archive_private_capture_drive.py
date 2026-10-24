@@ -207,7 +207,11 @@ def create_run_folder(transport, parent, run_id, commit):
     data, _ = json_response(
         transport, "POST",
         "/drive/v3/files?" + urlencode({
-            "fields": "id,name,mimeType,trashed,parents,shared,driveId,permissions(type,role)",
+            # Only the generated ID is needed from a create response. Drive
+            # may omit ACL and writable metadata in the POST response; the
+            # independently fetched folder GET below is the mandatory,
+            # fail-closed privacy and placement authorization point.
+            "fields": "id",
             "supportsAllDrives": "true",
         }),
         body=json.dumps({
@@ -217,13 +221,9 @@ def create_run_folder(transport, parent, run_id, commit):
         headers={"Content-Type": "application/json"},
     )
     folder_id = data.get("id")
-    if (not isinstance(folder_id, str) or not DRIVE_ID.fullmatch(folder_id)
-            or data.get("name") != name or data.get("parents") != [parent]
-            or data.get("mimeType") != "application/vnd.google-apps.folder"
-            or data.get("trashed") is not False or data.get("shared") is not False):
+    if not isinstance(folder_id, str) or not DRIVE_ID.fullmatch(folder_id):
         raise DriveArchiveRejected("folder_creation_unverified")
-    require_owner_only_acl(data)
-    # The create response can be stale or differ from the effective ACL.
+    # The create response can be partial or differ from the effective ACL.
     # Re-fetch the newly created folder and its entire private parent chain
     # BEFORE beginning any payload upload. This is still a point-in-time
     # safety check, not an atomic ACL lock or retention guarantee.

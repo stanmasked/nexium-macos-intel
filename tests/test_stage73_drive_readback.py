@@ -67,6 +67,9 @@ class FakeTransport:
         self.concurrent_capture_duplicate_after_post = False
         self.concurrent_receipt_duplicate_after_upload = False
         self.invalid_name_listing_entry = False
+        self.folder_post_response_id_only = False
+        self.folder_post_response_bad_id = False
+        self.created_folder_readback_permissions_missing = False
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -142,6 +145,10 @@ class FakeTransport:
             self.sequence += 1
             folder_id = "folder" + str(self.sequence).zfill(8)
             self.created_folders[folder_id] = dict(item)
+            if self.folder_post_response_bad_id:
+                return 200, {}, json.dumps({"id": "!"}).encode()
+            if self.folder_post_response_id_only:
+                return 200, {}, json.dumps({"id": folder_id}).encode()
             return 200, {}, json.dumps({"id": folder_id, **item,
                                         "trashed": False, "shared": self.shared_capture,
                                         "permissions": [{"type": "user", "role": "owner"}]}).encode()
@@ -176,12 +183,15 @@ class FakeTransport:
                                     or shifted_parent)
                                 else original["parents"]),
                     "trashed": False,
-                    "shared": self.created_folder_readback_shared or shifted_shared,
+                    "shared": (self.shared_capture or
+                               self.created_folder_readback_shared or shifted_shared),
                     "permissions": [{"type": "user", "role": "owner"}],
                     "capabilities": {
                         "canAddChildren": not self.created_folder_readback_not_writable,
                     },
                 }
+                if self.created_folder_readback_permissions_missing:
+                    del item["permissions"]
                 return 200, {}, json.dumps(item).encode()
         if method == "POST" and url.path == "/upload/drive/v3/files":
             # Simulate a concurrent Drive permission/placement change after
@@ -347,9 +357,59 @@ class Stage73DriveReadbackTests(unittest.TestCase):
     def test_new_folder_with_shared_permission_rejected(self):
         t = FakeTransport()
         t.shared_capture = True
-        with self.assertRaisesRegex(DriveArchiveRejected, "folder_creation_unverified"):
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
             upload_archive(self.report, self.manifest, PARENT, "123", t)
 
+
+    def test_partial_folder_create_id_only_succeeds_after_private_get(self):
+        tr = FakeTransport()
+        tr.folder_post_response_id_only = True
+        result = upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertTrue(result["readback_verified"])
+        self.assertFalse(result["retention_verified"])
+        created_get = next(
+            index for index, (method, path) in enumerate(tr.calls)
+            if method == "GET" and path.startswith("/drive/v3/files/folder00000001?")
+        )
+        payload_post = next(
+            index for index, (method, path) in enumerate(tr.calls)
+            if method == "POST" and path.startswith("/upload/drive/v3/files?")
+        )
+        self.assertLess(created_get, payload_post)
+
+    def test_partial_folder_create_id_only_shared_readback_stops_payload(self):
+        tr = FakeTransport()
+        tr.folder_post_response_id_only = True
+        tr.created_folder_readback_shared = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+        self.assertEqual(tr.files, {})
+
+    def test_partial_create_missing_get_permissions_refuses_payload(self):
+        tr = FakeTransport()
+        tr.folder_post_response_id_only = True
+        tr.created_folder_readback_permissions_missing = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+        self.assertFalse(tr.files)
+
+    def test_invalid_folder_create_id_rejects_without_payload(self):
+        tr = FakeTransport()
+        tr.folder_post_response_bad_id = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "folder_creation_unverified"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
 
     def test_created_folder_rechecked_after_post_before_content_upload(self):
         tr = FakeTransport()

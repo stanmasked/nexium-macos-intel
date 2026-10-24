@@ -168,7 +168,7 @@ def require_remote_name_available(transport, parent_id, filename):
     if (not isinstance(parent_id, str) or not DRIVE_ID.fullmatch(parent_id)
             or not isinstance(filename, str)
             or not re.fullmatch(
-                r"stage73-[0-9]{1,20}-[a-f0-9]{12}(?:-handoff\\.json)?",
+                r"stage73-[0-9]{1,20}-[a-f0-9]{12}(?:-handoff\.json)?",
                 filename,
             )):
         raise DriveArchiveRejected("invalid_archive_identity")

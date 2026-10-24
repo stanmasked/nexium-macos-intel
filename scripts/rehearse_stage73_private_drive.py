@@ -20,6 +20,7 @@ from archive_private_capture_drive import (
 )
 from backup_stage73_private_anchor import (
     backup_offline_anchor, verify_offline_anchor, _separate_paths,
+    validate_private_parent,
 )
 from seal_private_capture import build_manifest, write_manifest
 from verify_stage73_private_drive_persistence import (
@@ -71,12 +72,17 @@ def preflight_synthetic_rehearsal(transport, capture_parent, receipt_parent,
         raise DriveArchiveRejected("invalid_synthetic_rehearsal_inputs")
     backup = Path(backup)
     reference = Path(reference)
+    try:
+        # Open each parent component with O_NOFOLLOW before resolving paths or
+        # querying Drive, so an intermediate symlink cannot redirect a backup.
+        validate_private_parent(backup)
+        validate_private_parent(reference)
+    except DriveArchiveRejected as error:
+        raise DriveArchiveRejected("unsafe_synthetic_backup_paths") from error
     if (backup == reference or backup.resolve() == reference.resolve()
             or backup.parent.resolve() == reference.parent.resolve()
             or backup.exists() or backup.is_symlink()
-            or reference.exists() or reference.is_symlink()
-            or not backup.parent.is_dir() or backup.parent.is_symlink()
-            or not reference.parent.is_dir() or reference.parent.is_symlink()):
+            or reference.exists() or reference.is_symlink()):
         raise DriveArchiveRejected("unsafe_synthetic_backup_paths")
     # Perform read-only collision and ACL checks before even creating a
     # remote run folder or a private upload session.

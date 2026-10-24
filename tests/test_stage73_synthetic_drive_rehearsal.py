@@ -61,7 +61,7 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
                 with contextlib.redirect_stdout(out):
                     outcome = main(opts)
         self.assertEqual(outcome, 0)
-        self.assertEqual(out.getvalue(), PREFLIGHT_MARKER + "\\n")
+        self.assertEqual(out.getvalue(), PREFLIGHT_MARKER + "\n")
         self.assertTrue(self.transport.calls)
         self.assertFalse(any(method == "POST" for method, _ in self.transport.calls))
         self.assertFalse(any(method == "PUT" for method, _ in self.transport.calls))

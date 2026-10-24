@@ -15,6 +15,7 @@ import stat
 import sys
 import tempfile
 from urllib.parse import urlsplit, urlencode
+from stage73_trusted_host_guard import is_known_ci_host
 
 from seal_private_capture import verify_manifest, MAX_FILE_BYTES, ArchiveRejected, _relative
 
@@ -661,9 +662,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         # A code-controlled env toggle alone is not a trust boundary. While
-        # the uploader is experimental, forbid all GitHub-hosted execution.
+        # the uploader is experimental, forbid recognised CI-host execution.
         # Run only from an independently reviewed, isolated private machine.
-        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        if is_known_ci_host():
             raise DriveArchiveRejected("github_runner_forbidden")
         if os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true":
             raise DriveArchiveRejected("uploader_not_armed")

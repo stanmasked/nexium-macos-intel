@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+from stage73_trusted_host_guard import is_known_ci_host
 from pathlib import Path
 import re
 import stat
@@ -330,7 +331,7 @@ def main(argv=None):
     parser.add_argument("--anchor-path", type=Path)
     args = parser.parse_args(argv)
     try:
-        if (os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        if (is_known_ci_host()
                 or os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true"):
             raise DriveArchiveRejected("private_execution_required")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))

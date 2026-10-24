@@ -12,6 +12,7 @@ from pathlib import Path
 import sys
 import tempfile
 from urllib.parse import urlencode
+from stage73_trusted_host_guard import is_known_ci_host
 
 from archive_private_capture_drive import (
     COMMIT, RUN_ID, DRIVE_ID, DriveArchiveRejected, GoogleTransport,
@@ -176,7 +177,7 @@ def main(argv=None):
                         help="check local paths and Drive ACL/collision state without uploading")
     args = parser.parse_args(argv)
     try:
-        if (os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        if (is_known_ci_host()
                 or os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true"):
             raise DriveArchiveRejected("trusted_private_execution_required")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))

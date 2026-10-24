@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+from stage73_trusted_host_guard import is_known_ci_host
 
 from verify_stage73_private_drive_persistence import read_independent_anchor
 from archive_private_capture_drive import DriveArchiveRejected, COMMIT, RUN_ID, DRIVE_ID
@@ -288,7 +289,7 @@ def main(argv=None):
     parser.add_argument("--receipt-parent", required=True)
     args = parser.parse_args(argv)
     try:
-        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        if is_known_ci_host():
             raise DriveArchiveRejected("github_runner_forbidden")
         common = {
             "source_commit": args.source_commit, "run_id": args.run_id,

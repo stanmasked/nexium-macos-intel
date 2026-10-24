@@ -55,7 +55,7 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
             "NEXIUM_DRIVE_ACCESS_TOKEN": "fake",
         }
         out = io.StringIO()
-        with patch.dict(os.environ, env):
+        with patch.dict(os.environ, env, clear=True):
             with patch("rehearse_stage73_private_drive.GoogleTransport",
                        return_value=self.transport):
                 with contextlib.redirect_stdout(out):

@@ -6,7 +6,7 @@ Status: preparation only. The live Google Drive API rehearsal has NOT yet run. D
 
 This checklist runs the existing synthetic-only rehearsal at `scripts/rehearse_stage73_private_drive.py`. It creates fabricated log/JSON bytes and synthetic Mach-O/NRO identities. It must not read a game image, a real guest capture, or any original/private diagnostic payload.
 
-Run only on a separately reviewed, isolated host that is not a GitHub Actions runner and is not executing pull-request-controlled code. The CLI intentionally refuses `GITHUB_ACTIONS=true`; never unset or bypass that guard to run on a GitHub-hosted worker. The public PR remains Draft and `archive_ready=false`.
+Run only on a separately reviewed, isolated host that is not a GitHub Actions runner and is not executing pull-request-controlled code. The protected CLI entrypoints reject recognised CI host markers, including GitHub Actions, CircleCI, GitLab CI, Buildkite, Jenkins and other CI platforms. Never unset or bypass these guards. The absence of a CI marker is not proof that a host is trusted: separate operator review of isolation and durable storage remains required. The public PR remains Draft and `archive_ready=false`.
 
 ## Preflight — before any upload
 

@@ -240,7 +240,40 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         "vi_service_handle_return_correlated": False if session_correlation_fields_observed else None,
         "vi_request_session_correlated": False if session_correlation_fields_observed else None,
         "display_subsession_parent_correlated": False if session_correlation_fields_observed else None,
+        "display_binder_request_session_correlated": False if session_correlation_fields_observed else None,
+        "binder_subsession_parent_correlated": False if session_correlation_fields_observed else None,
+        "native_window_request_session_correlated": False if session_correlation_fields_observed else None,
+        "native_window_response_session_correlated": False if session_correlation_fields_observed else None,
+        "binder_transaction_session_correlated": False if session_correlation_fields_observed else None,
     }
+
+    def session_request(service: str, commands: tuple[int, ...],
+                        after_position: int, expected_session: int):
+        # All IDs are used transiently; never return or log raw handles.
+        return next((
+            match for match in SESSION_IPC_REQUEST_PATTERN.finditer(
+                data, after_position + 1)
+            if match.group(1) == service
+            and int(match.group(2)) in commands
+            and int(match.group(3), 16) == expected_session
+        ), None)
+
+    def scoped_response(service: str, command: str, position: int,
+                        expected_session: int):
+        pattern = re.compile(
+            r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
+            r"service=" + re.escape(service) + r" cmd=" + command + r"\b"
+        )
+        other_session_observed = False
+        for match in pattern.finditer(data, position + 1):
+            end = data.find("\n", match.start())
+            line = data[match.start():end if end >= 0 else len(data)]
+            marker = IPC_LINE_SESSION_PATTERN.search(line)
+            if (marker is not None and
+                    int(marker.group(1), 16) == expected_session):
+                return match, other_session_observed
+            other_session_observed = True
+        return None, other_session_observed
 
     def find_expected_ancestry() -> tuple[int, int, int, int, str] | None:
         # When session IDs are available, ordering alone is insufficient:
@@ -284,6 +317,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                 return (
                     sm_request, vi_handle, vi_request_match.start(),
                     display_subsession_match.start(), vi_service,
+                    int(display_subsession_match.group(2), 16),
                 )
             return None
 
@@ -303,7 +337,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                 "IApplicationDisplayService sub-session handle=", vi_request
             )
             if display_subsession is not None:
-                return sm_request, vi_handle, vi_request, display_subsession, vi_service
+                return sm_request, vi_handle, vi_request, display_subsession, vi_service, None
         return None
 
     ancestry = find_expected_ancestry()
@@ -334,7 +368,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         stage = "ipc_request_markers_not_observed"
     else:
         if ancestry is not None:
-            sm_request, vi_handle, vi_request, display_subsession, vi_service = ancestry
+            sm_request, vi_handle, vi_request, display_subsession, vi_service, display_session = ancestry
         else:
             paired_handle = next(iter(iter_vi_handle_requests()), None)
             if paired_handle is not None:
@@ -389,23 +423,48 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
             binder_session_request_pattern = re.compile(
                 r'IPC request service="IApplicationDisplayService" cmd=(100|103)\b'
             )
-            binder_session_request = regex_after(
-                binder_session_request_pattern, display_subsession
-            )
-            binder_subsession = (
-                after(
-                    "IHOSBinderDriver sub-session handle=",
-                    binder_session_request.start(),
-                )
-                if binder_session_request is not None else None
-            )
-
             native_window_request_pattern = re.compile(
                 r'IPC request service="IApplicationDisplayService" cmd=(2020|2030)\b'
             )
-            native_window_request = regex_after(
-                native_window_request_pattern, display_subsession
-            )
+            if display_session is None:
+                # Historical synthetic fixtures without instrumented handles.
+                binder_session_request = regex_after(
+                    binder_session_request_pattern, display_subsession)
+                binder_subsession = (
+                    after("IHOSBinderDriver sub-session handle=",
+                          binder_session_request.start())
+                    if binder_session_request is not None else None
+                )
+                binder_session = None
+                native_window_request = regex_after(
+                    native_window_request_pattern, display_subsession)
+            else:
+                binder_session_request = session_request(
+                    "IApplicationDisplayService", (100, 103),
+                    display_subsession, display_session)
+                native_window_request = session_request(
+                    "IApplicationDisplayService", (2020, 2030),
+                    display_subsession, display_session)
+                session_correlation["display_binder_request_session_correlated"] = (
+                    binder_session_request is not None)
+                session_correlation["native_window_request_session_correlated"] = (
+                    native_window_request is not None)
+                binder_subsession_match = (
+                    next((match for match in SUBSESSION_PARENT_PATTERN.finditer(
+                        data, binder_session_request.end())
+                        if match.group(1) == "IHOSBinderDriver"
+                        and int(match.group(3), 16) == display_session),
+                         None)
+                    if binder_session_request is not None else None
+                )
+                binder_subsession = (
+                    binder_subsession_match.start()
+                    if binder_subsession_match is not None else None)
+                binder_session = (
+                    int(binder_subsession_match.group(2), 16)
+                    if binder_subsession_match is not None else None)
+                session_correlation["binder_subsession_parent_correlated"] = (
+                    binder_subsession_match is not None)
             native_window_response = None
             if native_window_request is not None:
                 native_window_cmd = native_window_request.group(1)
@@ -415,21 +474,40 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                     + re.escape(native_window_cmd)
                     + r"\b"
                 )
-                response_match = regex_after(
-                    native_window_response_pattern,
-                    native_window_request.start(),
-                )
+                if display_session is None:
+                    response_match = regex_after(
+                        native_window_response_pattern,
+                        native_window_request.start())
+                    other_response_session_observed = False
+                else:
+                    response_match, other_response_session_observed = scoped_response(
+                        "IApplicationDisplayService", native_window_cmd,
+                        native_window_request.start(), display_session)
+                    session_correlation["native_window_response_session_correlated"] = (
+                        response_match is not None)
                 if response_match is None:
-                    native_window_response_status = "no_response"
+                    native_window_response_status = (
+                        "other_session" if other_response_session_observed
+                        else "no_response")
                 else:
                     same_command_request_pattern = re.compile(
                         r'IPC request service="IApplicationDisplayService" cmd='
                         + re.escape(native_window_cmd)
                         + r'\b'
                     )
-                    repeated_request = same_command_request_pattern.search(
-                        data, native_window_request.end(), response_match.start()
-                    )
+                    repeated_request = None
+                    for candidate in same_command_request_pattern.finditer(
+                            data, native_window_request.end(),
+                            response_match.start()):
+                        if display_session is None:
+                            repeated_request = candidate
+                            break
+                        end = data.find("\n", candidate.start())
+                        line = data[candidate.start():end if end >= 0 else len(data)]
+                        marker = IPC_LINE_SESSION_PATTERN.search(line)
+                        if marker is not None and int(marker.group(1), 16) == display_session:
+                            repeated_request = candidate
+                            break
                     if repeated_request is not None:
                         # The first-occurrence response is not correlated to a
                         # request/thread ID. A second outstanding request makes
@@ -493,6 +571,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
             if native_window_request is not None and native_window_response is None:
                 response_stage = {
                     "no_response": "native_window_request_response_not_observed",
+                    "other_session": "native_window_response_other_session_unverified",
                     "failure": "native_window_request_failed_response_observed",
                     "unverified": "native_window_request_response_status_unverified",
                     "ambiguous": "native_window_request_response_correlation_ambiguous",
@@ -522,9 +601,14 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                 binder_transaction_pattern = re.compile(
                     r'IPC request service="IHOSBinderDriver" cmd=(0|3)\b'
                 )
-                binder_transaction = regex_after(
-                    binder_transaction_pattern, ready_after
-                )
+                if binder_session is None:
+                    binder_transaction = regex_after(
+                        binder_transaction_pattern, ready_after)
+                else:
+                    binder_transaction = session_request(
+                        "IHOSBinderDriver", (0, 3), ready_after, binder_session)
+                    session_correlation["binder_transaction_session_correlated"] = (
+                        binder_transaction is not None)
                 if binder_transaction is None:
                     stage = "display_and_native_window_ready_binder_transact_not_observed"
                 else:
@@ -591,6 +675,11 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         "vi_service_handle_return_correlated": session_correlation["vi_service_handle_return_correlated"],
         "vi_request_session_correlated": session_correlation["vi_request_session_correlated"],
         "display_subsession_parent_correlated": session_correlation["display_subsession_parent_correlated"],
+        "display_binder_request_session_correlated": session_correlation["display_binder_request_session_correlated"],
+        "binder_subsession_parent_correlated": session_correlation["binder_subsession_parent_correlated"],
+        "native_window_request_session_correlated": session_correlation["native_window_request_session_correlated"],
+        "native_window_response_session_correlated": session_correlation["native_window_response_session_correlated"],
+        "binder_transaction_session_correlated": session_correlation["binder_transaction_session_correlated"],
         "expected_vi_display_ancestry_observed": ancestry is not None,
         "expected_vi_u_display_ancestry_observed": (
             ancestry is not None and ancestry[4] == "vi:u"

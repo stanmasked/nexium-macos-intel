@@ -227,6 +227,109 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["expected_vi_display_ancestry_observed"])
         self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
 
+
+    def set_scoped_window_path(self):
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=1',
+            "SM::GetServiceHandle 'vi:m' data_off=0x20",
+            "SM: returning handle 0x10 for service 'vi:m'",
+            'IPC request service="vi:m" cmd=0 session=0x10 in_data=0',
+            "→ IApplicationDisplayService sub-session handle=0x20 parent_session=0x10",
+            'IPC request service="IApplicationDisplayService" cmd=100 session=0x20 in_data=0',
+            "→ IHOSBinderDriver sub-session handle=0x30 parent_session=0x20",
+            'IPC request service="IApplicationDisplayService" cmd=2020 session=0x20 in_data=0',
+            "IPC FIRST-OCCURRENCE response (compare with RustSwitch) "
+            "service=IApplicationDisplayService cmd=2020 session=0x20 rc=0x00000000 "
+            "response_len=12 response_first64=53,46,43,4f,00,00,00,00,00,00,00,00 in_data_first32=",
+            'IPC request service="IHOSBinderDriver" cmd=0 session=0x30 in_data=0',
+            "IGBP::Connect binder=256 api=1 1280x720",
+            "IGBP::RequestBuffer binder=256 slot=0",
+            "IGBP::QueueBuffer binder=256 swap_interval=1 (was None)",
+        ))
+
+    def test_scoped_display_and_binder_session_chain_succeeds_without_gpu_claim(self):
+        self.set_scoped_window_path()
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        for field in ("display_binder_request_session_correlated",
+                      "binder_subsession_parent_correlated",
+                      "native_window_request_session_correlated",
+                      "native_window_response_session_correlated",
+                      "binder_transaction_session_correlated"):
+            self.assertTrue(result[field], field)
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        for handle in ("0x10", "0x20", "0x30"):
+            self.assertNotIn(handle, json.dumps(result))
+
+    def test_scoped_other_display_session_binder_request_not_attributed(self):
+        self.set_scoped_window_path()
+        self.data = self.data.replace(
+            'cmd=100 session=0x20', 'cmd=100 session=0x21')
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"],
+                         "display_subsession_binder_session_request_not_observed")
+        self.assertFalse(result["display_binder_request_session_correlated"])
+
+    def test_scoped_binder_subsession_wrong_parent_not_attributed(self):
+        self.set_scoped_window_path()
+        self.data = self.data.replace(
+            "handle=0x30 parent_session=0x20",
+            "handle=0x30 parent_session=0x21")
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"],
+                         "display_service_binder_subsession_not_observed")
+        self.assertFalse(result["binder_subsession_parent_correlated"])
+
+    def test_scoped_native_window_request_other_display_session_not_attributed(self):
+        self.set_scoped_window_path()
+        self.data = self.data.replace(
+            'cmd=2020 session=0x20 in_data=0',
+            'cmd=2020 session=0x21 in_data=0')
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"],
+                         "binder_subsession_created_native_window_request_not_observed")
+        self.assertFalse(result["native_window_request_session_correlated"])
+
+    def test_scoped_native_window_response_other_session_not_success(self):
+        self.set_scoped_window_path()
+        self.data = self.data.replace(
+            "cmd=2020 session=0x20 rc=0x00000000",
+            "cmd=2020 session=0x21 rc=0x00000000")
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"],
+                         "native_window_response_other_session_unverified")
+        self.assertEqual(result["native_window_response_status"], "other_session")
+        self.assertFalse(result["native_window_response_session_correlated"])
+        self.assertNotIn("0x21", json.dumps(result))
+
+    def test_scoped_binder_transaction_other_session_does_not_advance(self):
+        self.set_scoped_window_path()
+        self.data = self.data.replace(
+            'cmd=0 session=0x30 in_data=0', 'cmd=0 session=0x31 in_data=0')
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"],
+                         "display_and_native_window_ready_binder_transact_not_observed")
+        self.assertFalse(result["binder_transaction_session_correlated"])
+
+    def test_scoped_interleaved_other_session_window_request_not_ambiguous(self):
+        self.set_scoped_window_path()
+        foreign = 'IPC request service="IApplicationDisplayService" cmd=2020 session=0x21 in_data=0'
+        needle = "IPC FIRST-OCCURRENCE response (compare with RustSwitch)"
+        self.data = self.data.replace(needle, foreign + "\n" + needle, 1)
+        result = self.inspect()
+        self.assertEqual(result["native_window_response_status"], "success")
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+
+    def test_scoped_repeated_same_session_window_request_is_ambiguous(self):
+        self.set_scoped_window_path()
+        duplicate = 'IPC request service="IApplicationDisplayService" cmd=2020 session=0x20 in_data=0'
+        needle = "IPC FIRST-OCCURRENCE response (compare with RustSwitch)"
+        self.data = self.data.replace(needle, duplicate + "\n" + needle, 1)
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"],
+                         "native_window_request_response_correlation_ambiguous")
+        self.assertEqual(result["native_window_response_status"], "ambiguous")
+
     def test_last_ipc_request_summary_recognizes_vi_m(self):
         result = last_ipc_request_summary("\n".join((
             'IPC request service="vi:m" cmd=2 in_data=0 is_domain=false',

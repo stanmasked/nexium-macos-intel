@@ -216,6 +216,59 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertTrue(result["expected_vi_display_ancestry_observed"])
         self.assertFalse(result["guest_gpu_frames_verified"])
 
+
+    def test_second_sm_handler_before_vi_return_cannot_claim_first_handle(self):
+        self.set_scoped_window_path()
+        marker = "SM: returning handle 0x10 for service 'vi:m'"
+        self.data = self.data.replace(
+            marker,
+            "SM::GetServiceHandle 'vi:u' data_off=0x20\n" + marker, 1)
+        result = self.inspect()
+        self.assertFalse(result["vi_service_handle_return_correlated"])
+        self.assertFalse(result["expected_vi_display_ancestry_observed"])
+        self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
+        self.assertEqual(result["observed_stage"], "ipc_sequence_inconsistent_or_cross_path")
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("0x10", json.dumps(result))
+
+    def test_unrelated_sm_return_before_vi_return_is_not_reused(self):
+        self.set_scoped_window_path()
+        marker = "SM: returning handle 0x10 for service 'vi:m'"
+        self.data = self.data.replace(
+            marker,
+            "SM: returning handle 0x55 for service 'appletOE'\n" + marker, 1)
+        result = self.inspect()
+        self.assertFalse(result["vi_service_handle_return_correlated"])
+        self.assertFalse(result["expected_vi_display_ancestry_observed"])
+        self.assertEqual(result["observed_stage"], "ipc_sequence_inconsistent_or_cross_path")
+        self.assertNotIn("0x55", json.dumps(result))
+
+    def test_prior_completed_sm_operation_does_not_block_vi_path(self):
+        self.set_scoped_window_path()
+        self.data = "\n".join((
+            'IPC request service="sm:" cmd=1',
+            "SM::GetServiceHandle 'appletOE' data_off=0x20",
+            "SM: returning handle 0x55 for service 'appletOE'",
+            self.data,
+        ))
+        result = self.inspect()
+        self.assertTrue(result["vi_service_handle_return_correlated"])
+        self.assertTrue(result["expected_vi_display_ancestry_observed"])
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
+    def test_other_sm_request_after_return_does_not_invalidate_vi_path(self):
+        self.set_scoped_window_path()
+        marker = "SM: returning handle 0x10 for service 'vi:m'"
+        self.data = self.data.replace(
+            marker, marker + '\nIPC request service="sm:" cmd=1\n'
+            "SM::GetServiceHandle 'appletOE' data_off=0x20\n"
+            "SM: returning handle 0x55 for service 'appletOE'", 1)
+        result = self.inspect()
+        self.assertTrue(result["vi_service_handle_return_correlated"])
+        self.assertTrue(result["expected_vi_display_ancestry_observed"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
     def test_session_handles_correlate_vi_request_to_display_subsession(self):
         self.data = "\n".join((
             'IPC request service="sm:" cmd=1 in_data=0 is_domain=false',

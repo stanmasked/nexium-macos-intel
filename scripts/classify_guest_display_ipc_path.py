@@ -317,7 +317,20 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                 if returned is None or returned.group(2) != vi_service:
                     continue
                 next_request = SERVICE_MANAGER_ANY_REQUEST.search(data, vi_handle + 1)
-                if next_request is not None and next_request.start() < returned.start():
+                next_handler = SM_GET_SERVICE_HANDLE_EVENT.search(data, vi_handle + 1)
+                intervening_return = SM_RETURN_HANDLE_PATTERN.search(data, vi_handle)
+                # The handle value alone does not identify which simultaneous
+                # SM handler produced it. Stop at the next handler/request,
+                # or the first unrelated return; otherwise a later VI return
+                # can be borrowed from a separate service-manager operation.
+                # This can fail closed on incomplete/interleaved debug logs,
+                # but must not assert an unprovable guest display ancestry.
+                if ((next_request is not None
+                     and next_request.start() < returned.start())
+                        or (next_handler is not None
+                            and next_handler.start() < returned.start())
+                        or (intervening_return is not None
+                            and intervening_return.start() < returned.start())):
                     continue
                 session_correlation["vi_service_handle_return_correlated"] = True
                 returned_handle = int(returned.group(1), 16)

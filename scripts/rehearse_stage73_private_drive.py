@@ -13,6 +13,7 @@ import sys
 import tempfile
 from urllib.parse import urlencode
 from stage73_trusted_host_guard import is_known_ci_host
+from stage73_private_single_writer import private_single_writer_lock
 
 from archive_private_capture_drive import (
     COMMIT, RUN_ID, DRIVE_ID, DriveArchiveRejected, GoogleTransport,
@@ -94,6 +95,15 @@ def preflight_synthetic_rehearsal(transport, capture_parent, receipt_parent,
 
 def run_synthetic_rehearsal(transport, capture_parent, receipt_parent,
                             run_id, commit, backup, reference):
+    """Require exclusive trusted-host lock before ANY remote Drive request."""
+    with private_single_writer_lock(backup):
+        return _run_synthetic_rehearsal_locked(
+            transport, capture_parent, receipt_parent,
+            run_id, commit, backup, reference)
+
+
+def _run_synthetic_rehearsal_locked(transport, capture_parent, receipt_parent,
+                                   run_id, commit, backup, reference):
     """Exercise the real transport interface using fabricated bytes only."""
     backup, reference = preflight_synthetic_rehearsal(
         transport, capture_parent, receipt_parent,

@@ -242,6 +242,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         "display_subsession_parent_correlated": False if session_correlation_fields_observed else None,
         "display_binder_request_session_correlated": False if session_correlation_fields_observed else None,
         "binder_subsession_parent_correlated": False if session_correlation_fields_observed else None,
+        "binder_subsession_request_ambiguous": False if session_correlation_fields_observed else None,
         "native_window_request_session_correlated": False if session_correlation_fields_observed else None,
         "native_window_response_session_correlated": False if session_correlation_fields_observed else None,
         "binder_transaction_session_correlated": False if session_correlation_fields_observed else None,
@@ -457,6 +458,25 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                          None)
                     if binder_session_request is not None else None
                 )
+                # The parent handle identifies the display session, but a
+                # response is NOT attributable to the first request when a
+                # second same-session Binder request was issued while pending.
+                # A request in another display session is unrelated.
+                overlapping_binder_request = (
+                    next((
+                        match for match in SESSION_IPC_REQUEST_PATTERN.finditer(
+                            data, binder_session_request.end(),
+                            binder_subsession_match.start())
+                        if match.group(1) == "IApplicationDisplayService"
+                        and int(match.group(2)) in (100, 103)
+                        and int(match.group(3), 16) == display_session
+                    ), None)
+                    if binder_subsession_match is not None else None
+                )
+                session_correlation["binder_subsession_request_ambiguous"] = (
+                    overlapping_binder_request is not None)
+                if overlapping_binder_request is not None:
+                    binder_subsession_match = None
                 binder_subsession = (
                     binder_subsession_match.start()
                     if binder_subsession_match is not None else None)
@@ -569,7 +589,9 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
             if binder_session_request is not None and binder_subsession is None:
                 pending_branches.append((
                     binder_session_request.start(),
-                    "display_service_binder_subsession_not_observed",
+                    ("display_service_binder_subsession_correlation_ambiguous"
+                     if session_correlation["binder_subsession_request_ambiguous"]
+                     else "display_service_binder_subsession_not_observed"),
                 ))
             if native_window_request is not None and native_window_response is None:
                 response_stage = {
@@ -680,6 +702,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         "display_subsession_parent_correlated": session_correlation["display_subsession_parent_correlated"],
         "display_binder_request_session_correlated": session_correlation["display_binder_request_session_correlated"],
         "binder_subsession_parent_correlated": session_correlation["binder_subsession_parent_correlated"],
+        "binder_subsession_request_ambiguous": session_correlation["binder_subsession_request_ambiguous"],
         "native_window_request_session_correlated": session_correlation["native_window_request_session_correlated"],
         "native_window_response_session_correlated": session_correlation["native_window_response_session_correlated"],
         "binder_transaction_session_correlated": session_correlation["binder_transaction_session_correlated"],

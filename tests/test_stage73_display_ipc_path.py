@@ -280,6 +280,64 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
                          "display_service_binder_subsession_not_observed")
         self.assertFalse(result["binder_subsession_parent_correlated"])
 
+    def test_scoped_repeated_binder_request_has_ambiguous_subsession(self):
+        self.set_scoped_window_path()
+        duplicate = (
+            'IPC request service="IApplicationDisplayService" '
+            'cmd=103 session=0x20 in_data=0'
+        )
+        anchor = "→ IHOSBinderDriver sub-session handle=0x30 parent_session=0x20"
+        self.data = self.data.replace(anchor, duplicate + "\n" + anchor, 1)
+        result = self.inspect()
+        self.assertEqual(
+            result["observed_stage"],
+            "display_service_binder_subsession_correlation_ambiguous",
+        )
+        self.assertTrue(result["binder_subsession_request_ambiguous"])
+        self.assertFalse(result["binder_subsession_parent_correlated"])
+        self.assertFalse(result["binder_transaction_session_correlated"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("0x20", json.dumps(result))
+        self.assertNotIn("0x30", json.dumps(result))
+
+    def test_scoped_foreign_binder_request_does_not_make_own_reply_ambiguous(self):
+        self.set_scoped_window_path()
+        foreign = (
+            'IPC request service="IApplicationDisplayService" '
+            'cmd=103 session=0x21 in_data=0'
+        )
+        anchor = "→ IHOSBinderDriver sub-session handle=0x30 parent_session=0x20"
+        self.data = self.data.replace(anchor, foreign + "\n" + anchor, 1)
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertFalse(result["binder_subsession_request_ambiguous"])
+        self.assertTrue(result["binder_subsession_parent_correlated"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
+    def test_scoped_later_correct_parent_cannot_resolve_overlapping_binder_requests(self):
+        self.set_scoped_window_path()
+        anchor = "→ IHOSBinderDriver sub-session handle=0x30 parent_session=0x20"
+        interleaved = "\n".join((
+            'IPC request service="IApplicationDisplayService" '
+            'cmd=103 session=0x20 in_data=0',
+            "→ IHOSBinderDriver sub-session handle=0x31 parent_session=0x21",
+            anchor,
+        ))
+        self.data = self.data.replace(anchor, interleaved, 1)
+        result = self.inspect()
+        self.assertTrue(result["binder_subsession_request_ambiguous"])
+        self.assertFalse(result["binder_subsession_parent_correlated"])
+        self.assertEqual(
+            result["observed_stage"],
+            "display_service_binder_subsession_correlation_ambiguous",
+        )
+
+    def test_legacy_binder_reply_retains_unscoped_semantics(self):
+        self.set_through(13)
+        result = self.inspect()
+        self.assertIsNone(result["binder_subsession_request_ambiguous"])
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+
     def test_scoped_native_window_request_other_display_session_not_attributed(self):
         self.set_scoped_window_path()
         self.data = self.data.replace(

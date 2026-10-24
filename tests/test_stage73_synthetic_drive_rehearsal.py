@@ -68,6 +68,34 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
         self.assertFalse(self.backup.exists())
         self.assertFalse(self.reference.exists())
 
+    def test_preflight_rejects_symlinked_ancestor_before_drive_requests(self):
+        redirect = self.a.parent / "redirect"
+        redirect.symlink_to(self.a.parent, target_is_directory=True)
+        redirected_backup = redirect / self.a.name / "redirected-anchor.json"
+        opts = [
+            "--capture-parent-id", PARENT,
+            "--receipt-parent-id", RECEIPTS,
+            "--run-id", "123", "--source-commit", COMMIT,
+            "--backup", str(redirected_backup), "--reference", str(self.reference),
+            "--preflight-only",
+        ]
+        env = {
+            "GITHUB_ACTIONS": "",
+            "NEXIUM_PRIVATE_ARCHIVE_ARMED": "true",
+            "NEXIUM_DRIVE_ACCESS_TOKEN": "fake",
+        }
+        err = io.StringIO()
+        with patch.dict(os.environ, env):
+            with patch("rehearse_stage73_private_drive.GoogleTransport",
+                       return_value=self.transport):
+                with contextlib.redirect_stderr(err):
+                    outcome = main(opts)
+        self.assertEqual(outcome, 1)
+        self.assertEqual(
+            err.getvalue(), "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED\\n")
+        self.assertFalse(self.transport.calls)
+        self.assertFalse(redirected_backup.exists())
+
     def test_shared_parent_rejected_without_remote_writes(self):
         self.transport.shared_ancestor = True
         with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):

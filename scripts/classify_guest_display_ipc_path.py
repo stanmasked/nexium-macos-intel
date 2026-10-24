@@ -69,31 +69,51 @@ IGBP_QUEUE_BUFFER_PATTERN = re.compile(r"IGBP::QueueBuffer binder=(\d+)\b")
 
 
 
+# The pinned scoped diagnostic patch deduplicates responses by
+# (service, session, command). Do not attribute another session's first reply
+# to the latest request merely because its service and command match.
+# None represents an *unscoped* legacy log, never a wildcard.
+IPC_LINE_SESSION_PATTERN = re.compile(r"\\bsession=(0x[0-9a-fA-F]+)\\b")
+
+
 def last_ipc_request_summary(data: str) -> dict:
     requests = []
     responses = []
     for line_no, line in enumerate(data.splitlines()):
+        session_match = IPC_LINE_SESSION_PATTERN.search(line)
+        session = int(session_match.group(1), 16) if session_match else None
         for service_kind, pattern in IPC_REQUEST_PATTERNS:
             match = pattern.search(line)
             if match:
                 # Preserve the exact service endpoint. nvdrv:a, nvdrv:s and
                 # nvdrv:t share a family but are not interchangeable endpoints.
                 requests.append((line_no, service_kind, match.group(1),
-                                 int(match.group(2))))
+                                 int(match.group(2)), session))
         match = IPC_RESPONSE_PATTERN.search(line)
         if match:
-            responses.append((line_no, match.group(1), int(match.group(2))))
+            responses.append((line_no, match.group(1), int(match.group(2)),
+                              session))
     if not requests:
         return {
             "last_ipc_request_stage": "no_allowlisted_ipc_request_observed",
             "last_ipc_request_response_after_request": None,
             "last_ipc_request_same_response_seen_before": False,
+            "last_ipc_request_session_scoped": None,
+            "last_ipc_request_other_session_response_after_request": None,
         }
-    request_line, kind, request_service, command = requests[-1]
-    matching = [(line_no, service, cmd) for line_no, service, cmd in responses
-                if service == request_service and cmd == command]
-    response_after = any(line_no > request_line for line_no, _, _ in matching)
-    response_before = any(line_no < request_line for line_no, _, _ in matching)
+    request_line, kind, request_service, command, request_session = requests[-1]
+    matching = [(line_no, service, cmd, reply_session)
+                for line_no, service, cmd, reply_session in responses
+                if (service == request_service and cmd == command
+                    and reply_session == request_session)]
+    response_after = any(line_no > request_line for line_no, _, _, _ in matching)
+    response_before = any(line_no < request_line for line_no, _, _, _ in matching)
+    other_session_after = (
+        any(line_no > request_line and service == request_service
+            and cmd == command and reply_session != request_session
+            for line_no, service, cmd, reply_session in responses)
+        if request_session is not None else False
+    )
     if kind == "display_service" and command in (2020, 2030):
         stage = "native_window_layer_request_last_observed"
     else:
@@ -110,6 +130,8 @@ def last_ipc_request_summary(data: str) -> dict:
         "last_ipc_request_stage": stage,
         "last_ipc_request_response_after_request": response_after,
         "last_ipc_request_same_response_seen_before": response_before,
+        "last_ipc_request_session_scoped": request_session is not None,
+        "last_ipc_request_other_session_response_after_request": other_session_after,
     }
 
 

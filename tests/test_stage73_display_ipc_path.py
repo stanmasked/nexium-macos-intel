@@ -491,6 +491,70 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["last_ipc_request_response_after_request"])
         self.assertTrue(result["last_ipc_request_same_response_seen_before"])
 
+
+    def test_scoped_last_request_rejects_another_sessions_response(self):
+        result = last_ipc_request_summary("\n".join((
+            'IPC request service="IApplicationDisplayService" cmd=2020 session=0x20',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=IApplicationDisplayService cmd=2020 session=0x21 rc=0x00000000',
+        )))
+        self.assertEqual(result["last_ipc_request_stage"],
+                         "native_window_layer_request_last_observed")
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertTrue(result["last_ipc_request_other_session_response_after_request"])
+        self.assertTrue(result["last_ipc_request_session_scoped"])
+        self.assertNotIn("0x20", json.dumps(result))
+        self.assertNotIn("0x21", json.dumps(result))
+
+    def test_scoped_last_request_accepts_same_session_response(self):
+        result = last_ipc_request_summary("\n".join((
+            'IPC request service="IApplicationDisplayService" cmd=2030 session=0x0020',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=IApplicationDisplayService cmd=2030 session=0x20 rc=0x00000000',
+        )))
+        self.assertTrue(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_other_session_response_after_request"])
+
+    def test_scoped_last_request_rejects_legacy_unscoped_response(self):
+        result = last_ipc_request_summary("\n".join((
+            'IPC request service="vi:m" cmd=2 session=0x30',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:m cmd=2 rc=0x00000000',
+        )))
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertTrue(result["last_ipc_request_other_session_response_after_request"])
+
+    def test_legacy_last_request_does_not_consume_scoped_response(self):
+        result = last_ipc_request_summary("\n".join((
+            'IPC request service="vi:m" cmd=2',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:m cmd=2 session=0x30 rc=0x00000000',
+        )))
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_session_scoped"])
+
+    def test_repeated_scoped_command_in_other_session_not_same_response(self):
+        result = last_ipc_request_summary("\n".join((
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:u cmd=1 session=0x10 rc=0x00000000',
+            'IPC request service="vi:u" cmd=1 session=0x11',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:u cmd=1 session=0x10 rc=0x00000000',
+        )))
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_same_response_seen_before"])
+        self.assertTrue(result["last_ipc_request_other_session_response_after_request"])
+
+    def test_scoped_response_before_latest_request_is_not_success(self):
+        result = last_ipc_request_summary("\n".join((
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:s cmd=1 session=0x10 rc=0x00000000',
+            'IPC request service="vi:s" cmd=1 session=0x10',
+        )))
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertTrue(result["last_ipc_request_same_response_seen_before"])
+        self.assertFalse(result["last_ipc_request_other_session_response_after_request"])
+
     def test_nvdrv_response_from_different_service_alias_does_not_count(self):
         data = ('IPC request service="nvdrv:a" cmd=7\n'
                 'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '

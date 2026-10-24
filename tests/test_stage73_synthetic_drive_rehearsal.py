@@ -92,7 +92,7 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
                     outcome = main(opts)
         self.assertEqual(outcome, 1)
         self.assertEqual(
-            err.getvalue(), "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED\\n")
+            err.getvalue(), "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED\n")
         self.assertFalse(self.transport.calls)
         self.assertFalse(redirected_backup.exists())
 

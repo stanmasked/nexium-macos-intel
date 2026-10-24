@@ -19,6 +19,25 @@ Run only on a separately reviewed, isolated host that is not a GitHub Actions ru
 - [ ] Choose a unique decimal `--run-id` that has not been used before. On any partial failure, inspect the private leftovers before choosing a new ID; do not reuse an ID or automatically delete evidence.
 - [ ] Choose two durable anchor destinations in different protection domains, outside the temporary producer workspace. The `--backup` and `--reference` paths must be in separate directories, but separate directories alone do NOT prove independent retention. Do not use two folders on the same ephemeral worker as the claimed independent backup.
 
+## Read-only preflight (recommended before the first upload)
+
+Run the same reviewed command with `--preflight-only` first:
+
+```sh
+python3 scripts/rehearse_stage73_private_drive.py \\
+  --capture-parent-id '<private capture folder ID from protected operator config>' \\
+  --receipt-parent-id '<distinct private receipt folder ID from protected operator config>' \\
+  --run-id '<new unique decimal run ID>' \\
+  --source-commit '<full 40-character reviewed source commit>' \\
+  --backup '/protected-domain-A/stage73-anchor-<run-id>.json' \\
+  --reference '/protected-domain-B/stage73-anchor-reference-<run-id>.json' \\
+  --preflight-only
+```
+
+Expected marker: `STAGE73_PRIVATE_SYNTHETIC_DRIVE_PREFLIGHT_VERIFIED_NO_UPLOAD`.
+
+This mode performs read-only Drive checks for both parent ACL chains and exact-name collisions, and validates the two future anchor paths. It must not issue a remote POST/PUT or create either local anchor file. The run ID is **not reserved** by preflight; the full rehearsal repeats the checks immediately before writing. A successful preflight is not a retention, archive-readiness, or graphics result.
+
 ## Execute
 
 From the reviewed repository checkout, run the existing CLI with runtime-supplied private folder IDs and a unique run ID. Do not add the token value to this command.

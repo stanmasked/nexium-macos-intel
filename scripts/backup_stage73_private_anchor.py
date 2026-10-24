@@ -68,28 +68,66 @@ def _identities(commit, run_id, capture_parent, receipt_parent):
         raise DriveArchiveRejected("invalid_backup_identity")
 
 
+def _open_absolute_directory(path, *, allow_darwin_system_aliases=False):
+    """Open an absolute directory component-by-component without following links."""
+    path = Path(path)
+    if not path.is_absolute() or ".." in path.parts:
+        raise DriveArchiveRejected("unsafe_private_parent")
+    flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    directory = None
+    current = Path(path.anchor)
+    try:
+        directory = os.open(path.anchor, flags)
+        for component in path.parts[1:]:
+            candidate = current / component
+            info = candidate.lstat()
+            if stat.S_ISLNK(info.st_mode):
+                trusted_target = None
+                if allow_darwin_system_aliases and sys.platform == "darwin":
+                    aliases = {
+                        "/tmp": "/private/tmp",
+                        "/var": "/private/var",
+                        "/etc": "/private/etc",
+                    }
+                    expected = aliases.get(str(candidate))
+                    if expected and info.st_uid == 0:
+                        resolved = candidate.resolve(strict=True)
+                        if resolved == Path(expected):
+                            trusted_target = Path(expected)
+                if trusted_target is None:
+                    raise DriveArchiveRejected("unsafe_private_parent")
+                child_directory = _open_absolute_directory(
+                    trusted_target, allow_darwin_system_aliases=False)
+                os.close(directory)
+                directory = child_directory
+                current = trusted_target
+                continue
+            child = os.open(component, flags, dir_fd=directory)
+            os.close(directory)
+            directory = child
+            current = candidate
+        return directory
+    except DriveArchiveRejected:
+        if directory is not None:
+            os.close(directory)
+        raise
+    except OSError as error:
+        if directory is not None:
+            os.close(directory)
+        raise DriveArchiveRejected("unsafe_private_parent") from error
+
+
 def _open_parent_directory(path):
-    """Open every parent component with O_NOFOLLOW, returning the final dir fd."""
+    """Open a file's parent with no-follow traversal for every path component."""
     path = Path(path)
     if path.name in ("", ".", "..") or ".." in path.parts:
         raise DriveArchiveRejected("unsafe_private_parent")
     absolute = path if path.is_absolute() else Path.cwd() / path
     if ".." in absolute.parts:
         raise DriveArchiveRejected("unsafe_private_parent")
-    flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-             | getattr(os, "O_NOFOLLOW", 0))
-    directory = None
-    try:
-        directory = os.open(absolute.anchor, flags)
-        for component in absolute.parts[1:-1]:
-            child = os.open(component, flags, dir_fd=directory)
-            os.close(directory)
-            directory = child
-        return directory
-    except OSError as error:
-        if directory is not None:
-            os.close(directory)
-        raise DriveArchiveRejected("unsafe_private_parent") from error
+    return _open_absolute_directory(
+        absolute.parent, allow_darwin_system_aliases=True)
 
 
 def validate_private_parent(path):

@@ -114,6 +114,25 @@ class OfflineAnchorBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_private_parent"):
                 self.save()
 
+    def test_symlinked_ancestor_rejected_before_backup_write(self):
+        redirect = self.root / "redirect"
+        redirect.symlink_to(self.root, target_is_directory=True)
+        redirected_backup = redirect / self.backup_dir.name / self.backup.name
+        with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_private_parent"):
+            backup_offline_anchor(
+                self.original, redirected_backup, self.reference,
+                disposable_root=self.disposable, **self.parameters)
+        self.assertFalse(self.backup.exists())
+
+    def test_symlinked_ancestor_rejected_during_recovery(self):
+        self.save()
+        redirect = self.root / "redirect"
+        redirect.symlink_to(self.root, target_is_directory=True)
+        redirected_backup = redirect / self.backup_dir.name / self.backup.name
+        with self.assertRaisesRegex(DriveArchiveRejected, "unsafe_private_parent"):
+            verify_offline_anchor(
+                redirected_backup, self.reference, **self.parameters)
+
     def test_disposable_source_with_external_backups_is_valid(self):
         new_source_dir = self.disposable / "private-anchor"
         new_source_dir.mkdir()

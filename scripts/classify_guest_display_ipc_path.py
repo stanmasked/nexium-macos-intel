@@ -467,7 +467,10 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                     binder_subsession_match is not None)
             native_window_response = None
             if native_window_request is not None:
-                native_window_cmd = native_window_request.group(1)
+                # Scoped request regex groups service, command, session;
+                # the historical unscoped regex captures only command.
+                native_window_cmd = native_window_request.group(
+                    2 if display_session is not None else 1)
                 native_window_response_pattern = re.compile(
                     r"IPC FIRST-OCCURRENCE response \(compare with RustSwitch\) "
                     r"service=IApplicationDisplayService cmd="

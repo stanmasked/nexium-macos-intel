@@ -104,7 +104,7 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
                 self.assertEqual(outcome, 1)
                 self.assertEqual(
                     err.getvalue(),
-                    "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED\\n")
+                    "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED\n")
                 self.assertFalse(self.transport.calls)
                 self.assertTrue(link.is_symlink())
                 self.assertEqual(target.read_text(encoding="utf-8"),

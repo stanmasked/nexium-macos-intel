@@ -79,3 +79,32 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
           echo "STAGE73_PRIVATE_DISPLAY_IPC_CLASSIFIER_PASS_NOT_GRAPHICS_CERTIFICATION"
       # Only synthetic fixtures are tested here. Original trace logs remain private.
+
+  private-anchor-path-safety-macos:
+    needs: current-head
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
+    runs-on: macos-15-intel
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Enforce reviewed revision and Intel macOS host
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile private path guards and run synthetic recovery tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/backup_stage73_private_anchor.py scripts/rehearse_stage73_private_drive.py
+          python3 -m unittest discover -s tests -p 'test_stage73_offline_anchor_backup.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_synthetic_drive_rehearsal.py' -v
+          echo "STAGE73_MACOS_INTEL_PRIVATE_ANCHOR_PATH_SAFETY_PASS_NOT_GRAPHICS_CERTIFICATION"
+      # Synthetic fixtures only; no Drive token, raw capture, NRO, or graphics runtime.

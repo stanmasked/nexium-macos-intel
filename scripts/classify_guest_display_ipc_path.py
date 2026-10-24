@@ -211,12 +211,23 @@ DOWNSTREAM_IPC_EVIDENCE = (
 )
 
 
+def _path_contains_symlink_component(path: Path) -> bool:
+    """Reject symlinks in every component, not only the final path element."""
+    candidate = path if path.is_absolute() else Path.cwd() / path
+    current = Path(candidate.anchor)
+    for part in candidate.parts[1:]:
+        current = current / part
+        if part != ".." and current.is_symlink():
+            return True
+    return False
+
+
 def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                                    nro_sha: str) -> dict:
     # The report directory is part of the trust boundary too: rejecting only
     # linked child files would still allow the entire evidence root to be
     # redirected to a different directory before the receipt is read.
-    if report.is_symlink() or not report.is_dir():
+    if _path_contains_symlink_component(report) or not report.is_dir():
         raise ValueError("display IPC report directory unsafe")
     receipt = read_bounded_json(report / "smoke_result.json")
     if receipt.get("emulator_sha256") != macho_sha or receipt.get("nro_sha256") != nro_sha:

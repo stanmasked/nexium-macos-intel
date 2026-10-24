@@ -1035,6 +1035,14 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsafe or oversized"):
             inspect_guest_display_ipc_path(self.root, MACHO, NRO)
 
+    def test_symlinked_ancestor_of_report_directory_rejected(self):
+        alias = self.root.parent / (self.root.name + "-parent-alias")
+        alias.symlink_to(self.root.parent, target_is_directory=True)
+        self.addCleanup(alias.unlink)
+        report_through_alias = alias / self.root.name
+        with self.assertRaisesRegex(ValueError, "report directory unsafe"):
+            inspect_guest_display_ipc_path(report_through_alias, MACHO, NRO)
+
     def test_symlinked_report_directory_rejected(self):
         alias = self.root.with_name(self.root.name + "-alias")
         alias.symlink_to(self.root, target_is_directory=True)

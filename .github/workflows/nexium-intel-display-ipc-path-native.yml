@@ -15,8 +15,26 @@ permissions:
   actions: read
 
 jobs:
-  prepare-public-framebuffer-nro:
+  private-archive-readiness:
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      archive_ready: ${{ steps.guard.outputs.archive_ready }}
+    steps:
+      - name: Require verified private archive before creating raw capture
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fail closed until the private Drive uploader, checksum read-back,
+          # and retention verification are implemented and tested.
+          echo "archive_ready=false" >> "$GITHUB_OUTPUT"
+          echo "Private Drive archive upload is not wired into this workflow yet; refusing to create a new raw capture."
+
+  prepare-public-framebuffer-nro:
+    needs: [private-archive-readiness]
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.private-archive-readiness.outputs.archive_ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -151,24 +169,6 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-
-  private-archive-readiness:
-    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.prepare-public-framebuffer-nro.outputs.is_current == 'true' && needs.prepare-public-framebuffer-nro.outputs.native_required == 'true'
-    needs: [prepare-public-framebuffer-nro]
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      archive_ready: ${{ steps.guard.outputs.archive_ready }}
-    steps:
-      - name: Require verified private archive before creating raw capture
-        id: guard
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Fail closed until the private Drive uploader, checksum read-back,
-          # and retention verification are implemented and tested.
-          echo "archive_ready=false" >> "$GITHUB_OUTPUT"
-          echo "Private Drive archive upload is not wired into this workflow yet; refusing to create a new raw capture."
 
   integrated-intel-guest-graphics:
     if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.prepare-public-framebuffer-nro.outputs.is_current == 'true' && needs.prepare-public-framebuffer-nro.outputs.native_required == 'true' && needs.private-archive-readiness.outputs.archive_ready == 'true'

@@ -50,6 +50,7 @@ class FakeTransport:
         self.created_folder_private_reads = 0
         self.created_folder_share_after_reads = None
         self.created_folder_parent_moved_after_reads = None
+        self.created_folder_name_change_after_reads = None
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -109,9 +110,15 @@ class FakeTransport:
                     and self.created_folder_private_reads >
                     self.created_folder_parent_moved_after_reads
                 )
+                shifted_name = (
+                    self.created_folder_name_change_after_reads is not None
+                    and self.created_folder_private_reads >
+                    self.created_folder_name_change_after_reads
+                )
                 item = {
                     "id": folder_id,
-                    "name": ("wrong-staged-folder" if self.created_folder_readback_name_wrong
+                    "name": ("wrong-staged-folder"
+                             if self.created_folder_readback_name_wrong or shifted_name
                              else original["name"]),
                     "mimeType": "application/vnd.google-apps.folder",
                     "parents": (["unexpectedPrivateParent1"]
@@ -355,7 +362,7 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         # First check after folder creation occurs on a new upload, with
         # another check after SHA-256 media readback. The latter must notice
         # ACL drift even when all file bytes/hash checks passed.
-        tr.created_folder_share_after_reads = 3
+        tr.created_folder_share_after_reads = 4
         with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertEqual(len(tr.files), 1)
@@ -363,7 +370,7 @@ class Stage73DriveReadbackTests(unittest.TestCase):
     def test_per_file_acl_checks_cover_later_capture_files(self):
         tr = FakeTransport()
         # First file can verify; the second preflight must discover drift.
-        tr.created_folder_share_after_reads = 4
+        tr.created_folder_share_after_reads = 6
         with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertEqual(len(tr.files), 1)
@@ -371,6 +378,20 @@ class Stage73DriveReadbackTests(unittest.TestCase):
             method == "POST" and path.startswith("/upload/drive/v3/files?")
             for method, path in tr.calls
         ))
+
+    def test_folder_reparented_after_first_verified_file_detected(self):
+        tr = FakeTransport()
+        tr.created_folder_parent_moved_after_reads = 6
+        with self.assertRaisesRegex(DriveArchiveRejected, "run_folder_placement_changed"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(len(tr.files), 1)
+
+    def test_folder_name_changed_before_second_upload_detected(self):
+        tr = FakeTransport()
+        tr.created_folder_name_change_after_reads = 6
+        with self.assertRaisesRegex(DriveArchiveRejected, "run_folder_placement_changed"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(len(tr.files), 1)
 
     def test_local_tamper_before_upload_fails_without_network(self):
         self.log.write_bytes(b"torn")

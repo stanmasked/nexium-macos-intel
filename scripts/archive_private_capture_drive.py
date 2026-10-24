@@ -201,11 +201,36 @@ def create_run_folder(transport, parent, run_id, commit):
     return folder_id
 
 
-def upload_one(transport, folder_id, name, payload, digest):
+def require_capture_folder_placement(transport, folder_id, parent_id,
+                                     expected_name):
+    """Reject relocation/rename of an active private run folder."""
+    if (not isinstance(parent_id, str) or not DRIVE_ID.fullmatch(parent_id)
+            or not isinstance(expected_name, str) or not expected_name):
+        raise DriveArchiveRejected("invalid_run_folder_expectation")
+    fields = "id,name,mimeType,trashed,parents,shared,driveId,permissions(type,role)"
+    saved, _ = json_response(transport, "GET", metadata_path(folder_id, fields))
+    if (saved.get("id") != folder_id or saved.get("name") != expected_name
+            or saved.get("mimeType") != "application/vnd.google-apps.folder"
+            or saved.get("trashed") is not False
+            or saved.get("parents") != [parent_id]):
+        raise DriveArchiveRejected("run_folder_placement_changed")
+    require_owner_only_acl(saved)
+
+
+def upload_one(transport, folder_id, name, payload, digest, *,
+               expected_run_parent=None, expected_run_name=None):
     if not name or "/" in name or len(name) > 190:
         raise DriveArchiveRejected("invalid_entry_name")
     if len(payload) > MAX_FILE_BYTES or hashlib.sha256(payload).hexdigest() != digest:
         raise DriveArchiveRejected("local_capture_changed")
+    # Revalidate exact placement before walking the parent chain. A folder
+    # moved to another (even private) folder must not be accepted as the
+    # original run destination. The receipt folder has no run-name contract.
+    if (expected_run_parent is None) != (expected_run_name is None):
+        raise DriveArchiveRejected("invalid_run_folder_expectation")
+    if expected_run_parent is not None:
+        require_capture_folder_placement(
+            transport, folder_id, expected_run_parent, expected_run_name)
     # A folder validated immediately after creation can have been reshared
     # before the next (or any subsequent) payload. Recheck all ancestor
     # permissions and writability before starting EACH upload session.
@@ -259,8 +284,11 @@ def upload_one(transport, folder_id, name, payload, digest):
     if (status != 200 or len(readback) != len(payload)
             or hashlib.sha256(readback).hexdigest() != digest):
         raise DriveArchiveRejected("remote_readback_mismatch")
-    # Detect ACL changes between the pre-upload check and readback.
+    # Detect ACL or placement changes between pre-upload and readback.
     # A rejection must not be mistaken for a verified private archive.
+    if expected_run_parent is not None:
+        require_capture_folder_placement(
+            transport, folder_id, expected_run_parent, expected_run_name)
     check_private_parent_chain(transport, folder_id, writable=False)
     return file_id
 
@@ -522,6 +550,7 @@ def upload_archive(report, manifest_path, parent_id, run_id, transport):
     # that changed since sealing. The first verification above does this.
     check_parent(transport, parent_id)
     folder_id = create_run_folder(transport, parent_id, run_id, commit)
+    expected_run_name = "stage73-" + run_id + "-" + commit[:12]
     count = 0
     for index, entry in enumerate(manifest["files"]):
         # No arbitrary traversal: the locally sealed manifest has already been
@@ -529,13 +558,17 @@ def upload_archive(report, manifest_path, parent_id, run_id, transport):
         verify_manifest(report, manifest_path)
         data = read_sealed_file(report, entry["path"], entry["bytes"], entry["sha256"])
         name = str(index).zfill(3) + "-" + entry["path"].rsplit("/", 1)[-1]
-        upload_one(transport, folder_id, name, data, entry["sha256"])
+        upload_one(
+            transport, folder_id, name, data, entry["sha256"],
+            expected_run_parent=parent_id, expected_run_name=expected_run_name)
         count += 1
     verify_manifest(report, manifest_path)
     raw = read_private_manifest_bytes(manifest_path, manifest)
     manifest_sha = hashlib.sha256(raw).hexdigest()
-    upload_one(transport, folder_id, "stage73-private-manifest.json",
-               raw, manifest_sha)
+    upload_one(
+        transport, folder_id, "stage73-private-manifest.json",
+        raw, manifest_sha, expected_run_parent=parent_id,
+        expected_run_name=expected_run_name)
     # Remote retention/access policy must be independently verified; do not
     # set archive_ready or remote_retention_verified here.
     return {"readback_verified": True, "retention_verified": False,

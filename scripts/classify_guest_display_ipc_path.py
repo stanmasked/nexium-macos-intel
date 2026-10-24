@@ -100,13 +100,32 @@ def last_ipc_request_summary(data: str) -> dict:
             "last_ipc_request_same_response_seen_before": False,
             "last_ipc_request_session_scoped": None,
             "last_ipc_request_other_session_response_after_request": None,
+            "last_ipc_request_prior_unanswered_same_command": None,
         }
     request_line, kind, request_service, command, request_session = requests[-1]
     matching = [(line_no, service, cmd, reply_session)
                 for line_no, service, cmd, reply_session in responses
                 if (service == request_service and cmd == command
                     and reply_session == request_session)]
-    response_after = any(line_no > request_line for line_no, _, _, _ in matching)
+    # If an earlier identical request is still pending, a later first-
+    # occurrence reply cannot be assigned to the final request without a
+    # request/thread correlation ID, even if the session handle matches.
+    # Treat unscoped legacy request groups the same way (None is never a
+    # wildcard). Keep request IDs and raw session handles out of the result.
+    previous_matching_requests = [
+        earlier_line for earlier_line, _, service, cmd, session in requests[:-1]
+        if service == request_service and cmd == command
+        and session == request_session
+    ]
+    prior_unanswered = any(
+        not any(earlier_line < reply_line < request_line
+                for reply_line, _, _, _ in matching)
+        for earlier_line in previous_matching_requests
+    )
+    response_after = (
+        not prior_unanswered and
+        any(line_no > request_line for line_no, _, _, _ in matching)
+    )
     response_before = any(line_no < request_line for line_no, _, _, _ in matching)
     other_session_after = (
         any(line_no > request_line and service == request_service
@@ -132,6 +151,7 @@ def last_ipc_request_summary(data: str) -> dict:
         "last_ipc_request_same_response_seen_before": response_before,
         "last_ipc_request_session_scoped": request_session is not None,
         "last_ipc_request_other_session_response_after_request": other_session_after,
+        "last_ipc_request_prior_unanswered_same_command": prior_unanswered,
     }
 
 

@@ -761,6 +761,73 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertTrue(result["last_ipc_request_same_response_seen_before"])
         self.assertFalse(result["last_ipc_request_other_session_response_after_request"])
 
+
+    def test_latest_request_does_not_steal_reply_from_unanswered_same_session(self):
+        data = "\n".join((
+            'IPC request service="IApplicationDisplayService" cmd=2020 session=0x20',
+            'IPC request service="IApplicationDisplayService" cmd=2020 session=0x20',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=IApplicationDisplayService cmd=2020 session=0x20 rc=0x00000000',
+        ))
+        result = last_ipc_request_summary(data)
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertTrue(result["last_ipc_request_prior_unanswered_same_command"])
+        self.assertFalse(result["last_ipc_request_other_session_response_after_request"])
+        self.assertNotIn("0x20", json.dumps(result))
+        self.assertNotIn("2020", json.dumps(result))
+
+    def test_other_session_pending_does_not_block_latest_scoped_reply(self):
+        data = "\n".join((
+            'IPC request service="IApplicationDisplayService" cmd=2020 session=0x21',
+            'IPC request service="IApplicationDisplayService" cmd=2020 session=0x20',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=IApplicationDisplayService cmd=2020 session=0x20 rc=0x00000000',
+        ))
+        result = last_ipc_request_summary(data)
+        self.assertTrue(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_prior_unanswered_same_command"])
+
+    def test_prior_same_session_reply_before_latest_does_not_block_new_reply(self):
+        data = "\n".join((
+            'IPC request service="vi:m" cmd=2 session=0x20',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:m cmd=2 session=0x20 rc=0x00000000',
+            'IPC request service="vi:m" cmd=2 session=0x20',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:m cmd=2 session=0x20 rc=0x00000000',
+        ))
+        result = last_ipc_request_summary(data)
+        self.assertTrue(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_prior_unanswered_same_command"])
+        self.assertTrue(result["last_ipc_request_same_response_seen_before"])
+
+    def test_other_command_pending_does_not_block_latest_reply(self):
+        data = "\n".join((
+            'IPC request service="IHOSBinderDriver" cmd=3 session=0x30',
+            'IPC request service="IHOSBinderDriver" cmd=0 session=0x30',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=IHOSBinderDriver cmd=0 session=0x30 rc=0x00000000',
+        ))
+        result = last_ipc_request_summary(data)
+        self.assertTrue(result["last_ipc_request_response_after_request"])
+        self.assertFalse(result["last_ipc_request_prior_unanswered_same_command"])
+
+    def test_legacy_unscoped_overlapping_requests_are_also_ambiguous(self):
+        data = "\n".join((
+            'IPC request service="vi:u" cmd=1',
+            'IPC request service="vi:u" cmd=1',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:u cmd=1 rc=0x00000000',
+        ))
+        result = last_ipc_request_summary(data)
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertTrue(result["last_ipc_request_prior_unanswered_same_command"])
+        self.assertFalse(result["last_ipc_request_session_scoped"])
+
+    def test_no_last_request_has_no_pending_same_command_status(self):
+        result = last_ipc_request_summary("only synthetic unrelated debug text")
+        self.assertIsNone(result["last_ipc_request_prior_unanswered_same_command"])
+
     def test_nvdrv_response_from_different_service_alias_does_not_count(self):
         data = ('IPC request service="nvdrv:a" cmd=7\n'
                 'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '

@@ -61,3 +61,7 @@ These checks mitigate a concurrent duplicate between preflight and upload,
 but Google Drive does not offer an atomic name reservation. A protected
 single-writer lock is still mandatory. Existing remote objects must remain
 private and be reviewed separately on partial failure.
+
+
+Trusted-host operational checklist:
+See [STAGE73_TRUSTED_HOST_REHEARSAL_CHECKLIST.md](STAGE73_TRUSTED_HOST_REHEARSAL_CHECKLIST.md) for the no-secret operator procedure and acceptance criteria. This documentation does not activate the live uploader or change archive readiness.

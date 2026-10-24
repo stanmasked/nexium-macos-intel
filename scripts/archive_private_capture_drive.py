@@ -183,18 +183,21 @@ def create_run_folder(transport, parent, run_id, commit):
     # Re-fetch the newly created folder and its entire private parent chain
     # BEFORE beginning any payload upload. This is still a point-in-time
     # safety check, not an atomic ACL lock or retention guarantee.
-    check_private_parent_chain(transport, folder_id, writable=True)
     fields = ("id,name,mimeType,trashed,shared,driveId,parents,"
               "permissions(type,role),capabilities(canAddChildren)")
     saved, _ = json_response(
         transport, "GET", metadata_path(folder_id, fields))
+    # Validate exact identity/placement BEFORE traversing remote parents:
+    # a moved or substituted folder must not redirect verification to an
+    # unrelated path. The full second pass then validates ACL ancestry and
+    # write permission, not merely the original POST response.
     if (saved.get("id") != folder_id or saved.get("name") != name
             or saved.get("mimeType") != "application/vnd.google-apps.folder"
             or saved.get("parents") != [parent]
-            or saved.get("trashed") is not False
-            or saved.get("capabilities", {}).get("canAddChildren") is not True):
+            or saved.get("trashed") is not False):
         raise DriveArchiveRejected("created_folder_readback_invalid")
     require_owner_only_acl(saved)
+    check_private_parent_chain(transport, folder_id, writable=True)
     return folder_id
 
 

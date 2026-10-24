@@ -28,6 +28,7 @@ from verify_stage73_private_drive_persistence import (
 
 MARKER = "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_VERIFIED_RETENTION_UNVERIFIED"
 ERROR = "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED"
+PREFLIGHT_MARKER = "STAGE73_PRIVATE_SYNTHETIC_DRIVE_PREFLIGHT_VERIFIED_NO_UPLOAD"
 
 
 
@@ -53,12 +54,12 @@ def preflight_new_rehearsal(transport, capture_parent, receipt_parent,
             raise DriveArchiveRejected("synthetic_run_identity_not_unique")
 
 
-def run_synthetic_rehearsal(transport, capture_parent, receipt_parent,
-                            run_id, commit, backup, reference):
-    """Exercise real transport interface using fabricated bytes only.
+def preflight_synthetic_rehearsal(transport, capture_parent, receipt_parent,
+                                   run_id, commit, backup, reference):
+    """Perform read-only remote and local checks before a synthetic upload.
 
-    The caller owns the explicit trusted execution boundary and credentials.
-    Returned data is fixed and safe to publish; private IDs never returned.
+    Does not create remote objects or local anchor files. The run identity is
+    not reserved; the full rehearsal repeats these checks before writing.
     """
     if (not isinstance(capture_parent, str)
             or not DRIVE_ID.fullmatch(capture_parent)
@@ -81,6 +82,15 @@ def run_synthetic_rehearsal(transport, capture_parent, receipt_parent,
     # remote run folder or a private upload session.
     preflight_new_rehearsal(
         transport, capture_parent, receipt_parent, run_id, commit)
+    return backup, reference
+
+
+def run_synthetic_rehearsal(transport, capture_parent, receipt_parent,
+                            run_id, commit, backup, reference):
+    """Exercise the real transport interface using fabricated bytes only."""
+    backup, reference = preflight_synthetic_rehearsal(
+        transport, capture_parent, receipt_parent,
+        run_id, commit, backup, reference)
     with tempfile.TemporaryDirectory(prefix="nexium-stage73-synthetic-") as root_name:
         root = Path(root_name)
         workspace = root / "workspace"
@@ -156,12 +166,20 @@ def main(argv=None):
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--backup", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
+    parser.add_argument("--preflight-only", action="store_true",
+                        help="check local paths and Drive ACL/collision state without uploading")
     args = parser.parse_args(argv)
     try:
         if (os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
                 or os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true"):
             raise DriveArchiveRejected("trusted_private_execution_required")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))
+        if args.preflight_only:
+            preflight_synthetic_rehearsal(
+                transport, args.capture_parent_id, args.receipt_parent_id,
+                args.run_id, args.source_commit, args.backup, args.reference)
+            print(PREFLIGHT_MARKER)
+            return 0
         result = run_synthetic_rehearsal(
             transport, args.capture_parent_id, args.receipt_parent_id,
             args.run_id, args.source_commit, args.backup, args.reference)

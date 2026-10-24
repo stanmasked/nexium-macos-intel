@@ -51,6 +51,11 @@ class FakeTransport:
         self.created_folder_share_after_reads = None
         self.created_folder_parent_moved_after_reads = None
         self.created_folder_name_change_after_reads = None
+        self.remote_file_metadata_reads = {}
+        self.remote_file_share_after_reads = None
+        self.remote_file_reparent_after_reads = None
+        self.remote_file_rename_after_reads = None
+        self.remote_file_trash_after_reads = None
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -150,12 +155,26 @@ class FakeTransport:
                 if self.bad_media:
                     payload = b"tampered" + payload
                 return 200, {}, payload
-            data = {"id": file_id, "name": info["name"],
-                    "parents": ["otherPrivateParent000"] if self.bad_parent else info["parents"],
-                    "mimeType": info["mimeType"], "trashed": False,
-                    "shared": self.shared_capture,
-                    "permissions": [{"type": "user", "role": "owner"}],
-                    "size": str(len(payload))}
+            count = self.remote_file_metadata_reads.get(file_id, 0) + 1
+            self.remote_file_metadata_reads[file_id] = count
+            def after_first_metadata(threshold):
+                return threshold is not None and count > threshold
+            data = {
+                "id": file_id,
+                "name": ("renamed-after-media"
+                         if after_first_metadata(self.remote_file_rename_after_reads)
+                         else info["name"]),
+                "parents": (["otherPrivateParent000"]
+                            if (self.bad_parent or after_first_metadata(
+                                self.remote_file_reparent_after_reads))
+                            else info["parents"]),
+                "mimeType": info["mimeType"],
+                "trashed": after_first_metadata(self.remote_file_trash_after_reads),
+                "shared": (self.shared_capture or after_first_metadata(
+                    self.remote_file_share_after_reads)),
+                "permissions": [{"type": "user", "role": "owner"}],
+                "size": str(len(payload)),
+            }
             return 200, {}, json.dumps(data).encode()
         raise AssertionError("Unexpected fake HTTP call")
 
@@ -390,6 +409,47 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         tr = FakeTransport()
         tr.created_folder_name_change_after_reads = 6
         with self.assertRaisesRegex(DriveArchiveRejected, "run_folder_placement_changed"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(len(tr.files), 1)
+
+    def test_remote_file_rechecked_after_media_sha256_success(self):
+        tr = FakeTransport()
+        result = upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertTrue(result["readback_verified"])
+        self.assertEqual(len(tr.files), 3)
+        self.assertTrue(all(
+            tr.remote_file_metadata_reads[file_id] == 2
+            for file_id in tr.files
+        ))
+
+    def test_remote_file_reshared_after_media_readback_rejected(self):
+        tr = FakeTransport()
+        tr.remote_file_share_after_reads = 1
+        with self.assertRaisesRegex(
+                DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        # Bytes were uploaded; fail closed instead of declaring private
+        # success. No second or manifest payload should have started.
+        self.assertEqual(len(tr.files), 1)
+
+    def test_remote_file_reparented_after_media_readback_rejected(self):
+        tr = FakeTransport()
+        tr.remote_file_reparent_after_reads = 1
+        with self.assertRaisesRegex(DriveArchiveRejected, "wrong_remote_parent"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(len(tr.files), 1)
+
+    def test_remote_file_renamed_after_media_readback_rejected(self):
+        tr = FakeTransport()
+        tr.remote_file_rename_after_reads = 1
+        with self.assertRaisesRegex(DriveArchiveRejected, "wrong_remote_identity"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(len(tr.files), 1)
+
+    def test_remote_file_trashed_after_media_readback_rejected(self):
+        tr = FakeTransport()
+        tr.remote_file_trash_after_reads = 1
+        with self.assertRaisesRegex(DriveArchiveRejected, "wrong_remote_parent"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertEqual(len(tr.files), 1)
 

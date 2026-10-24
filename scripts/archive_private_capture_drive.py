@@ -284,6 +284,15 @@ def upload_one(transport, folder_id, name, payload, digest, *,
     if (status != 200 or len(readback) != len(payload)
             or hashlib.sha256(readback).hexdigest() != digest):
         raise DriveArchiveRejected("remote_readback_mismatch")
+    # Even when media bytes match the sealed manifest, the individual file
+    # may have been re-shared, trashed, renamed or moved since its first
+    # metadata read. A second metadata request is required before we can
+    # claim the upload was verified as PRIVATE at this point in time.
+    verified_after_media, _ = json_response(
+        transport, "GET", metadata_path(file_id, fields))
+    validate_metadata(
+        verified_after_media, file_id=file_id, parent_id=folder_id,
+        filename=name, size=len(payload))
     # Detect ACL or placement changes between pre-upload and readback.
     # A rejection must not be mistaken for a verified private archive.
     if expected_run_parent is not None:

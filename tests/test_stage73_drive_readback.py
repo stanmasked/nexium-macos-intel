@@ -64,6 +64,9 @@ class FakeTransport:
         self.incomplete_preflight_listing = False
         self.force_capture_identity_collision = False
         self.force_receipt_identity_collision = False
+        self.concurrent_capture_duplicate_after_post = False
+        self.concurrent_receipt_duplicate_after_upload = False
+        self.invalid_name_listing_entry = False
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -119,8 +122,17 @@ class FakeTransport:
                 and metadata["name"] == filename
             )
             if ((self.force_capture_identity_collision and filename.endswith(COMMIT[:12]))
-                    or (self.force_receipt_identity_collision and filename.endswith("-handoff.json"))):
+                    or (self.force_receipt_identity_collision and filename.endswith("-handoff.json"))
+                    or (self.concurrent_capture_duplicate_after_post
+                        and filename.endswith(COMMIT[:12])
+                        and bool(self.created_folders))
+                    or (self.concurrent_receipt_duplicate_after_upload
+                        and filename.endswith("-handoff.json")
+                        and any(info["parents"] == [RECEIPTS]
+                                for info, _ in self.files.values()))):
                 matches.append({"id": "priorArchive9999", "name": filename})
+            if self.invalid_name_listing_entry:
+                matches.append({"name": filename})
             result = {"files": matches}
             if self.incomplete_preflight_listing:
                 result["nextPageToken"] = "moreUnknownPrivateItems"
@@ -606,6 +618,52 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(stderr.getvalue(), "STAGE73_PRIVATE_DRIVE_ARCHIVE_BLOCKED\n")
         self.assertFalse(any(m == "POST" for m, _ in tr.calls))
+
+
+    def test_created_capture_folder_must_be_only_matching_remote_name(self):
+        tr = FakeTransport()
+        tr.concurrent_capture_duplicate_after_post = True
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "remote_archive_identity_not_unique"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(len(tr.created_folders), 1)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+        self.assertFalse(tr.files)
+
+    def test_uploaded_receipt_duplicate_name_invalidates_verified_handoff(self):
+        tr, uploaded, receipt = self.make_receipt()
+        tr.concurrent_receipt_duplicate_after_upload = True
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "remote_archive_identity_not_unique"):
+            persist_private_handoff(
+                tr, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
+        self.assertEqual(len(tr.files), 4)
+        self.assertEqual(sum(
+            metadata["parents"] == [RECEIPTS]
+            for metadata, _ in tr.files.values()
+        ), 1)
+
+    def test_invalid_remote_listing_item_blocks_capture_before_post(self):
+        tr = FakeTransport()
+        tr.invalid_name_listing_entry = True
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "remote_archive_identity_not_unique"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(method == "POST" for method, _ in tr.calls))
+
+    def test_postcreate_recheck_does_not_claim_remote_retention(self):
+        tr = FakeTransport()
+        outcome = upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertTrue(outcome["readback_verified"])
+        self.assertFalse(outcome["retention_verified"])
+        folder_queries = [
+            path for method, path in tr.calls
+            if method == "GET" and path.startswith("/drive/v3/files?")
+        ]
+        self.assertGreaterEqual(len(folder_queries), 2)
 
     def test_local_tamper_before_upload_fails_without_network(self):
         self.log.write_bytes(b"torn")

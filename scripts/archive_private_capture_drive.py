@@ -158,12 +158,11 @@ def check_parent(transport, folder_id):
     check_private_parent_chain(transport, folder_id, writable=True)
 
 
-def require_remote_name_available(transport, parent_id, filename):
-    """Fail closed if a run folder or handoff name already exists in Drive.
+def remote_name_matches(transport, parent_id, filename):
+    """Bounded exact-name listing, only for protected Stage73 identities.
 
-    Drive listing is not a remote atomic reservation. Concurrent protected
-    writers must still be serialized externally; this is a duplicate/retry
-    guard for the normal single-writer archival protocol.
+    No response identifiers leave the trusted private process. A next page,
+    malformed item, or unverified list is NEVER treated as absence.
     """
     if (not isinstance(parent_id, str) or not DRIVE_ID.fullmatch(parent_id)
             or not isinstance(filename, str)
@@ -178,9 +177,28 @@ def require_remote_name_available(transport, parent_id, filename):
         "supportsAllDrives": "true", "includeItemsFromAllDrives": "true",
     })
     listing, _ = json_response(transport, "GET", path)
-    if (listing.get("nextPageToken")
-            or not isinstance(listing.get("files"), list)
-            or listing["files"]):
+    items = listing.get("files")
+    if (listing.get("nextPageToken") or not isinstance(items, list)
+            or len(items) > 2 or any(
+                not isinstance(item, dict)
+                or item.get("name") != filename
+                or not isinstance(item.get("id"), str)
+                or not DRIVE_ID.fullmatch(item["id"])
+                for item in items)):
+        raise DriveArchiveRejected("remote_archive_identity_not_unique")
+    return [item["id"] for item in items]
+
+
+def require_remote_name_available(transport, parent_id, filename):
+    """No same-name entry may predate the new archive/receipt."""
+    if remote_name_matches(transport, parent_id, filename):
+        raise DriveArchiveRejected("remote_archive_identity_not_unique")
+
+
+def require_remote_name_owned(transport, parent_id, filename, file_id):
+    """After creating an object, its exact name must resolve ONLY to its ID."""
+    if (not isinstance(file_id, str) or not DRIVE_ID.fullmatch(file_id)
+            or remote_name_matches(transport, parent_id, filename) != [file_id]):
         raise DriveArchiveRejected("remote_archive_identity_not_unique")
 
 
@@ -224,6 +242,9 @@ def create_run_folder(transport, parent, run_id, commit):
         raise DriveArchiveRejected("created_folder_readback_invalid")
     require_owner_only_acl(saved)
     check_private_parent_chain(transport, folder_id, writable=True)
+    # Drive names are non-unique; re-enumerate AFTER folder POST and before
+    # the first private payload. Concurrent writers cannot both be trusted.
+    require_remote_name_owned(transport, parent, name, folder_id)
     return folder_id
 
 
@@ -510,7 +531,10 @@ def persist_private_handoff(transport, path, receipt_parent_id,
     name = "stage73-" + run_id + "-" + commit[:12] + "-handoff.json"
     require_remote_name_available(transport, receipt_parent_id, name)
     receipt_sha = hashlib.sha256(raw).hexdigest()
-    upload_one(transport, receipt_parent_id, name, raw, receipt_sha)
+    receipt_id = upload_one(transport, receipt_parent_id, name, raw, receipt_sha)
+    # The receipt identity is needed for an independently anchored recovery.
+    # A competing same-name file must invalidate the verification claim.
+    require_remote_name_owned(transport, receipt_parent_id, name, receipt_id)
     return {"private_receipt_readback_verified": True,
             # This MUST be anchored independently of remote Drive contents.
             # Never print it or put it in PR logs.

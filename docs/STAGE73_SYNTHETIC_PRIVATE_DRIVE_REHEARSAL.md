@@ -51,3 +51,13 @@ This is a fail-closed optimization for recoverable retries, not a remotely
 atomic reservation: concurrent trusted upload processes must not run with
 the same identity. Partial failure artifacts must be retained privately
 for later review, not automatically deleted.
+
+
+The core uploader now re-lists the capture run name *after* creating its
+folder, before sending capture bytes, and verifies it uniquely resolves to
+the newly created folder ID. The handoff uploader likewise re-lists its
+receipt name after content upload and fails closed if multiple IDs exist.
+These checks mitigate a concurrent duplicate between preflight and upload,
+but Google Drive does not offer an atomic name reservation. A protected
+single-writer lock is still mandatory. Existing remote objects must remain
+private and be reviewed separately on partial failure.

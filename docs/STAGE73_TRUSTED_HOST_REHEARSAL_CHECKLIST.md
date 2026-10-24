@@ -24,13 +24,13 @@ Run only on a separately reviewed, isolated host that is not a GitHub Actions ru
 Run the same reviewed command with `--preflight-only` first:
 
 ```sh
-python3 scripts/rehearse_stage73_private_drive.py \\
-  --capture-parent-id '<private capture folder ID from protected operator config>' \\
-  --receipt-parent-id '<distinct private receipt folder ID from protected operator config>' \\
-  --run-id '<new unique decimal run ID>' \\
-  --source-commit '<full 40-character reviewed source commit>' \\
-  --backup '/protected-domain-A/stage73-anchor-<run-id>.json' \\
-  --reference '/protected-domain-B/stage73-anchor-reference-<run-id>.json' \\
+python3 scripts/rehearse_stage73_private_drive.py \
+  --capture-parent-id '<private capture folder ID from protected operator config>' \
+  --receipt-parent-id '<distinct private receipt folder ID from protected operator config>' \
+  --run-id '<new unique decimal run ID>' \
+  --source-commit '<full 40-character reviewed source commit>' \
+  --backup '/protected-domain-A/stage73-anchor-<run-id>.json' \
+  --reference '/protected-domain-B/stage73-anchor-reference-<run-id>.json' \
   --preflight-only
 ```
 

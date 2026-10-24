@@ -71,19 +71,23 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
     def test_preflight_rejects_final_symlink_before_drive_requests(self):
         target = Path(self.temp.name) / "existing-anchor-target.json"
         target.write_text("keep this file untouched", encoding="utf-8")
+        missing_target = Path(self.temp.name) / "missing-anchor-target.json"
         env = {
             "GITHUB_ACTIONS": "",
             "NEXIUM_PRIVATE_ARCHIVE_ARMED": "true",
             "NEXIUM_DRIVE_ACCESS_TOKEN": "fake",
         }
         cases = (
-            (self.a / "final-backup-symlink.json", self.reference),
-            (self.backup, self.b / "final-reference-symlink.json"),
+            (self.a / "final-backup-symlink.json", self.reference, target, True),
+            (self.a / "dangling-backup-symlink.json", self.reference, missing_target, True),
+            (self.backup, self.b / "final-reference-symlink.json", target, False),
+            (self.backup, self.b / "dangling-reference-symlink.json", missing_target, False),
         )
-        for backup, reference in cases:
-            with self.subTest(backup=backup.name, reference=reference.name):
-                link = backup if backup.is_relative_to(self.a) and backup.name.startswith("final-") else reference
-                link.symlink_to(target)
+        for backup, reference, link_target, is_backup in cases:
+            with self.subTest(backup=backup.name, reference=reference.name,
+                              dangling=not link_target.exists()):
+                link = backup if is_backup else reference
+                link.symlink_to(link_target)
                 opts = [
                     "--capture-parent-id", PARENT,
                     "--receipt-parent-id", RECEIPTS,
@@ -100,11 +104,12 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
                 self.assertEqual(outcome, 1)
                 self.assertEqual(
                     err.getvalue(),
-                    "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED\n")
+                    "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED\\n")
                 self.assertFalse(self.transport.calls)
                 self.assertTrue(link.is_symlink())
                 self.assertEqual(target.read_text(encoding="utf-8"),
                                  "keep this file untouched")
+                self.assertFalse(missing_target.exists())
                 link.unlink()
 
     def test_preflight_rejects_symlinked_ancestor_before_drive_requests(self):

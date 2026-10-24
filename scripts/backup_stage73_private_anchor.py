@@ -23,9 +23,15 @@ REFERENCE_SCHEMA = "nexium-stage73-offline-anchor-reference/v1"
 
 
 def _private_bytes(path, max_bytes):
-    """Read a regular, single-linked 0600 file with a stable descriptor."""
+    """Read a regular, single-linked 0600 file through a no-follow parent fd."""
+    path = Path(path)
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        directory = _open_parent_directory(path)
+        try:
+            fd = os.open(path.name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                         dir_fd=directory)
+        finally:
+            os.close(directory)
         try:
             before = os.fstat(fd)
             if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
@@ -62,16 +68,47 @@ def _identities(commit, run_id, capture_parent, receipt_parent):
         raise DriveArchiveRejected("invalid_backup_identity")
 
 
+def _open_parent_directory(path):
+    """Open every parent component with O_NOFOLLOW, returning the final dir fd."""
+    path = Path(path)
+    if path.name in ("", ".", "..") or ".." in path.parts:
+        raise DriveArchiveRejected("unsafe_private_parent")
+    absolute = path if path.is_absolute() else Path.cwd() / path
+    if ".." in absolute.parts:
+        raise DriveArchiveRejected("unsafe_private_parent")
+    flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    directory = None
+    try:
+        directory = os.open(absolute.anchor, flags)
+        for component in absolute.parts[1:-1]:
+            child = os.open(component, flags, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        return directory
+    except OSError as error:
+        if directory is not None:
+            os.close(directory)
+        raise DriveArchiveRejected("unsafe_private_parent") from error
+
+
+def validate_private_parent(path):
+    """Fail closed if any existing component of a private file's parent is unsafe."""
+    directory = _open_parent_directory(path)
+    os.close(directory)
+
+
 def _separate_paths(original, backup, reference, disposable_root=None):
     paths = [Path(value) for value in (original, backup, reference)]
+    for path in paths:
+        if path.name in ("", ".", "..") or ".." in path.parts or path.is_symlink():
+            raise DriveArchiveRejected("unsafe_private_parent")
+        directory = _open_parent_directory(path)
+        os.close(directory)
     canonical = [path.resolve() for path in paths]
     if (len(set(canonical)) != 3
             or len({str(item.parent) for item in canonical}) != 3):
         raise DriveArchiveRejected("not_independent_destinations")
-    for path in paths:
-        if (path.parent.is_symlink() or not path.parent.is_dir()
-                or path.name in ("", ".", "..") or path.is_symlink()):
-            raise DriveArchiveRejected("unsafe_private_parent")
     if disposable_root is not None:
         disposable = Path(disposable_root).resolve()
         # The input anchor may come from the short-lived producer session.
@@ -84,10 +121,9 @@ def _separate_paths(original, backup, reference, disposable_root=None):
 
 
 def _exclusive_0600(path, raw):
-    parent = path.parent
-    dirflags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    path = Path(path)
     try:
-        directory = os.open(parent, dirflags)
+        directory = _open_parent_directory(path)
         try:
             fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL
                          | getattr(os, "O_NOFOLLOW", 0),
@@ -163,6 +199,10 @@ def verify_offline_anchor(backup, reference, *,
     """Recover after the source tree has gone; uses a SEPARATE reference file."""
     _identities(source_commit, run_id, capture_parent, receipt_parent)
     dst, ref = Path(backup), Path(reference)
+    validate_private_parent(dst)
+    validate_private_parent(ref)
+    if (dst.is_symlink() or ref.is_symlink()):
+        raise DriveArchiveRejected("unsafe_private_parent")
     if (dst.resolve() == ref.resolve()
             or dst.resolve().parent == ref.resolve().parent):
         raise DriveArchiveRejected("not_independent_destinations")

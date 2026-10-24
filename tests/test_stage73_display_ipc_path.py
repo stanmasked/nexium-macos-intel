@@ -171,6 +171,51 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.assertFalse(result["expected_vi_display_ancestry_observed"])
         self.assertTrue(result["downstream_ipc_without_expected_ancestry"])
 
+
+    def test_same_vi_session_overlapping_display_requests_not_attributed(self):
+        self.set_scoped_window_path()
+        needle = "→ IApplicationDisplayService sub-session handle=0x20 parent_session=0x10"
+        overlapping = 'IPC request service="vi:m" cmd=2 session=0x10 in_data=0'
+        self.data = self.data.replace(needle, overlapping + "\n" + needle, 1)
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "ipc_sequence_inconsistent_or_cross_path")
+        self.assertTrue(result["vi_request_session_correlated"])
+        self.assertTrue(result["vi_display_request_ambiguous"])
+        self.assertFalse(result["display_subsession_parent_correlated"])
+        self.assertFalse(result["expected_vi_display_ancestry_observed"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        for handle in ("0x10", "0x20"):
+            self.assertNotIn(handle, json.dumps(result))
+
+    def test_other_vi_session_interleaving_preserves_display_ancestry(self):
+        self.set_scoped_window_path()
+        needle = "→ IApplicationDisplayService sub-session handle=0x20 parent_session=0x10"
+        foreign = 'IPC request service="vi:m" cmd=2 session=0x11 in_data=0'
+        self.data = self.data.replace(needle, foreign + "\n" + needle, 1)
+        result = self.inspect()
+        self.assertFalse(result["vi_display_request_ambiguous"])
+        self.assertTrue(result["display_subsession_parent_correlated"])
+        self.assertTrue(result["expected_vi_display_ancestry_observed"])
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
+    def test_other_vi_variant_interleaving_preserves_display_ancestry(self):
+        self.set_scoped_window_path()
+        needle = "→ IApplicationDisplayService sub-session handle=0x20 parent_session=0x10"
+        foreign = 'IPC request service="vi:u" cmd=2 session=0x10 in_data=0'
+        self.data = self.data.replace(needle, foreign + "\n" + needle, 1)
+        result = self.inspect()
+        self.assertFalse(result["vi_display_request_ambiguous"])
+        self.assertTrue(result["display_subsession_parent_correlated"])
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+
+    def test_legacy_vi_ancestry_omits_unavailable_ambiguity_claim(self):
+        self.set_through(13)
+        result = self.inspect()
+        self.assertIsNone(result["vi_display_request_ambiguous"])
+        self.assertTrue(result["expected_vi_display_ancestry_observed"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+
     def test_session_handles_correlate_vi_request_to_display_subsession(self):
         self.data = "\n".join((
             'IPC request service="sm:" cmd=1 in_data=0 is_domain=false',

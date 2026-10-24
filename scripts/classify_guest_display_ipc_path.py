@@ -239,6 +239,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
     session_correlation = {
         "vi_service_handle_return_correlated": False if session_correlation_fields_observed else None,
         "vi_request_session_correlated": False if session_correlation_fields_observed else None,
+        "vi_display_request_ambiguous": False if session_correlation_fields_observed else None,
         "display_subsession_parent_correlated": False if session_correlation_fields_observed else None,
         "display_binder_request_session_correlated": False if session_correlation_fields_observed else None,
         "binder_subsession_parent_correlated": False if session_correlation_fields_observed else None,
@@ -313,6 +314,21 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                     None,
                 )
                 if display_subsession_match is None:
+                    continue
+                # An interleaved second VI display request on the same
+                # service handle leaves the sub-session response ambiguous:
+                # the instrumentation has no request ID to disambiguate it.
+                # Requests on other handles do not affect this path.
+                overlapping_vi_request = next((
+                    match for match in SESSION_IPC_REQUEST_PATTERN.finditer(
+                        data, vi_request_match.end(),
+                        display_subsession_match.start())
+                    if match.group(1) == vi_service
+                    and int(match.group(2)) in (0, 1, 2, 3)
+                    and int(match.group(3), 16) == returned_handle
+                ), None)
+                if overlapping_vi_request is not None:
+                    session_correlation["vi_display_request_ambiguous"] = True
                     continue
                 session_correlation["display_subsession_parent_correlated"] = True
                 return (
@@ -699,6 +715,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
         "session_correlation_fields_observed": session_correlation_fields_observed,
         "vi_service_handle_return_correlated": session_correlation["vi_service_handle_return_correlated"],
         "vi_request_session_correlated": session_correlation["vi_request_session_correlated"],
+        "vi_display_request_ambiguous": session_correlation["vi_display_request_ambiguous"],
         "display_subsession_parent_correlated": session_correlation["display_subsession_parent_correlated"],
         "display_binder_request_session_correlated": session_correlation["display_binder_request_session_correlated"],
         "binder_subsession_parent_correlated": session_correlation["binder_subsession_parent_correlated"],

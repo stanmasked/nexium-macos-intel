@@ -36,7 +36,7 @@ python3 scripts/rehearse_stage73_private_drive.py \\
 
 Expected marker: `STAGE73_PRIVATE_SYNTHETIC_DRIVE_PREFLIGHT_VERIFIED_NO_UPLOAD`.
 
-This mode performs read-only Drive checks for both parent ACL chains and exact-name collisions, and validates the two future anchor paths. It must not issue a remote POST/PUT or create either local anchor file. The run ID is **not reserved** by preflight; the full rehearsal repeats the checks immediately before writing. A successful preflight is not a retention, archive-readiness, or graphics result.
+This mode performs read-only Drive checks for both parent ACL chains and exact-name collisions, and opens every component of both future anchor paths with no-follow directory semantics. Any symlink in a parent chain is rejected before Drive is queried; the test suite covers a symlinked ancestor that is not itself the final parent directory. It must not issue a remote POST/PUT or create either local anchor file. The run ID is **not reserved** by preflight; the full rehearsal repeats the checks immediately before writing. A successful preflight is not a retention, archive-readiness, or graphics result.
 
 ## Execute
 

@@ -206,6 +206,11 @@ def upload_one(transport, folder_id, name, payload, digest):
         raise DriveArchiveRejected("invalid_entry_name")
     if len(payload) > MAX_FILE_BYTES or hashlib.sha256(payload).hexdigest() != digest:
         raise DriveArchiveRejected("local_capture_changed")
+    # A folder validated immediately after creation can have been reshared
+    # before the next (or any subsequent) payload. Recheck all ancestor
+    # permissions and writability before starting EACH upload session.
+    # This is a point-in-time fail-closed guard, not an atomic ACL lock.
+    check_private_parent_chain(transport, folder_id, writable=True)
     init_metadata = {
         "name": name, "parents": [folder_id],
         "mimeType": "application/octet-stream",
@@ -254,6 +259,9 @@ def upload_one(transport, folder_id, name, payload, digest):
     if (status != 200 or len(readback) != len(payload)
             or hashlib.sha256(readback).hexdigest() != digest):
         raise DriveArchiveRejected("remote_readback_mismatch")
+    # Detect ACL changes between the pre-upload check and readback.
+    # A rejection must not be mistaken for a verified private archive.
+    check_private_parent_chain(transport, folder_id, writable=False)
     return file_id
 
 

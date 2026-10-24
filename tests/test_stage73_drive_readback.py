@@ -47,6 +47,9 @@ class FakeTransport:
         self.created_folder_readback_parent_wrong = False
         self.created_folder_readback_not_writable = False
         self.created_folder_readback_name_wrong = False
+        self.created_folder_private_reads = 0
+        self.created_folder_share_after_reads = None
+        self.created_folder_parent_moved_after_reads = None
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -94,17 +97,29 @@ class FakeTransport:
         if method == "GET" and url.path.startswith("/drive/v3/files/"):
             folder_id = url.path.rsplit("/", 1)[-1]
             if folder_id in self.created_folders:
+                self.created_folder_private_reads += 1
                 original = self.created_folders[folder_id]
+                shifted_shared = (
+                    self.created_folder_share_after_reads is not None
+                    and self.created_folder_private_reads >
+                    self.created_folder_share_after_reads
+                )
+                shifted_parent = (
+                    self.created_folder_parent_moved_after_reads is not None
+                    and self.created_folder_private_reads >
+                    self.created_folder_parent_moved_after_reads
+                )
                 item = {
                     "id": folder_id,
                     "name": ("wrong-staged-folder" if self.created_folder_readback_name_wrong
                              else original["name"]),
                     "mimeType": "application/vnd.google-apps.folder",
                     "parents": (["unexpectedPrivateParent1"]
-                                if self.created_folder_readback_parent_wrong
+                                if (self.created_folder_readback_parent_wrong
+                                    or shifted_parent)
                                 else original["parents"]),
                     "trashed": False,
-                    "shared": self.created_folder_readback_shared,
+                    "shared": self.created_folder_readback_shared or shifted_shared,
                     "permissions": [{"type": "user", "role": "owner"}],
                     "capabilities": {
                         "canAddChildren": not self.created_folder_readback_not_writable,
@@ -306,6 +321,53 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         with self.assertRaisesRegex(DriveArchiveRejected, "created_folder_readback_invalid"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+
+
+    def test_new_folder_reshared_after_creation_readback_blocks_first_upload(self):
+        tr = FakeTransport()
+        # Creation re-read and ancestry walk initially see owner-only ACL.
+        # The next check, from upload_one, must reject the changed ACL.
+        tr.created_folder_share_after_reads = 2
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+        self.assertFalse(tr.files)
+
+    def test_new_folder_moved_after_creation_readback_blocks_first_upload(self):
+        tr = FakeTransport()
+        tr.created_folder_parent_moved_after_reads = 2
+        with self.assertRaises(DriveArchiveRejected):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+        self.assertFalse(tr.files)
+
+    def test_folder_reshared_during_first_remote_media_readback_rejected(self):
+        tr = FakeTransport()
+        # First check after folder creation occurs on a new upload, with
+        # another check after SHA-256 media readback. The latter must notice
+        # ACL drift even when all file bytes/hash checks passed.
+        tr.created_folder_share_after_reads = 3
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(len(tr.files), 1)
+
+    def test_per_file_acl_checks_cover_later_capture_files(self):
+        tr = FakeTransport()
+        # First file can verify; the second preflight must discover drift.
+        tr.created_folder_share_after_reads = 4
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(len(tr.files), 1)
+        self.assertTrue(any(
             method == "POST" and path.startswith("/upload/drive/v3/files?")
             for method, path in tr.calls
         ))

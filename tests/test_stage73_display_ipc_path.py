@@ -726,7 +726,7 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.data += (
             "\nIGBP::RequestBuffer binder=512 slot=0"
             "\nIGBP::RequestBuffer binder=256 slot=1"
-            "\\nIGBP::QueueBuffer binder=256 swap_interval=1 (was None)"
+            "\nIGBP::QueueBuffer binder=256 swap_interval=1 (was None)"
         )
         self.assertEqual(
             self.inspect()["observed_stage"],

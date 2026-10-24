@@ -56,6 +56,10 @@ class FakeTransport:
         self.remote_file_reparent_after_reads = None
         self.remote_file_rename_after_reads = None
         self.remote_file_trash_after_reads = None
+        self.created_folder_share_on_upload_init = False
+        self.created_folder_reparent_on_upload_init = False
+        self.created_folder_rename_on_upload_init = False
+        self.created_folder_readonly_on_upload_init = False
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -139,6 +143,16 @@ class FakeTransport:
                 }
                 return 200, {}, json.dumps(item).encode()
         if method == "POST" and url.path == "/upload/drive/v3/files":
+            # Simulate a concurrent Drive permission/placement change after
+            # upload-session creation but before the content-bearing PUT.
+            if self.created_folder_share_on_upload_init:
+                self.created_folder_readback_shared = True
+            if self.created_folder_reparent_on_upload_init:
+                self.created_folder_readback_parent_wrong = True
+            if self.created_folder_rename_on_upload_init:
+                self.created_folder_readback_name_wrong = True
+            if self.created_folder_readonly_on_upload_init:
+                self.created_folder_readback_not_writable = True
             self.pending = json.loads(body)
             self.sequence += 1
             return 200, {"Location": "https://" + HOST +
@@ -381,7 +395,7 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         # First check after folder creation occurs on a new upload, with
         # another check after SHA-256 media readback. The latter must notice
         # ACL drift even when all file bytes/hash checks passed.
-        tr.created_folder_share_after_reads = 4
+        tr.created_folder_share_after_reads = 6
         with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertEqual(len(tr.files), 1)
@@ -389,7 +403,7 @@ class Stage73DriveReadbackTests(unittest.TestCase):
     def test_per_file_acl_checks_cover_later_capture_files(self):
         tr = FakeTransport()
         # First file can verify; the second preflight must discover drift.
-        tr.created_folder_share_after_reads = 6
+        tr.created_folder_share_after_reads = 8
         with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertEqual(len(tr.files), 1)
@@ -400,14 +414,14 @@ class Stage73DriveReadbackTests(unittest.TestCase):
 
     def test_folder_reparented_after_first_verified_file_detected(self):
         tr = FakeTransport()
-        tr.created_folder_parent_moved_after_reads = 6
+        tr.created_folder_parent_moved_after_reads = 8
         with self.assertRaisesRegex(DriveArchiveRejected, "run_folder_placement_changed"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertEqual(len(tr.files), 1)
 
     def test_folder_name_changed_before_second_upload_detected(self):
         tr = FakeTransport()
-        tr.created_folder_name_change_after_reads = 6
+        tr.created_folder_name_change_after_reads = 8
         with self.assertRaisesRegex(DriveArchiveRejected, "run_folder_placement_changed"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertEqual(len(tr.files), 1)
@@ -452,6 +466,41 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         with self.assertRaisesRegex(DriveArchiveRejected, "wrong_remote_parent"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertEqual(len(tr.files), 1)
+
+
+    def test_folder_shared_after_resumable_init_blocks_payload_put(self):
+        tr = FakeTransport()
+        tr.created_folder_share_on_upload_init = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertTrue(any(
+            m == "POST" and "/upload/drive/v3/files?" in p
+            for m, p in tr.calls
+        ))
+        self.assertFalse(any(m == "PUT" for m, _ in tr.calls))
+        self.assertFalse(tr.files)
+
+    def test_folder_reparented_after_resumable_init_blocks_payload_put(self):
+        tr = FakeTransport()
+        tr.created_folder_reparent_on_upload_init = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "run_folder_placement_changed"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(m == "PUT" for m, _ in tr.calls))
+        self.assertFalse(tr.files)
+
+    def test_folder_renamed_after_resumable_init_blocks_payload_put(self):
+        tr = FakeTransport()
+        tr.created_folder_rename_on_upload_init = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "run_folder_placement_changed"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(m == "PUT" for m, _ in tr.calls))
+
+    def test_folder_readonly_after_resumable_init_blocks_payload_put(self):
+        tr = FakeTransport()
+        tr.created_folder_readonly_on_upload_init = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_folder_not_writable"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(m == "PUT" for m, _ in tr.calls))
 
     def test_local_tamper_before_upload_fails_without_network(self):
         self.log.write_bytes(b"torn")

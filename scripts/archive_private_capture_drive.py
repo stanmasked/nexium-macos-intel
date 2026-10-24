@@ -265,6 +265,14 @@ def upload_one(transport, folder_id, name, payload, digest, *,
             or parsed.path != "/upload/drive/v3/files" or not parsed.query
             or parsed.username or parsed.password):
         raise DriveArchiveRejected("upload_session_unsafe")
+    # Resumable-session creation is a distinct remote operation from sending
+    # the actual payload. A newly shared, moved or non-writable folder after
+    # session initialization must stop us BEFORE the content-bearing PUT.
+    # The session itself may remain on Drive, but no private bytes were sent.
+    if expected_run_parent is not None:
+        require_capture_folder_placement(
+            transport, folder_id, expected_run_parent, expected_run_name)
+    check_private_parent_chain(transport, folder_id, writable=True)
     remote, _ = json_response(
         transport, "PUT", parsed.path + "?" + parsed.query,
         body=payload, headers={"Content-Type": "application/octet-stream"},

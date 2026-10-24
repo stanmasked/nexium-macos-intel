@@ -40,6 +40,13 @@ class PersistentFakeTransport(FakeTransport):
             parent = parent_match.group(1) if parent_match else None
             filename = name_match.group(1) if name_match else None
             records = []
+            # Include newly created run FOLDERS in the named listing as the
+            # real Drive API does. Otherwise post-create uniqueness checks
+            # would see a false empty result in this synthetic transport.
+            for folder_id, folder_meta in self.created_folders.items():
+                if (parent in folder_meta["parents"]
+                        and (not filename or folder_meta["name"] == filename)):
+                    records.append({"id": folder_id, "name": folder_meta["name"]})
             for file_id, (meta, content) in self.files.items():
                 if parent not in meta["parents"]:
                     continue

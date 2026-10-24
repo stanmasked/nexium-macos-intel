@@ -63,8 +63,8 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
         self.assertEqual(outcome, 0)
         self.assertEqual(out.getvalue(), PREFLIGHT_MARKER + "\n")
         self.assertTrue(self.transport.calls)
-        self.assertFalse(any(method == "POST" for method, _ in self.transport.calls))
-        self.assertFalse(any(method == "PUT" for method, _ in self.transport.calls))
+        # The preflight is strictly read-only: no create, update, upload, or delete request.
+        self.assertTrue(all(method == "GET" for method, _ in self.transport.calls))
         self.assertFalse(self.backup.exists())
         self.assertFalse(self.reference.exists())
 

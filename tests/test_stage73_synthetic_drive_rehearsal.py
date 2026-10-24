@@ -211,5 +211,29 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
         self.assertFalse(self.transport.calls)
 
 
+    def test_trusted_host_runbook_shell_continuations_are_single_backslashes(self):
+        checklist = (Path(__file__).resolve().parents[1] /
+                     "docs" / "STAGE73_TRUSTED_HOST_REHEARSAL_CHECKLIST.md")
+        in_shell = False
+        continuations = 0
+        for line in checklist.read_text(encoding="utf-8").splitlines():
+            if line.strip() == "```sh":
+                in_shell = True
+                continue
+            if in_shell and line.strip() == "```":
+                in_shell = False
+                continue
+            if not in_shell:
+                continue
+            trailing = len(line) - len(line.rstrip("\\"))
+            if trailing:
+                self.assertEqual(
+                    trailing, 1,
+                    "shell continuation must be exactly one backslash: " + line)
+                continuations += 1
+        self.assertFalse(in_shell, "unclosed shell block in trusted-host checklist")
+        self.assertEqual(continuations, 13)
+
+
 if __name__ == "__main__":
     unittest.main()

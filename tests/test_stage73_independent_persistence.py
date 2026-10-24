@@ -31,6 +31,7 @@ class PersistentFakeTransport(FakeTransport):
                 "mimeType": "application/vnd.google-apps.folder",
                 "trashed": False, "shared": self.shared_capture, "parents": [PARENT],
                 "permissions": [{"type": "user", "role": "owner"}],
+                "capabilities": {"canAddChildren": True},
             }).encode()
         if method == "GET" and u.path == "/drive/v3/files":
             q = parse_qs(u.query).get("q", [""])[0]

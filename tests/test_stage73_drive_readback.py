@@ -42,6 +42,11 @@ class FakeTransport:
         self.forged_root_identity = False
         self.shared_root_alias = False
         self.actual_root_without_parents = True
+        self.created_folders = {}
+        self.created_folder_readback_shared = False
+        self.created_folder_readback_parent_wrong = False
+        self.created_folder_readback_not_writable = False
+        self.created_folder_readback_name_wrong = False
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -82,9 +87,30 @@ class FakeTransport:
             item = json.loads(body)
             self.sequence += 1
             folder_id = "folder" + str(self.sequence).zfill(8)
+            self.created_folders[folder_id] = dict(item)
             return 200, {}, json.dumps({"id": folder_id, **item,
                                         "trashed": False, "shared": self.shared_capture,
                                         "permissions": [{"type": "user", "role": "owner"}]}).encode()
+        if method == "GET" and url.path.startswith("/drive/v3/files/"):
+            folder_id = url.path.rsplit("/", 1)[-1]
+            if folder_id in self.created_folders:
+                original = self.created_folders[folder_id]
+                item = {
+                    "id": folder_id,
+                    "name": ("wrong-staged-folder" if self.created_folder_readback_name_wrong
+                             else original["name"]),
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "parents": (["unexpectedPrivateParent1"]
+                                if self.created_folder_readback_parent_wrong
+                                else original["parents"]),
+                    "trashed": False,
+                    "shared": self.created_folder_readback_shared,
+                    "permissions": [{"type": "user", "role": "owner"}],
+                    "capabilities": {
+                        "canAddChildren": not self.created_folder_readback_not_writable,
+                    },
+                }
+                return 200, {}, json.dumps(item).encode()
         if method == "POST" and url.path == "/upload/drive/v3/files":
             self.pending = json.loads(body)
             self.sequence += 1
@@ -227,6 +253,62 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         t.shared_capture = True
         with self.assertRaisesRegex(DriveArchiveRejected, "folder_creation_unverified"):
             upload_archive(self.report, self.manifest, PARENT, "123", t)
+
+
+    def test_created_folder_rechecked_after_post_before_content_upload(self):
+        tr = FakeTransport()
+        result = upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertTrue(result["readback_verified"])
+        self.assertTrue(any(
+            method == "GET" and path.startswith("/drive/v3/files/folder00000001?")
+            for method, path in tr.calls
+        ))
+        self.assertTrue(any(
+            method == "GET" and path.startswith("/drive/v3/files/root?")
+            for method, path in tr.calls
+        ))
+
+    def test_created_folder_becomes_shared_before_first_payload_refused(self):
+        tr = FakeTransport()
+        tr.created_folder_readback_shared = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+        self.assertFalse(tr.files)
+
+    def test_created_folder_parent_swap_refused_before_payload(self):
+        tr = FakeTransport()
+        tr.created_folder_readback_parent_wrong = True
+        with self.assertRaises(DriveArchiveRejected):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+        self.assertFalse(tr.files)
+
+    def test_created_folder_revoked_writability_refused_before_payload(self):
+        tr = FakeTransport()
+        tr.created_folder_readback_not_writable = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_folder_not_writable"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
+
+    def test_created_folder_wrong_name_on_readback_refused_before_payload(self):
+        tr = FakeTransport()
+        tr.created_folder_readback_name_wrong = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "created_folder_readback_invalid"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(
+            method == "POST" and path.startswith("/upload/drive/v3/files?")
+            for method, path in tr.calls
+        ))
 
     def test_local_tamper_before_upload_fails_without_network(self):
         self.log.write_bytes(b"torn")

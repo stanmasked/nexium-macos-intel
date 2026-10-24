@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 
 from observe_intel_integrated_window import read_bounded_json
+from stage73_safe_evidence_read import read_bounded_regular_bytes
 
 MAX_LOG_BYTES = 16 * 1024 * 1024
 # Conservative classifier sanity cap for display-service replies, not a protocol limit.
@@ -244,7 +245,7 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
     log = paths[0]
     if log.is_symlink() or not log.is_file() or log.stat().st_size > MAX_LOG_BYTES:
         raise ValueError("original display IPC log unsafe or oversized")
-    data = log.read_text(encoding="utf-8", errors="replace")
+    data = read_bounded_regular_bytes(log, MAX_LOG_BYTES).decode("utf-8", errors="replace")
     evidence = {name: token in data for name, token in EVIDENCE.items()}
     native_window_response_status = "not_observed"
     # The Binder-session and native-window requests are independent branches after

@@ -30,6 +30,7 @@ from probe_intel_integrated_guest import (
 )
 from rehearse_intel_pr_merge import git
 from test_intel_integrated_tree import execute_integrated_tests
+from stage73_safe_evidence_read import read_bounded_regular_bytes
 
 MAX_JSON_BYTES = 128 * 1024
 MAX_PNG_BYTES = 32 * 1024 * 1024
@@ -49,10 +50,9 @@ def reject_duplicates(pairs):
 
 
 def read_bounded_json(path: Path) -> dict:
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_JSON_BYTES:
-        raise ValueError("GUI evidence file absent or oversized")
+    raw = read_bounded_regular_bytes(path, MAX_JSON_BYTES)
     record = json.loads(
-        path.read_text(encoding="utf-8"),
+        raw.decode("utf-8"),
         object_pairs_hook=reject_duplicates,
         parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite GUI JSON")),
     )

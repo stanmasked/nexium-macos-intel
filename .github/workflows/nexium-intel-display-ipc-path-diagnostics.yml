@@ -66,6 +66,7 @@ jobs:
       - name: Validate fixed-stage source markers and hostile-log behavior
         run: |
           set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage73_safe_evidence_read.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_display_ipc_path.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_scoped_ipc_patch.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_private_archive.py' -v
@@ -103,7 +104,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/backup_stage73_private_anchor.py scripts/rehearse_stage73_private_drive.py
+          python3 -m py_compile scripts/backup_stage73_private_anchor.py scripts/rehearse_stage73_private_drive.py scripts/stage73_safe_evidence_read.py
+          python3 -m unittest discover -s tests -p 'test_stage73_safe_evidence_read.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_offline_anchor_backup.py' -v
           python3 -m unittest discover -s tests -p 'test_stage73_synthetic_drive_rehearsal.py' -v
           echo "STAGE73_MACOS_INTEL_PRIVATE_ANCHOR_PATH_SAFETY_PASS_NOT_GRAPHICS_CERTIFICATION"

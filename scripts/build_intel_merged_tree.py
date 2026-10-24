@@ -161,6 +161,52 @@ def compile_native_intel(source: Path, work_dir: Path, *,
             sha.update(block)
     if path.stat().st_size < 1024 * 1024:
         raise ValueError("native Intel executable unexpectedly small")
+    trace_requested = base_env.get("NEXIUM_DISPLAY_IPC_TRACE") == "1"
+    trace_receipt_path = work_dir / "display-ipc-trace-patch.json"
+    trace_report = {"display_ipc_trace_patch_applied": False}
+    if trace_requested:
+        if (trace_receipt_path.is_symlink() or not trace_receipt_path.is_file()
+                or trace_receipt_path.stat().st_size > 16 * 1024):
+            raise ValueError("scoped display IPC source-patch receipt unavailable")
+        try:
+            trace_receipt = json.loads(trace_receipt_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            raise ValueError("scoped display IPC source-patch receipt malformed") from None
+        if (
+            trace_receipt.get("schema") != "nexium-stage73-scoped-ipc-session-correlation-patch/v2"
+            or trace_receipt.get("upstream_commit") != PINNED_UPSTREAM_SHA
+            or trace_receipt.get("source_relative_path") != "nexium-kernel/src/kernel/svc.rs"
+            or trace_receipt.get("original_git_blob_sha1") != "d3996cb1fb0871733c9d3adc9d106acdfd333273"
+            or not re.fullmatch(r"[0-9a-f]{40}", str(trace_receipt.get("patched_git_blob_sha1", "")))
+            or trace_receipt.get("exact_log_anchor_matches") != 4
+            or trace_receipt.get("exact_source_transform_count") != 8
+            or trace_receipt.get("trace_to_debug_replacements") != 2
+            or trace_receipt.get("session_correlation_fields_added") is not True
+            or trace_receipt.get("only_diagnostic_logging_changed") is not True
+            or trace_receipt.get("guest_or_service_behavior_changed") is not False
+            or trace_receipt.get("raw_logs_uploaded") is not False
+            or trace_receipt.get("main_merge_approved") is not False
+        ):
+            raise ValueError("scoped display IPC source-patch receipt failed exact review")
+        patched_source_path = work_dir / "nexium" / "nexium-kernel/src/kernel/svc.rs"
+        if (patched_source_path.is_symlink() or not patched_source_path.is_file()
+                or patched_source_path.stat().st_size > 2 * 1024 * 1024):
+            raise ValueError("final scoped IPC source file missing or unsafe")
+        patched_source_bytes = patched_source_path.read_bytes()
+        final_source_blob = hashlib.sha1(
+            b"blob " + str(len(patched_source_bytes)).encode("ascii")
+            + b"\x00" + patched_source_bytes
+        ).hexdigest()
+        if final_source_blob != trace_receipt["patched_git_blob_sha1"]:
+            raise ValueError("final compiled source no longer matches scoped IPC patch receipt")
+        trace_report = {
+            "display_ipc_trace_patch_applied": True,
+            "display_ipc_trace_patch_source_blob_sha1": trace_receipt["patched_git_blob_sha1"],
+            "display_ipc_trace_patch_exact_anchors_verified": True,
+            "display_ipc_trace_patch_final_source_bound": True,
+        }
+    elif trace_receipt_path.exists() or trace_receipt_path.is_symlink():
+        raise ValueError("unexpected display IPC source-patch receipt without opt-in")
     return {
         "native_intel_executable_compiled": True,
         "native_macho_load_commands": load_commands,
@@ -168,6 +214,7 @@ def compile_native_intel(source: Path, work_dir: Path, *,
         "native_macho_sections_checked": segment_report["sections_checked"],
         "native_macho_sha256": sha.hexdigest(),
         "native_executable_bytes": path.stat().st_size,
+        **trace_report,
         "nro_executed": False,
         "gui_render_verified": False,
         "physical_controller_verified": False,

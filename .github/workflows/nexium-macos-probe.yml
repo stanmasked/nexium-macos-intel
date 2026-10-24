@@ -22,6 +22,7 @@ permissions:
 jobs:
   syntax:
     name: Script safety and syntax
+    if: (github.head_ref || github.ref_name) != 'work/intel-stage73-display-ipc-path-final'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +58,7 @@ jobs:
           python3 scripts/audit_guest_hid_mapping_path.py --root "$BASE" --output "$RUNNER_TEMP/stage39-guest-hid-mapping-audit.json"
 
   mig-intel:
+    if: (github.head_ref || github.ref_name) != 'work/intel-stage73-display-ipc-path-final'
     name: Intel macOS Mach header generation
     runs-on: macos-15-intel
     timeout-minutes: 10
@@ -66,6 +68,7 @@ jobs:
         run: bash scripts/mig_probe_intel.sh
 
   compiler-rt-intel:
+    if: (github.head_ref || github.ref_name) != 'work/intel-stage73-display-ipc-path-final'
     name: Intel Xcode compiler-rt linker probe
     runs-on: macos-15-intel
     timeout-minutes: 10
@@ -3160,7 +3163,7 @@ jobs:
   intel-build:
     # Stage-13 independently checks capture/archive helpers without duplicating
     # the expensive active main-port compiler jobs.
-    if: github.head_ref != 'work/intel-stage13-private-window-evidence' && github.head_ref != 'work/intel-stage39-guest-hid-map-audit'
+    if: (github.head_ref || github.ref_name) != 'work/intel-stage13-private-window-evidence' && (github.head_ref || github.ref_name) != 'work/intel-stage39-guest-hid-map-audit' && (github.head_ref || github.ref_name) != 'work/intel-stage73-display-ipc-path-final'
     name: Native Intel build (${{ matrix.backend }}, experimental)
     # Intel compiler-rt preflight itself now reruns all syntax and fixture tests;
     # do not stall macOS builds on GitHub's independent Ubuntu runner queue.

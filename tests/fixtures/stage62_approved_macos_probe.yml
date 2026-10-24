@@ -1,0 +1,3261 @@
+name: NeXium Intel macOS experimental probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'macos_probe.sh'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'probes/**'
+      - '.github/workflows/nexium-macos-probe.yml'
+
+# New revisions supersede older expensive Intel compiler probes.
+concurrency:
+  group: nexium-intel-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  syntax:
+    name: Script safety and syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and isolated smoke-test harness
+        run: |
+          set -euo pipefail
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py scripts/apply_macos_guest_deadzone_jitter.py scripts/audit_guest_deadzone_jitter.py scripts/apply_macos_guest_deadzone_threshold.py scripts/audit_guest_deadzone_threshold.py scripts/audit_intel_controller_proof_manifest.py scripts/verify_intel_controller_proof_manifest.py scripts/audit_intel_controller_proof_structure.py scripts/audit_intel_macho_segment_bounds.py
+          python3 scripts/nro_smoke_test.py --help >/dev/null
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify patch anchors on actual pinned NeXium sources
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          BASE="$RUNNER_TEMP/nexium-pinned"
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src" "$BASE/nexium-kernel/src/kernel"
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs nexium-kernel/src/kernel/svc.rs nexium-kernel/src/hid_state.rs; do
+            curl --fail --location --silent --show-error --retry 3 \
+              "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
+              --output "$BASE/$file"
+            test -s "$BASE/$file"
+          done
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+          python3 scripts/apply_macos_hid_host_bridge_trace.py "$BASE"
+          python3 scripts/apply_macos_hid_host_bridge_trace.py "$BASE"
+          grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
+          grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
+          test "$(grep -c 'hid.update_input(nexium_core::hid_state::ControllerInput' "$BASE/nexium-gui/src/app.rs")" = 1
+          python3 scripts/audit_guest_hid_mapping_path.py --root "$BASE" --output "$RUNNER_TEMP/stage39-guest-hid-mapping-audit.json"
+
+  mig-intel:
+    name: Intel macOS Mach header generation
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native Mac MIG without compiling NeXium
+        run: bash scripts/mig_probe_intel.sh
+
+  compiler-rt-intel:
+    name: Intel Xcode compiler-rt linker probe
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Syntax and isolated smoke-test harness
+        run: |
+          set -euo pipefail
+          bash -n macos_probe.sh scripts/mig_probe_intel.sh scripts/compiler_rt_probe_intel.sh scripts/package_intel_app.sh
+          python3 -m py_compile scripts/apply_macos_bootstrap.py scripts/prepare_dynarmic_macos.py scripts/nro_smoke_test.py scripts/capture_macos_window.py scripts/no_nro_gui_probe.py scripts/apply_macos_audio_ablation.py scripts/apply_macos_minimal_eframe.py scripts/apply_macos_full_init_minimal_app.py scripts/apply_macos_horizonapp_ctor_only.py scripts/apply_macos_horizon_ctor_phase_trace.py scripts/apply_macos_sdl3_input_ablation.py scripts/apply_macos_sdl3_pre_winit.py scripts/apply_macos_input_poll_trace.py scripts/apply_macos_virtual_input_snapshot.py scripts/apply_macos_hid_host_bridge_trace.py scripts/audit_npad_lifo_trace.py scripts/audit_guest_hid_mapping_path.py scripts/apply_macos_guest_hid_probe.py scripts/audit_guest_hid_runtime.py scripts/audit_guest_hid_no_virtual.py scripts/apply_macos_guest_ab_probe.py scripts/audit_guest_ab_chord.py scripts/apply_macos_guest_dpad_probe.py scripts/audit_guest_dpad_up_right.py scripts/apply_macos_guest_left_stick_x.py scripts/audit_guest_left_stick_x.py scripts/apply_macos_guest_left_stick_y.py scripts/audit_guest_left_stick_y.py scripts/apply_macos_guest_right_stick_x.py scripts/audit_guest_right_stick_x.py scripts/apply_macos_guest_right_stick_y.py scripts/audit_guest_right_stick_y.py scripts/apply_macos_guest_dual_stick.py scripts/audit_guest_dual_stick.py scripts/audit_guest_mixed_dpad_dual_stick.py scripts/apply_macos_guest_deadzone_jitter.py scripts/audit_guest_deadzone_jitter.py scripts/apply_macos_guest_deadzone_threshold.py scripts/audit_guest_deadzone_threshold.py scripts/audit_intel_controller_proof_manifest.py scripts/verify_intel_controller_proof_manifest.py scripts/audit_intel_controller_proof_structure.py scripts/audit_intel_macho_segment_bounds.py
+          python3 scripts/nro_smoke_test.py --help >/dev/null
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify patch anchors on actual pinned NeXium sources
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          BASE="$RUNNER_TEMP/nexium-pinned"
+          mkdir -p "$BASE/nexium-gui/src" "$BASE/nexium-gpu/src" "$BASE/nexium-kernel/src/kernel"
+          for file in nexium-gui/src/main.rs nexium-gui/src/app.rs nexium-gpu/src/adapter.rs nexium-gpu/src/max_clocks.rs nexium-kernel/src/kernel/svc.rs nexium-kernel/src/hid_state.rs; do
+            curl --fail --location --silent --show-error --retry 3 \
+              "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/$file" \
+              --output "$BASE/$file"
+            test -s "$BASE/$file"
+          done
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          python3 scripts/apply_macos_bootstrap.py "$BASE"
+          grep -q 'Backends::METAL' "$BASE/nexium-gui/src/main.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/adapter.rs"
+          grep -q 'ENUMERATE_PORTABILITY_KHR' "$BASE/nexium-gpu/src/max_clocks.rs"
+          python3 scripts/apply_macos_hid_host_bridge_trace.py "$BASE"
+          python3 scripts/apply_macos_hid_host_bridge_trace.py "$BASE"
+          grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
+          grep -q 'STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE' "$BASE/nexium-gui/src/app.rs"
+          test "$(grep -c 'hid.update_input(nexium_core::hid_state::ControllerInput' "$BASE/nexium-gui/src/app.rs")" = 1
+          python3 scripts/audit_guest_hid_mapping_path.py --root "$BASE" --output "$RUNNER_TEMP/stage39-guest-hid-mapping-audit.json"
+
+      - name: Verify native-only window capture helper type checks
+        run: xcrun swiftc -typecheck scripts/nexium_window_id.swift
+      - name: Verify SDL3 availability symbol links from Rust
+        run: bash scripts/compiler_rt_probe_intel.sh --probe
+
+  appkit-control-intel:
+    name: Intel macOS clean AppKit window-session control
+    if: github.head_ref == 'work/intel-stage13-private-window-evidence'
+    runs-on: macos-15-intel
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile isolated native GUI session control
+        run: |
+          set -euo pipefail
+          xcrun swiftc -framework AppKit -framework CoreGraphics \
+            -o "$RUNNER_TEMP/appkit-control" scripts/appkit_gui_session_control.swift
+      - name: Determine whether an ordinary AppKit window is visible
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+          exe = Path(os.environ["RUNNER_TEMP"]) / "appkit-control"
+          try:
+              run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=18)
+              signal = next((line for line in run.stdout.splitlines()
+                             if line.startswith("APPKIT_CONTROL_SESSION:")), None)
+              if signal is not None:
+                  print(signal[:160])
+              print("APPKIT_CONTROL_RESULT: " + (
+                  "visible_window_confirmed" if run.returncode == 0 and signal else
+                  "no_visible_window" if run.returncode == 4 else
+                  f"control_failed_or_headless_{run.returncode}"))
+          except subprocess.TimeoutExpired:
+              print("APPKIT_CONTROL_RESULT: control_timed_out_or_headless")
+          print("A negative AppKit result limits hosted-CI graphical inference; "
+                "it does not demonstrate that NeXium fails on an interactive Intel Mac.")
+          PY
+
+  no-nro-startup:
+    name: Intel Rustarmic GUI process launch without game
+    if: github.head_ref == 'work/intel-stage13-private-window-evidence'
+    runs-on: macos-15-intel
+    needs: [compiler-rt-intel, mig-intel]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve already-built pinned Intel Rustarmic executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          repository: ${{ github.repository }}
+          run-id: 39493834124
+          github-token: ${{ github.token }}
+          path: downloaded
+      - name: Validate pinned NeXium app architecture and restore ZIP permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          COUNT="$(find downloaded -type f -path '*/Contents/MacOS/nexium' | wc -l | tr -d '[:space:]')"
+          test "$COUNT" -eq 1
+          BIN="$(find downloaded -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/nexium-exe-path"
+          APP="${BIN%/Contents/MacOS/nexium}"
+          LICENSE="$(find downloaded -type f -name 'NeXium-LICENSE.txt' -print -quit)"
+          test -n "$LICENSE"
+          bash scripts/package_intel_app.sh "$APP" "$LICENSE"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/nexium-window-id" scripts/nexium_window_id.swift
+          test -x "$RUNNER_TEMP/nexium-window-id"
+          echo "x86_64 NeXium app, scoped window inspector and portable archive verified"
+      - name: Repeat real Intel GUI-process startup twice without any NRO
+        id: launch
+        continue-on-error: true
+        shell: bash
+        run: |
+          # GitHub's bash shell starts with -e; disable it so a first-run
+          # crash still allows the independent second start and its report.
+          set +e
+          set -uo pipefail
+          BIN="$(cat "$RUNNER_TEMP/nexium-exe-path")"
+          python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output gui-probe-report/attempt-1 --seconds 12 \
+            --window-helper "$RUNNER_TEMP/nexium-window-id"
+          first=$?
+          python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output gui-probe-report/attempt-2 --seconds 12 \
+            --window-helper "$RUNNER_TEMP/nexium-window-id"
+          second=$?
+          echo "First process result: $first; second process result: $second"
+          test "$first" -eq 0 && test "$second" -eq 0
+      - name: Upload private-free startup evidence and portable bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-rustarmic-no-nro-startup
+          path: |
+            gui-probe-report/attempt-1/gui_process_probe.json
+            gui-probe-report/attempt-1/nexium-stdout-stderr.log
+            gui-probe-report/attempt-2/gui_process_probe.json
+            gui-probe-report/attempt-2/nexium-stdout-stderr.log
+            downloaded/**/*.tar.gz
+            downloaded/**/*.tar.gz.sha256
+          if-no-files-found: warn
+      - name: Fail if the GUI process could not start
+        if: steps.launch.outcome == 'failure'
+        run: |
+          echo '::error::NeXium Intel exited nonzero before no-NRO observation; review attached process log.'
+          exit 1
+
+  audio-ablation-compare:
+    name: Intel Rustarmic A-B startup comparison — audio enabled versus disabled
+    if: github.head_ref == 'work/intel-stage21-audio-ablation'
+    runs-on: macos-15-intel
+    needs: intel-build
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download rebuilt Intel binary with guarded audio experiment
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: audio-experiment-bundle
+      - name: Verify rebuilt executable architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find audio-experiment-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/audio-ablation-exe"
+      - name: Run original audio-enabled startup control
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/audio-ablation-exe")"
+          NEXIUM_MACOS_NO_AUDIO=0 python3 scripts/no_nro_gui_probe.py \
+            --exe "$BIN" --output audio-ablation-report/audio-on --seconds 12
+      - name: Run audio-disabled startup variant without NRO
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/audio-ablation-exe")"
+          NEXIUM_MACOS_NO_AUDIO=1 python3 scripts/no_nro_gui_probe.py \
+            --exe "$BIN" --output audio-ablation-report/audio-off --seconds 12
+      - name: Summarize both actual Intel startup outcomes
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for label in ('audio-on', 'audio-off'):
+              p = Path('audio-ablation-report') / label / 'gui_process_probe.json'
+              if not p.is_file():
+                  print(label + ': report unavailable')
+                  continue
+              data = json.loads(p.read_text())
+              print(label + ': ' + str({key: data.get(key) for key in
+                  ('outcome', 'exit_signal', 'alive_at_deadline', 'cleanup_signal_mode')}))
+          print("Any GUI/rendering or NRO success remains unverified.")
+          PY
+      - name: Upload both startup reports (no private games)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-gui-audio-ablation
+          path: audio-ablation-report
+          if-no-files-found: warn
+
+  minimal-eframe-compare:
+    name: Stage22 native Intel minimal eframe versus normal startup, same Mach-O
+    if: github.head_ref == 'work/intel-stage22-minimal-eframe-isolation'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download one native Intel Mach-O binary built with both opt-in probes
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage22-bundle
+      - name: Confirm the single x86_64 executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage22-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage22-exe"
+      - name: Baseline full NeXium startup with host audio disabled and no NRO
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage22-exe")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage22-report/full-without-audio --seconds 12
+      - name: Opt-in minimal eframe Wgpu startup on identical Mach-O and no NRO
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage22-exe")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage22-report/minimal-eframe --seconds 12
+      - name: Require both genuine process reports and successful minimal-branch entry
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage22-report')
+          def read(name):
+              p=root/name/'gui_process_probe.json'
+              assert p.is_file(), 'missing measured Intel process report: '+name
+              d=json.loads(p.read_text())
+              assert d['probe']=='no_nro_gui_process_only'
+              assert not d['nro_verified'] and not d['gameplay_verified']
+              assert d['gui_verified'] is False
+              return d
+          normal=read('full-without-audio')
+          minimal=read('minimal-eframe')
+          assert normal['emulator_sha256']==minimal['emulator_sha256']
+          console=(root/'minimal-eframe'/'nexium-stdout-stderr.log').read_text(errors='replace')
+          assert 'STAGE22_MINIMAL_EFRAME_ENTERED' in console, 'minimal branch not reached'
+          summary={'schema':'nexium-intel-stage22-minimal-eframe-isolation/v1',
+                   'result':'BOTH_REAL_INTEL_PROCESS_VARIANTS_OBSERVED',
+                   'same_compiled_binary_sha256':normal['emulator_sha256'],
+                   'normal_audio_disabled':{'outcome':normal['outcome'],
+                       'exit_signal':normal.get('exit_signal'),
+                       'alive_at_deadline':normal['alive_at_deadline']},
+                   'minimal_eframe':{'outcome':minimal['outcome'],
+                       'exit_signal':minimal.get('exit_signal'),
+                       'alive_at_deadline':minimal['alive_at_deadline']},
+                   'minimal_branch_execution_proven':True,
+                   'nro_executed':False,'window_rendering_proven':False,
+                   'real_switch_sound_proven':False}
+          (root/'stage22-minimal-eframe-comparison.json').write_text(
+              json.dumps(summary,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(summary,sort_keys=True))
+          PY
+          echo "Stage22: genuine Intel process A/B report saved; neither variant includes an NRO." >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish sanitized process receipts only; no ROM or private keys
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage22-minimal-eframe-control
+          path: |
+            stage22-report/full-without-audio/gui_process_probe.json
+            stage22-report/minimal-eframe/gui_process_probe.json
+            stage22-report/stage22-minimal-eframe-comparison.json
+          if-no-files-found: warn
+
+  host-init-compare:
+    name: Stage25 Intel native same Mach-O early versus full-init versus HorizonApp
+    if: github.head_ref == 'work/intel-stage25-host-init-vs-horizonapp'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download a single new native Intel Rustarmic executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage25-bundle
+      - name: Verify x86_64 Mach-O and compile scoped CoreGraphics window inspector
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage25-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(uname -m)" = x86_64
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage25-executable"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage25-window-inspector" \
+            scripts/nexium_window_id.swift
+      - name: Original HorizonApp normal startup, no audio and no NRO
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage25-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage25-report/full-horizonapp --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage25-window-inspector"
+      - name: Normal host startup but replace only HorizonApp creator with minimal app
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage25-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage25-report/full-init-minimal-app --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage25-window-inspector"
+      - name: Stage22 early minimal eframe control, same binary and no NRO
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage25-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=1 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage25-report/early-minimal --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage25-window-inspector"
+      - name: Verify three genuinely executed variants with one executable
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage25-report')
+          markers={
+              'full-horizonapp':None,
+              'full-init-minimal-app':'STAGE25_HOST_INIT_MINIMAL_APP_ENTERED',
+              'early-minimal':'STAGE22_MINIMAL_EFRAME_ENTERED',
+          }
+          records={}
+          digest=None
+          for name,expected in markers.items():
+              p=root/name/'gui_process_probe.json'
+              assert p.is_file(), 'missing original Intel process receipt: '+name
+              data=json.loads(p.read_text())
+              assert data['probe']=='no_nro_gui_process_only'
+              assert data['nro_verified'] is False and data['gameplay_verified'] is False
+              assert data['gui_verified'] is False
+              assert data['outcome'] in ('exited_nonzero','exited_zero_unverified','alive_without_gui_verification')
+              if digest is None:
+                  digest=data['emulator_sha256']
+              assert data['emulator_sha256']==digest, 'not identical compiled Mach-O'
+              console=(root/name/'nexium-stdout-stderr.log').read_text(errors='replace')
+              if expected is not None:
+                  assert expected in console, 'did not reach '+name+' marker'
+              for other in (v for v in markers.values() if v and v!=expected):
+                  assert other not in console, 'unexpected other variant marker in '+name
+              records[name]={k:data.get(k) for k in ('outcome','exit_signal',
+                         'alive_at_deadline','window_found','window_probe')}
+          result={'schema':'nexium-stage25-normal-host-init-vs-horizonapp/v1',
+                  'result':'THREE_ACTUAL_INTEL_GUI_PATHS_CLASSIFIED',
+                  'same_executable_sha256':digest,'variants':records,
+                  'nro_supplied':False,'window_pixels_verified':False,
+                  'gameplay_or_audio_verified':False}
+          (root/'stage25-host-init-contrast.json').write_text(
+              json.dumps(result,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(result,sort_keys=True))
+          PY
+          echo 'Stage25: three real Intel GUI-process observations; no NRO.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish only sanitized process reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage25-host-init-horizonapp-contrast
+          path: |
+            stage25-report/full-horizonapp/gui_process_probe.json
+            stage25-report/full-init-minimal-app/gui_process_probe.json
+            stage25-report/early-minimal/gui_process_probe.json
+            stage25-report/stage25-host-init-contrast.json
+          if-no-files-found: warn
+
+  constructor-vs-first-frame:
+    name: Stage26 genuine Intel four-path HorizonApp constructor versus first frame
+    if: github.head_ref == 'work/intel-stage26-horizonapp-ctor-only'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download fresh single Intel Rustarmic Mach-O
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage26-bundle
+      - name: Verify real Intel Mach-O and install process-specific window inspector
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage26-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(uname -m)" = x86_64
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage26-executable"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage26-window-inspector" \
+            scripts/nexium_window_id.swift
+      - name: Launch original full HorizonApp, no NRO or audio
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage26-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output stage26-report/full-horizonapp --seconds 12 \
+            --window-helper "$RUNNER_TEMP/stage26-window-inspector"
+      - name: Launch original HorizonApp constructor but simplified first-frame UI
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage26-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output stage26-report/constructor-only --seconds 12 \
+            --window-helper "$RUNNER_TEMP/stage26-window-inspector"
+      - name: Launch full original host init but no HorizonApp constructor
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage26-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=1 NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output stage26-report/full-init-minimal --seconds 12 \
+            --window-helper "$RUNNER_TEMP/stage26-window-inspector"
+      - name: Launch early minimum eframe, bypass host initialization
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage26-executable")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=1 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+            --output stage26-report/early-minimal --seconds 12 \
+            --window-helper "$RUNNER_TEMP/stage26-window-inspector"
+      - name: Classify four original Intel processes with constructor entry/exit markers
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage26-report')
+          signals={
+            'full-horizonapp':[],
+            'constructor-only':['STAGE26_HORIZON_CTOR_ENTERED',
+                                'STAGE26_HORIZON_CTOR_RETURNED'],
+            'full-init-minimal':['STAGE25_HOST_INIT_MINIMAL_APP_ENTERED'],
+            'early-minimal':['STAGE22_MINIMAL_EFRAME_ENTERED'],
+          }
+          all_markers=set(m for v in signals.values() for m in v)
+          records={}
+          digest=None
+          for name,needed in signals.items():
+              p=root/name/'gui_process_probe.json'
+              assert p.is_file(), 'missing actually observed process: '+name
+              d=json.loads(p.read_text())
+              assert d['probe']=='no_nro_gui_process_only'
+              assert d['nro_verified'] is False and d['gameplay_verified'] is False
+              assert d['gui_verified'] is False
+              assert d['outcome'] in ('exited_nonzero','exited_zero_unverified','alive_without_gui_verification')
+              if digest is None: digest=d['emulator_sha256']
+              assert digest==d['emulator_sha256'], 'four variants did not use same Mach-O'
+              console=(root/name/'nexium-stdout-stderr.log').read_text(errors='replace')
+              for marker in needed:
+                  assert marker in console, name+' did not reach '+marker
+              for marker in all_markers.difference(needed):
+                  assert marker not in console, name+' reached unexpected '+marker
+              records[name]={k:d.get(k) for k in ('outcome','exit_signal',
+                             'alive_at_deadline','window_found','window_probe')}
+              if name=='constructor-only':
+                  records[name]['horizonapp_constructor_entered']=True
+                  records[name]['horizonapp_constructor_returned']=True
+          result={'schema':'nexium-stage26-horizonapp-ctor-versus-frame/v1',
+              'result':'FOUR_GENUINE_INTEL_GUI_PATHS_CLASSIFIED',
+              'same_executable_sha256':digest,'variants':records,
+              'nro_supplied':False,'original_horizonapp_ui_did_not_run_in_ctor_only':True,
+              'gameplay_or_sound_verified':False,'window_pixels_verified':False}
+          (root/'stage26-four-paths.json').write_text(
+              json.dumps(result,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(result,sort_keys=True))
+          PY
+          echo 'Stage26: original ctor vs original UI process evidence classified, no game.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload four sanitized process receipts, never game/NRO files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage26-constructor-first-frame-contrast
+          path: |
+            stage26-report/full-horizonapp/gui_process_probe.json
+            stage26-report/constructor-only/gui_process_probe.json
+            stage26-report/full-init-minimal/gui_process_probe.json
+            stage26-report/early-minimal/gui_process_probe.json
+            stage26-report/stage26-four-paths.json
+          if-no-files-found: warn
+
+  ctor-phase-audit:
+    name: Stage28 native Intel HorizonApp ctor subphase trace, same Mach-O
+    if: github.head_ref == 'work/intel-stage28-horizonapp-constructor-phases'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download freshly built native NeXium Rustarmic binary
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage28-bundle
+      - name: Prove x86_64 provenance, compile scoped window detector
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          BIN="$(find stage28-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage28-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage28-window" \
+            scripts/nexium_window_id.swift
+      - name: Original full HorizonApp constructor and UI, trace enabled
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage28-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage28-report/full-horizonapp --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage28-window"
+      - name: Original real HorizonApp constructor under minimal UI wrapper
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage28-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage28-report/constructor-only --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage28-window"
+      - name: Normal host init with no HorizonApp constructor (negative control)
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage28-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=1 NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage28-report/full-init-minimal --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage28-window"
+      - name: Audit original process receipts and present only genuine marker prefix
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage28-report')
+          stages=('00_BEFORE_THEME','01_BEFORE_UI_AUDIO','02_AFTER_UI_AUDIO',
+                  '03_BEFORE_INPUT','04_AFTER_INPUT','05_BEFORE_NEXTENDO',
+                  '06_AFTER_NEXTENDO','07_AFTER_STRUCT','08_AFTER_PROFILE',
+                  '09_AFTER_SFX','10_BEFORE_RESCAN','11_AFTER_RESCAN',
+                  '12_BEFORE_RETURN')
+          prefix='STAGE28_HORIZON_CTOR_PHASE_'
+          names=('full-horizonapp','constructor-only','full-init-minimal')
+          seen={}
+          digest=None
+          for name in names:
+              p=root/name/'gui_process_probe.json'
+              assert p.is_file(), 'missing real original process receipt: '+name
+              d=json.loads(p.read_text())
+              assert d['probe']=='no_nro_gui_process_only'
+              assert d['nro_verified'] is False and d['gameplay_verified'] is False
+              assert d['gui_verified'] is False
+              assert d['outcome'] in ('exited_nonzero','exited_zero_unverified','alive_without_gui_verification')
+              if digest is None: digest=d['emulator_sha256']
+              assert digest==d['emulator_sha256'],'different executable used'
+              console=(root/name/'nexium-stdout-stderr.log').read_text(errors='replace')
+              found=[s for s in stages if prefix+s in console]
+              # Audio is explicitly disabled in every Stage28 trial.
+              # Checkpoint 01 is inside optional UI audio setup; checkpoint
+              # 02 is outside it and must still appear in sequence.
+              mandatory=tuple(s for s in stages if s!='01_BEFORE_UI_AUDIO')
+              assert '01_BEFORE_UI_AUDIO' not in found, 'audio-skip branch unexpectedly executed'
+              assert found==list(mandatory[:len(found)]), (
+                  'constructor phase trace out of order or skipped non-audio checkpoint: '
+                  + repr(found))
+              entered='STAGE26_HORIZON_CTOR_ENTERED' in console
+              returned='STAGE26_HORIZON_CTOR_RETURNED' in console
+              if name=='constructor-only':
+                  assert entered,'constructor-only path did not enter original HorizonApp'
+                  assert not returned or len(found)==len(mandatory),'returned before checkpoints'
+              else:
+                  assert not entered and not returned,'unexpected constructor-only marker'
+              if name=='full-init-minimal':
+                  assert 'STAGE25_HOST_INIT_MINIMAL_APP_ENTERED' in console
+                  assert not found,'constructor ran in negative control'
+              assert ('STAGE25_HOST_INIT_MINIMAL_APP_ENTERED' in console)==(name=='full-init-minimal')
+              seen[name]={
+                  'outcome':d['outcome'],'exit_signal':d.get('exit_signal'),
+                  'alive_at_deadline':d['alive_at_deadline'],
+                  'window_found':d.get('window_found'),
+                  'observed_phase_count':len(found),
+                  'last_confirmed_phase':found[-1] if found else None,
+                  'constructor_entered':entered,
+                  'constructor_returned':returned,
+                  'winit_reentrant_panic_observed':
+                      'tried to handle event while another event is currently being handled'
+                      in console,
+              }
+          summary={'schema':'nexium-stage28-constructor-phase-original-intel/v1',
+                   'result':'THREE_REAL_INTEL_CONSTRUCTOR_PHASE_PROCESSES_CLASSIFIED',
+                   'single_compiled_binary_sha256':digest,
+                   'variants':seen,'nro_or_game_executed':False,
+                   'rendered_pixels_verified':False,'speaker_sound_verified':False,
+                   'audio_disabled_in_every_trial':True,
+                   'audio_init_marker_01_intentionally_omitted':True,
+                   'diagnostic_only_not_a_causal_fix':True}
+          (root/'stage28-phase-audit.json').write_text(
+              json.dumps(summary,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(summary,sort_keys=True))
+          PY
+          echo 'Stage28: whitelisted native constructor phase evidence; no NRO, hardware or game.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload original sanitized process metadata only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage28-horizon-ctor-phases
+          path: |
+            stage28-report/full-horizonapp/gui_process_probe.json
+            stage28-report/constructor-only/gui_process_probe.json
+            stage28-report/full-init-minimal/gui_process_probe.json
+            stage28-report/stage28-phase-audit.json
+          if-no-files-found: warn
+
+  sdl3-input-contrast:
+    name: Stage29 authentic Intel SDL3 InputBackend ctor ablation
+    if: github.head_ref == 'work/intel-stage29-sdl3-input-ablation'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download one native Intel NeXium Rustarmic binary
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage29-bundle
+      - name: Validate actual x86_64 Mach-O and compile own-window helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          BIN="$(find stage29-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage29-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage29-window-helper" \
+            scripts/nexium_window_id.swift
+      - name: Original HorizonApp ctor and SDL3 InputBackend enabled
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage29-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage29-reports/ctor-input-enabled --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage29-window-helper"
+      - name: Same HorizonApp ctor, only SDL3 InputBackend disabled
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage29-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=1 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage29-reports/ctor-input-skipped --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage29-window-helper"
+      - name: Original HorizonApp UI with only SDL3 InputBackend disabled
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage29-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage29-reports/full-input-skipped --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage29-window-helper"
+      - name: Full host init without HorizonApp ctor (negative control)
+        continue-on-error: true
+        shell: bash
+        run: |
+          BIN="$(cat "$RUNNER_TEMP/stage29-bin")"
+          NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=1 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=1 \
+            python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+              --output stage29-reports/full-init-minimal --seconds 12 \
+              --window-helper "$RUNNER_TEMP/stage29-window-helper"
+      - name: Classify all genuine processes, including real aborted constructors
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage29-reports')
+          names=('ctor-input-enabled','ctor-input-skipped',
+                 'full-input-skipped','full-init-minimal')
+          result={}
+          digest=None
+          for name in names:
+              p=root/name/'gui_process_probe.json'
+              assert p.is_file(), 'missing authentic process receipt: '+name
+              row=json.loads(p.read_text())
+              assert row['probe']=='no_nro_gui_process_only'
+              assert row['nro_verified'] is False and row['gameplay_verified'] is False
+              assert row['gui_verified'] is False
+              assert row['outcome'] in ('exited_nonzero',
+                                      'exited_zero_unverified',
+                                      'alive_without_gui_verification')
+              if digest is None: digest=row['emulator_sha256']
+              assert digest==row['emulator_sha256'],'mixed native binaries'
+              console=(root/name/'nexium-stdout-stderr.log').read_text(errors='replace')
+              entry='STAGE26_HORIZON_CTOR_ENTERED' in console
+              returned='STAGE26_HORIZON_CTOR_RETURNED' in console
+              skipped='STAGE29_SDL3_INPUT_SKIPPED' in console
+              enabled='STAGE29_SDL3_INPUT_ENABLED' in console
+              expect_ctor=name!='full-init-minimal'
+              if expect_ctor: assert entry,'ctor branch never entered'
+              else:
+                  assert not entry and not (skipped or enabled)
+                  assert 'STAGE25_HOST_INIT_MINIMAL_APP_ENTERED' in console
+              assert not(skipped and enabled),'contradictory SDL3 branch markers'
+              if name=='ctor-input-enabled': assert not skipped
+              elif expect_ctor: assert not enabled
+              result[name]={
+                 'outcome':row['outcome'],'exit_signal':row.get('exit_signal'),
+                 'alive_at_deadline':row['alive_at_deadline'],
+                 'window_found':row.get('window_found'),
+                 'ctor_entered':entry,'ctor_returned':returned,
+                 'actual_input_skip_branch_reached':skipped,
+                 'actual_input_enabled_branch_reached':enabled,
+                 'last_stage28_phase_seen':next(
+                    (line.strip() for line in reversed(console.splitlines())
+                     if 'STAGE28_HORIZON_CTOR_PHASE_' in line),None),
+                 'winit_reentrant_panic':
+                    'tried to handle event while another event is currently being handled'
+                    in console,
+              }
+          out={'schema':'nexium-stage29-sdl3-input-ctor-ablation/v1',
+               'result':'FOUR_ACTUAL_NATIVE_INTEL_PROCESS_RECEIPTS_CLASSIFIED',
+               'single_compiled_executable_sha256':digest,'variants':result,
+               'guest_game_nro_supplied':False,'speaker_sound_verified':False,
+               'frame_pixels_verified':False,'root_cause_proven':False}
+          (root/'stage29-input-contrast.json').write_text(
+              json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,sort_keys=True))
+          PY
+          echo 'Stage29: original constructor/SDL input A/B evidence, no NRO.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload sanitized source-bound receipts (no private console logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage29-sdl3-input-contrast
+          path: |
+            stage29-reports/ctor-input-enabled/gui_process_probe.json
+            stage29-reports/ctor-input-skipped/gui_process_probe.json
+            stage29-reports/full-input-skipped/gui_process_probe.json
+            stage29-reports/full-init-minimal/gui_process_probe.json
+            stage29-reports/stage29-input-contrast.json
+          if-no-files-found: warn
+
+  prewinit-input-ab:
+    name: Stage32 genuine Intel SDL3 pre-winit controller-preserving A/B
+    if: github.head_ref == 'work/intel-stage32-sdl3-prewinit-initialization'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download same freshly compiled Intel NeXium Rustarmic executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage32-bundle
+      - name: Verify actual x86_64 native Mach-O, prepare scoped window helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          BIN="$(find stage32-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage32-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage32-window" \
+            scripts/nexium_window_id.swift
+
+      - name: Record genuine control, preinitialized input, and bypassed GUI processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage32-bin")"
+          for mode in ctor-normal ctor-preinitialized full-preinitialized full-no-input host-minimal; do
+            case "$mode" in
+              ctor-normal)
+                preinit=0; skip=0; ctor=1; minimal=0 ;;
+              ctor-preinitialized)
+                preinit=1; skip=0; ctor=1; minimal=0 ;;
+              full-preinitialized)
+                preinit=1; skip=0; ctor=0; minimal=0 ;;
+              full-no-input)
+                preinit=0; skip=1; ctor=0; minimal=0 ;;
+              host-minimal)
+                preinit=0; skip=1; ctor=0; minimal=1 ;;
+            esac
+            echo "Stage32 actual process: $mode (no NRO or audio)"
+            env NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+              NEXIUM_MACOS_HORIZON_CTOR_ONLY="$ctor" \
+              NEXIUM_MACOS_FULL_INIT_MINIMAL_APP="$minimal" \
+              NEXIUM_MACOS_SKIP_SDL3_INPUT="$skip" \
+              NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT="$preinit" \
+              NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+              python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                --output "stage32-report/$mode" --seconds 12 \
+                --window-helper "$RUNNER_TEMP/stage32-window" || rc=$?
+            # Crash inside a real pre-winit SDL3 initializer is a legitimate
+            # diagnostic result, not a CI result to relabel as "success".
+            unset rc
+          done
+
+      - name: Validate five source-bound original process receipts without inferring controller function
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('stage32-report')
+          modes=('ctor-normal','ctor-preinitialized','full-preinitialized',
+                 'full-no-input','host-minimal')
+          digest=None
+          receipts={}
+          for mode in modes:
+              p=root/mode/'gui_process_probe.json'
+              assert p.is_file(), 'missing genuine process evidence: '+mode
+              d=json.loads(p.read_text())
+              assert d['probe']=='no_nro_gui_process_only'
+              assert d['nro_verified'] is False and d['gameplay_verified'] is False
+              assert d['gui_verified'] is False
+              assert d['outcome'] in ('exited_nonzero','exited_zero_unverified',
+                                       'alive_without_gui_verification')
+              if digest is None: digest=d['emulator_sha256']
+              assert digest==d['emulator_sha256'],'not same compiled Mach-O'
+              raw=(root/mode/'nexium-stdout-stderr.log').read_text(errors='replace')
+              checks=(
+                'STAGE32_PREINPUT_BEGIN_BEFORE_WINIT',
+                'STAGE32_PREINPUT_CREATED_SOME',
+                'STAGE32_PREINPUT_CREATED_NONE',
+                'STAGE32_PREINPUT_DONE_BEFORE_WINIT',
+                'STAGE32_TAKE_PREINITIALIZED_INPUT',
+                'STAGE32_TAKE_SOME',
+                'STAGE32_TAKE_NONE',
+                'STAGE26_HORIZON_CTOR_ENTERED',
+                'STAGE26_HORIZON_CTOR_RETURNED',
+                'STAGE29_SDL3_INPUT_ENABLED',
+                'STAGE29_SDL3_INPUT_SKIPPED',
+                'STAGE25_HOST_INIT_MINIMAL_APP_ENTERED',
+              )
+              markers={k:k in raw for k in checks}
+              if mode in ('ctor-preinitialized','full-preinitialized'):
+                  assert markers['STAGE32_PREINPUT_BEGIN_BEFORE_WINIT'],\
+                    'preinit mode never entered pre-winit source'
+              else:
+                  assert not any(markers[k] for k in checks if k.startswith('STAGE32_')),\
+                    'preinit markers leaked into control'
+              if mode=='host-minimal':
+                  assert markers['STAGE25_HOST_INIT_MINIMAL_APP_ENTERED']
+                  assert not markers['STAGE26_HORIZON_CTOR_ENTERED']
+              if mode=='full-no-input':
+                  assert markers['STAGE29_SDL3_INPUT_SKIPPED']
+                  assert not markers['STAGE26_HORIZON_CTOR_ENTERED']
+              if mode=='ctor-normal':
+                  assert markers['STAGE26_HORIZON_CTOR_ENTERED']
+                  assert not markers['STAGE32_PREINPUT_BEGIN_BEFORE_WINIT']
+              if markers['STAGE32_TAKE_SOME']:
+                  assert markers['STAGE32_PREINPUT_CREATED_SOME'],\
+                    'claimed actual InputBackend without successful creation'
+              assert not (markers['STAGE32_PREINPUT_CREATED_SOME'] and
+                          markers['STAGE32_PREINPUT_CREATED_NONE'])
+              assert not (markers['STAGE32_TAKE_SOME'] and
+                          markers['STAGE32_TAKE_NONE'])
+              receipts[mode]={
+                 'outcome':d['outcome'],
+                 'exit_signal':d.get('exit_signal'),
+                 'alive_at_12_second_deadline':d['alive_at_deadline'],
+                 'process_owned_visible_window':d.get('window_found'),
+                 'static_source_markers':markers,
+                 'actual_sdl3_controller_input_reused_before_winit':
+                   markers['STAGE32_PREINPUT_CREATED_SOME'] and
+                   markers['STAGE32_TAKE_SOME'],
+                 'winit_reentrant_event_panic_observed':
+                   'tried to handle event while another event is currently being handled'
+                   in raw,
+              }
+          out={'schema':'nexium-stage32-prewinit-sdl3-preserving/v1',
+               'result':'FIVE_ACTUAL_INTEL_MAC_GUI_PROCESS_PATHS_CLASSIFIED',
+               'same_native_executable_sha256':digest,'variants':receipts,
+               'nro_supplied':False,'guest_game_verified':False,
+               'controller_button_press_verified':False,
+               'frame_pixel_correctness_verified':False,
+               'physical_nintendo_switch_sound_verified':False,
+               'root_cause_proven':False,
+               'original_console_uploaded':False}
+          (root/'stage32-original-five-mode-contrast.json').write_text(
+             json.dumps(out,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(out,sort_keys=True))
+          PY
+          echo 'Stage32: five native Intel traces classified; controller usability still requires input test.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only five sanitized receipts and original marker decision audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage32-sdl3-prewinit-controls
+          path: |
+            stage32-report/ctor-normal/gui_process_probe.json
+            stage32-report/ctor-preinitialized/gui_process_probe.json
+            stage32-report/full-preinitialized/gui_process_probe.json
+            stage32-report/full-no-input/gui_process_probe.json
+            stage32-report/host-minimal/gui_process_probe.json
+            stage32-report/stage32-original-five-mode-contrast.json
+          if-no-files-found: warn
+
+  input-poll-observation:
+    name: Stage34 real Intel SDL3 input event pump proof after pre-winit init
+    if: github.head_ref == 'work/intel-stage34-real-input-poll-observation'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download freshly compiled native Intel Rustarmic NeXium
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage34-intel-bundle
+      - name: Validate real x86_64 and prepare process-own-window detector
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          BIN="$(find stage34-intel-bundle -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage34-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage34-window" \
+            scripts/nexium_window_id.swift
+
+      - name: Launch actual SDL3-preserved original GUI and independent negative controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage34-bin")"
+          for mode in full-preinitialized ctor-preinitialized full-no-input ctor-normal; do
+            case "$mode" in
+              full-preinitialized) pre=1; skip=0; ctor=0 ;;
+              ctor-preinitialized) pre=1; skip=0; ctor=1 ;;
+              full-no-input) pre=0; skip=1; ctor=0 ;;
+              ctor-normal) pre=0; skip=0; ctor=1 ;;
+            esac
+            echo "Stage34 native Intel source-bound process $mode"
+            env NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+              NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+              NEXIUM_MACOS_CONSTRUCTOR_PHASE_TRACE=1 \
+              NEXIUM_MACOS_HORIZON_CTOR_ONLY="$ctor" \
+              NEXIUM_MACOS_SKIP_SDL3_INPUT="$skip" \
+              NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT="$pre" \
+              NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+              python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                --output "stage34-reports/$mode" --seconds 16 \
+                --window-helper "$RUNNER_TEMP/stage34-window" || code=$?
+            # Original crash, if present, remains a real classified diagnostic.
+            unset code
+          done
+
+      - name: Audit actual once-only InputBackend polling and branch provenance
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          modes=('full-preinitialized','ctor-preinitialized',
+                 'full-no-input','ctor-normal')
+          root=Path('stage34-reports')
+          source_markers=('STAGE34_INPUT_POLL_ENTRY',
+                          'STAGE34_INPUT_POLL_AFTER_EVENT_PUMP',
+                          'STAGE34_INPUT_POLL_AFTER_GAMEPAD_UPDATE')
+          out={}
+          digest=None
+          for mode in modes:
+              location=root/mode
+              f=location/'gui_process_probe.json'
+              assert f.is_file(),'missing real process receipt'
+              row=json.loads(f.read_text())
+              assert row['probe']=='no_nro_gui_process_only'
+              assert row['nro_verified'] is False
+              assert row['gameplay_verified'] is False
+              assert row['gui_verified'] is False
+              assert row['outcome'] in ('exited_nonzero',
+                                       'exited_zero_unverified',
+                                       'alive_without_gui_verification')
+              if digest is None: digest=row['emulator_sha256']
+              assert digest == row['emulator_sha256'], 'different original Mach-O'
+              raw=(location/'nexium-stdout-stderr.log').read_text(errors='replace')
+              tokens=[line.strip() for line in raw.splitlines()
+                      if line.strip() in source_markers]
+              assert len(tokens)==len(set(tokens)), 'one-time marker emitted more than once'
+              indices=[source_markers.index(token) for token in tokens]
+              assert indices==sorted(indices), 'SDL3 poll phase order mismatch'
+              assert not tokens or tokens[0] == source_markers[0], 'no poll entry before later markers'
+              created='STAGE32_PREINPUT_CREATED_SOME' in raw
+              taken='STAGE32_TAKE_SOME' in raw
+              skipped='STAGE29_SDL3_INPUT_SKIPPED' in raw
+              entered='STAGE26_HORIZON_CTOR_ENTERED' in raw
+              if mode in ('full-preinitialized','ctor-preinitialized'):
+                  assert created and taken,'real preinitialized input not retained'
+                  assert not skipped
+              else:
+                  assert not created and not taken,'preinit markers leaked into control'
+              if mode=='full-no-input':
+                  assert skipped
+                  assert not tokens,'SDL3 polling appeared without an InputBackend'
+              if mode=='ctor-preinitialized':
+                  assert entered
+                  assert not tokens,'inert UI must not poll controller input'
+              if mode=='ctor-normal':
+                  assert entered and not skipped
+              if mode=='full-preinitialized':
+                  assert not entered,'normal GUI is not the Stage26 wrapper'
+              out[mode]={
+                  'outcome':row['outcome'],
+                  'signal':row.get('exit_signal'),
+                  'alive_at_deadline':row['alive_at_deadline'],
+                  'process_owned_window_found':row.get('window_found'),
+                  'actual_input_object_created_and_transferred':created and taken,
+                  'original_poll_source_markers':tokens,
+                  'actual_poll_entry_executed':source_markers[0] in tokens,
+                  'sdl_event_pump_stage_passed':source_markers[1] in tokens,
+                  'sdl_gamepad_update_stage_passed':source_markers[2] in tokens,
+                  'hardware_button_press_observed':False,
+              }
+          result={
+             'schema':'nexium-stage34-real-intel-sdl3-poll-observation/v1',
+             'result':'FOUR_TRUE_NATIVE_INTEL_SDL3_GUI_PROCESS_PATHS_CLASSIFIED',
+             'single_compiled_intel_macho_sha256':digest,
+             'variants':out,
+             'actual_controller_buttons_verified':False,
+             'game_nro_supplied':False,
+             'game_pixels_verified':False,
+             'speaker_audio_verified':False,
+             'root_cause_proven':False,
+             'private_console_uploaded':False,
+          }
+          (root/'stage34-input-poll-evidence.json').write_text(
+              json.dumps(result,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(result,sort_keys=True))
+          PY
+          echo 'Stage34: source-bound SDL3 poll call observation, not gamepad button or guest proof.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save original sanitized process statuses and whitelisted poll markers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-stage34-intel-original-controller-poll-evidence
+          path: |
+            stage34-reports/full-preinitialized/gui_process_probe.json
+            stage34-reports/ctor-preinitialized/gui_process_probe.json
+            stage34-reports/full-no-input/gui_process_probe.json
+            stage34-reports/ctor-normal/gui_process_probe.json
+            stage34-reports/stage34-input-poll-evidence.json
+          if-no-files-found: warn
+
+  virtual-sdl3-snapshot-intel:
+    name: Stage36 genuine Intel SDL3 synthetic virtual A press/release to InputSnapshot
+    if: github.head_ref == 'work/intel-stage36-virtual-gamepad-snapshot'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify real Intel and actual compiled NeXium Rustarmic
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage36-build
+      - name: Pin x86_64 architecture and CoreGraphics PID window helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          BIN="$(find stage36-build -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage36-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage36-window" \
+            scripts/nexium_window_id.swift
+
+      - name: Three real Intel original processes, one *synthetic* SDL3 gamepad test
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage36-bin")"
+          for mode in full-virtual full-no-virtual ctor-virtual; do
+            case "$mode" in
+              full-virtual) virt=1; ctor=0; seconds=24 ;;
+              full-no-virtual) virt=0; ctor=0; seconds=12 ;;
+              ctor-virtual) virt=1; ctor=1; seconds=12 ;;
+            esac
+            echo "Stage36 authentic native Intel source variant: $mode"
+            env NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+              NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+              NEXIUM_MACOS_HORIZON_CTOR_ONLY="$ctor" \
+              NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+              NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+              NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+              NEXIUM_MACOS_VIRTUAL_BUTTON_TEST="$virt" \
+              python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                --output "stage36-reports/$mode" --seconds "$seconds" \
+                --window-helper "$RUNNER_TEMP/stage36-window" || rc=$?
+            unset rc
+          done
+
+      - name: Audit actual SDL3 virtual synthetic press and original InputSnapshot source emissions
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          names=('full-virtual','full-no-virtual','ctor-virtual')
+          observed={}
+          sha=None
+          milestones=(
+              'STAGE36_VIRTUAL_ATTACHED_AND_OPENED',
+              'STAGE36_VIRTUAL_SYNTHETIC_PRESS_SENT',
+              'STAGE36_VIRTUAL_SYNTHETIC_RELEASE_SENT',
+              'STAGE36_VIRTUAL_SNAPSHOT_CONNECTED',
+              'STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED',
+              'STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED',
+          )
+          for name in names:
+              path=Path('stage36-reports')/name
+              p=path/'gui_process_probe.json'
+              assert p.is_file(), 'missing genuine original macOS process receipt'
+              row=json.loads(p.read_text())
+              assert row['probe']=='no_nro_gui_process_only'
+              assert row['nro_verified'] is False and row['gameplay_verified'] is False
+              assert row['gui_verified'] is False
+              assert row['outcome'] in ('exited_nonzero','exited_zero_unverified',
+                                       'alive_without_gui_verification')
+              if sha is None: sha=row['emulator_sha256']
+              assert sha==row['emulator_sha256'],'synthetic and controls use different executables'
+              console=(path/'nexium-stdout-stderr.log').read_text(errors='replace')
+              emitted=[line.strip() for line in console.splitlines()
+                       if line.strip() in milestones]
+              if name=='full-no-virtual':
+                  assert not emitted,'control unexpectedly injected synthetic SDL3 device'
+              if name=='ctor-virtual':
+                  assert 'STAGE26_HORIZON_CTOR_ENTERED' in console
+                  assert not any(k in emitted for k in (
+                      'STAGE36_VIRTUAL_SNAPSHOT_CONNECTED',
+                      'STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED',
+                      'STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED',
+                  )), 'inert ctor mode should not poll virtual gamepad'
+              if name=='full-virtual':
+                  assert 'STAGE26_HORIZON_CTOR_ENTERED' not in console,\
+                       'normal GUI must not use Stage26 ctor wrapper'
+                  assert 'STAGE32_PREINPUT_CREATED_SOME' in console and \
+                         'STAGE32_TAKE_SOME' in console,\
+                       'original pre-winit actual SDL3 object not retained'
+                  assert 'STAGE34_INPUT_POLL_ENTRY' in console,\
+                       'full GUI never executed original InputBackend poll'
+              observed[name]={
+                  'process_outcome':row['outcome'],
+                  'signal':row.get('exit_signal'),
+                  'alive_at_deadline':row['alive_at_deadline'],
+                  'process_owned_window_found':row.get('window_found'),
+                  'actual_synthetic_source_markers':emitted,
+                  'synthetic_attached_and_opened':
+                    'STAGE36_VIRTUAL_ATTACHED_AND_OPENED' in emitted,
+                  'synthetic_press_mapped_by_original_InputSnapshot':
+                    'STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED' in emitted,
+                  'synthetic_release_mapped_by_original_InputSnapshot':
+                    'STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED' in emitted,
+              }
+          src=observed['full-virtual']
+          synthetic_positive=(
+              src['synthetic_attached_and_opened']
+              and 'STAGE36_VIRTUAL_SYNTHETIC_PRESS_SENT' in src['actual_synthetic_source_markers']
+              and 'STAGE36_VIRTUAL_SYNTHETIC_RELEASE_SENT' in src['actual_synthetic_source_markers']
+              and src['synthetic_press_mapped_by_original_InputSnapshot']
+              and src['synthetic_release_mapped_by_original_InputSnapshot']
+          )
+          out={
+              'schema':'nexium-stage36-actual-intel-virtual-sdl3-snapshot/v1',
+              'result':'THREE_TRUE_INTEL_PROCESS_PATHS_CLASSIFIED',
+              'source_compiled_intel_executable_sha256':sha,
+              'virtual_input_round_trip_positive':synthetic_positive,
+              'synthetic_device_not_physical_hardware':True,
+              'controller_button_on_hardware_verified':False,
+              'game_nro_supplied':False,
+              'game_frames_verified':False,
+              'speaker_sound_verified':False,
+              'private_console_uploaded':False,
+              'modes':observed,
+          }
+          root=Path('stage36-reports')
+          (root/'stage36-sdl3-synthetic-button-summary.json').write_text(
+              json.dumps(out,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(out,sort_keys=True))
+          PY
+          echo 'Stage36 is strictly synthetic SDL3 virtual button input, not physical hardware.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only anonymized real process receipts and synthetic booleans
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-intel-stage36-synthetic-virtual-sdl3-snapshot
+          path: |
+            stage36-reports/full-virtual/gui_process_probe.json
+            stage36-reports/full-no-virtual/gui_process_probe.json
+            stage36-reports/ctor-virtual/gui_process_probe.json
+            stage36-reports/stage36-sdl3-synthetic-button-summary.json
+          if-no-files-found: warn
+
+  hid-host-original-bridge:
+    name: Stage37/38 original synthetic Switch B to host HID and NPad LIFO
+    if: github.head_ref == 'work/intel-stage37-synthetic-guest-hid-path' || github.head_ref == 'work/intel-stage38-npad-lifo-buffer'
+    needs: intel-build
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve original compiled native Intel NeXium Rustarmic source-linked binary
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage37-original
+      - name: Require genuine x86_64 executable and prepare own PID window helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          BIN="$(find stage37-original -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage37-bin"
+          xcrun swiftc -framework CoreGraphics -o "$RUNNER_TEMP/stage37-window" \
+            scripts/nexium_window_id.swift
+
+      - name: Real native SDL3 virtual B to source HidState versus two controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage37-bin")"
+          for mode in full-virtual full-no-virtual ctor-virtual; do
+            case "$mode" in
+              full-virtual) virt=1; ctor=0; seconds=24 ;;
+              full-no-virtual) virt=0; ctor=0; seconds=12 ;;
+              ctor-virtual) virt=1; ctor=1; seconds=12 ;;
+            esac
+            env NEXIUM_MACOS_NO_AUDIO=1 NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+              NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+              NEXIUM_MACOS_HORIZON_CTOR_ONLY="$ctor" \
+              NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+              NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+              NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+              NEXIUM_MACOS_VIRTUAL_BUTTON_TEST="$virt" \
+              NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 NEXIUM_HID_TRACE=1 \
+              python3 scripts/no_nro_gui_probe.py --exe "$BIN" \
+                --output "stage37-reports/$mode" --seconds "$seconds" \
+                --window-helper "$RUNNER_TEMP/stage37-window" || rc=$?
+            unset rc
+          done
+
+      - name: Authenticate original InputSnapshot-to-host-HID press and release
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("stage37-reports")
+          modes=("full-virtual","full-no-virtual","ctor-virtual")
+          snap=(
+             "STAGE36_VIRTUAL_ATTACHED_AND_OPENED",
+             "STAGE36_VIRTUAL_SYNTHETIC_PRESS_SENT",
+             "STAGE36_VIRTUAL_SYNTHETIC_RELEASE_SENT",
+             "STAGE36_VIRTUAL_SNAPSHOT_CONNECTED",
+             "STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED",
+             "STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED",
+          )
+          hid=(
+             "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE",
+             "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE",
+             "STAGE37_HID_BRIDGE_NO_GUEST_NPAD_SHMEM",
+             "STAGE37_HID_BRIDGE_GUEST_SHMEM_MAPPING_PRESENT_UNVERIFIED",
+          )
+          digest=None
+          variants={}
+          for mode in modes:
+              path=root/mode
+              file=path/"gui_process_probe.json"
+              assert file.is_file(), "source-bound genuine NeXium process receipt required"
+              d=json.loads(file.read_text())
+              assert d["probe"]=="no_nro_gui_process_only"
+              assert d["nro_verified"] is False and d["gameplay_verified"] is False
+              assert d["gui_verified"] is False
+              assert d["outcome"] in ("exited_nonzero","exited_zero_unverified","alive_without_gui_verification")
+              if digest is None: digest=d["emulator_sha256"]
+              assert d["emulator_sha256"]==digest, "different NeXium Mach-O across native controls"
+              console=(path/"nexium-stdout-stderr.log").read_text(errors="replace")
+              original=[line.strip() for line in console.splitlines() if line.strip() in snap+hid]
+              markers=set(original)
+              if mode=="full-no-virtual":
+                  assert not markers, "original no-virtual input control emitted synthetic markers"
+              if mode=="ctor-virtual":
+                  assert "STAGE36_VIRTUAL_ATTACHED_AND_OPENED" in markers
+                  assert not any(s in markers for s in hid),\
+                      "inert constructor unexpectedly wrote host HID input"
+                  assert "STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED" not in markers
+              if mode=="full-virtual":
+                  assert "STAGE26_HORIZON_CTOR_ENTERED" not in console,\
+                      "normal full GUI cannot be Stage26 constructor wrapper"
+                  assert "STAGE32_PREINPUT_CREATED_SOME" in console and \
+                    "STAGE32_TAKE_SOME" in console
+                  assert "STAGE34_INPUT_POLL_ENTRY" in console
+              variants[mode]={
+                  "outcome":d["outcome"],
+                  "exit_signal":d.get("exit_signal"),
+                  "alive_at_deadline":d["alive_at_deadline"],
+                  "process_owned_visible_window":d.get("window_found"),
+                  "actual_whitelisted_source_markers":original,
+                  "synthetic_snapshot_press":
+                    "STAGE36_VIRTUAL_SNAPSHOT_PRESS_MAPPED" in markers,
+                  "synthetic_snapshot_release":
+                    "STAGE36_VIRTUAL_SNAPSHOT_RELEASE_MAPPED" in markers,
+                  "actual_host_hid_switch_b_press":
+                    "STAGE37_HID_BRIDGE_SYNTHETIC_B_PRESS_HOST_STATE" in markers,
+                  "actual_host_hid_switch_b_release":
+                    "STAGE37_HID_BRIDGE_SYNTHETIC_B_RELEASE_HOST_STATE" in markers,
+                  "guest_npad_shared_memory_bound_unverified":
+                    "STAGE37_HID_BRIDGE_GUEST_SHMEM_MAPPING_PRESENT_UNVERIFIED" in markers,
+                  "guest_npad_shmem_explicitly_unbound":
+                    "STAGE37_HID_BRIDGE_NO_GUEST_NPAD_SHMEM" in markers,
+              }
+          a=variants["full-virtual"]
+          reached=(
+              a["synthetic_snapshot_press"] and a["synthetic_snapshot_release"]
+              and a["actual_host_hid_switch_b_press"]
+              and a["actual_host_hid_switch_b_release"]
+          )
+          result={
+              "schema":"nexium-stage37-real-intel-original-host-hid-bridge/v1",
+              "result":"THREE_REAL_INTEL_SYNTHETIC_HID_PATHS_CLASSIFIED",
+              "same_compiled_intel_macho_sha256":digest,
+              "source_bound_synthetic_switch_b_host_hid_round_trip_positive":reached,
+              "guest_hid_npad_shared_memory_verified":False,
+              "real_hardware_controller_verified":False,
+              "nintendo_game_nro_supplied":False,
+              "vandal_hearts_gameplay_verified":False,
+              "rendered_game_pixels_verified":False,
+              "physical_switch_audio_verified":False,
+              "raw_console_uploaded":False,
+              "variants":variants,
+          }
+          (root/"stage37-original-host-hid-bridge.json").write_text(
+              json.dumps(result,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(result,sort_keys=True))
+          PY
+          echo 'Stage37 confirms only original host HidState input; no guest NPad memory/game evidence.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Audit original NPad LIFO buffer press/release from sanitized booleans
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_npad_lifo_trace.py \
+            --root stage37-reports \
+            --output stage37-reports/stage38-npad-lifo-report.json
+
+      - name: Keep only authentic safe host-HID marker receipts, no game artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-stage38-intel-original-synthetic-npad-lifo
+          path: |
+            stage37-reports/full-virtual/gui_process_probe.json
+            stage37-reports/full-no-virtual/gui_process_probe.json
+            stage37-reports/ctor-virtual/gui_process_probe.json
+            stage37-reports/stage37-original-host-hid-bridge.json
+            stage37-reports/stage38-npad-lifo-report.json
+          if-no-files-found: warn
+
+
+  guest-hid-probe-nro:
+    name: Build libnx guest NPad readback probe
+    if: github.head_ref == 'work/intel-stage40-guest-npad-readback'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p guest-probe-build
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_hid_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o guest-probe-build/nexium-guest-hid-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest HID Probe" "NeXium Intel Research" "0.1.0" \
+            guest-probe-build/nexium-guest-hid-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            guest-probe-build/nexium-guest-hid-probe.elf \
+            guest-probe-build/nexium-guest-hid-probe.nro \
+            --nacp=guest-probe-build/nexium-guest-hid-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("guest-probe-build/nexium-guest-hid-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE40_GUEST_HID_NRO_INVALID")
+          print(f"STAGE40_GUEST_HID_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage40-guest-hid-probe-nro
+          path: guest-probe-build/nexium-guest-hid-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+  stage40-guest-npad-readback:
+    name: Stage40 native Intel guest NPad B press/release readback
+    if: github.head_ref == 'work/intel-stage40-guest-npad-readback'
+    needs: [intel-build, guest-hid-probe-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage40-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage40-guest-hid-probe-nro
+          path: stage40-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage40-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage40-probe/nexium-guest-hid-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage40-exe"
+      - name: Run guest NRO with sustained synthetic B and safe HID diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage40-exe")"
+          # Stage40 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage40-probe/nexium-guest-hid-probe.nro \
+              --output stage40-evidence \
+              --seconds 50 \
+              --snapshot-ms 5000
+      - name: Require guest-visible B press/release and mapped HID report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_hid_runtime.py \
+            --report-dir stage40-evidence \
+            --output stage40-evidence/stage40-guest-hid-runtime.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage40-guest-npad-readback-evidence
+          path: stage40-evidence/stage40-guest-hid-runtime.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+  stage41-guest-npad-no-virtual:
+    name: Stage41 real Intel guest NPad control with no virtual controller
+    if: github.head_ref == 'work/intel-stage40-guest-npad-readback'
+    # Positive control must have passed first; both jobs download the exact
+    # same runner-built binary and the same open homebrew libnx NRO artifacts.
+    needs: [stage40-guest-npad-readback]
+    runs-on: macos-15-intel
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the same native Intel Rustarmic binary
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage41-binary
+      - name: Download the same public libnx guest diagnostic NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage40-guest-hid-probe-nro
+          path: stage41-probe
+      - name: Download the authentic Stage40 positive sanitized receipt
+        uses: actions/download-artifact@v4
+        with:
+          name: stage40-guest-npad-readback-evidence
+          path: stage41-positive
+      - name: Verify exact Intel architecture and input artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage41-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          test -n "$BIN"
+          test -s stage41-probe/nexium-guest-hid-probe.nro
+          test -s stage41-positive/stage40-guest-hid-runtime.json
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage41-exe"
+      - name: Run the same guest NRO WITHOUT the synthetic virtual controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage41-exe")"
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=0 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage41-probe/nexium-guest-hid-probe.nro \
+              --output stage41-no-virtual \
+              --seconds 70 \
+              --snapshot-ms 5000
+      - name: Require real guest no-B completion and no synthetic host/NPad B
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_hid_no_virtual.py \
+            --report-dir stage41-no-virtual \
+            --stage40-positive-receipt stage41-positive/stage40-guest-hid-runtime.json \
+            --output stage41-no-virtual/stage41-negative-control.json
+      - name: Upload sanitized negative control only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage41-guest-npad-no-virtual-evidence
+          path: stage41-no-virtual/stage41-negative-control.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  stage42-guest-ab-probe-nro:
+    name: Stage42 build guest A+B chord probe
+    if: github.head_ref == 'work/intel-stage42-guest-ab-chord'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage42-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_ab_chord_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage42-guest-probe/nexium-guest-ab-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest HID Probe" "NeXium Intel Research" "0.1.0" \
+            stage42-guest-probe/nexium-guest-ab-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage42-guest-probe/nexium-guest-ab-probe.elf \
+            stage42-guest-probe/nexium-guest-ab-probe.nro \
+            --nacp=stage42-guest-probe/nexium-guest-ab-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage42-guest-probe/nexium-guest-ab-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE42_GUEST_AB_NRO_INVALID")
+          print(f"STAGE42_GUEST_AB_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage42-guest-ab-probe-nro
+          path: stage42-guest-probe/nexium-guest-ab-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+  stage42-guest-ab-chord-readback:
+    name: Stage42 native Intel guest A+B chord readback
+    if: github.head_ref == 'work/intel-stage42-guest-ab-chord'
+    needs: [intel-build, stage42-guest-ab-probe-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage42-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage42-guest-ab-probe-nro
+          path: stage42-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage42-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage42-probe/nexium-guest-ab-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage42-exe"
+      - name: Run authentic guest libnx A+B chord with nested SDL3 pulses
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage42-exe")"
+          # Stage42 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage42-probe/nexium-guest-ab-probe.nro \
+              --output stage42-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require guest A+B sequence, host pulses, and original NPad chord trace
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_ab_chord.py \
+            --report-dir stage42-evidence \
+            --output stage42-evidence/stage42-guest-ab-chord.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage42-guest-ab-chord-evidence
+          path: stage42-evidence/stage42-guest-ab-chord.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+  stage43-guest-dpad-up-right-nro:
+    name: Stage43 build guest DPad Up/Right diagnostic NRO
+    if: github.head_ref == 'work/intel-stage43-guest-dpad-up-right'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage43-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_dpad_up_right_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage43-guest-probe/nexium-guest-dpad-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest DPad Probe" "NeXium Intel Research" "0.1.0" \
+            stage43-guest-probe/nexium-guest-dpad-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage43-guest-probe/nexium-guest-dpad-probe.elf \
+            stage43-guest-probe/nexium-guest-dpad-probe.nro \
+            --nacp=stage43-guest-probe/nexium-guest-dpad-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage43-guest-probe/nexium-guest-dpad-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE43_GUEST_DPAD_NRO_INVALID")
+          print(f"STAGE43_GUEST_DPAD_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage43-guest-dpad-up-right-nro
+          path: stage43-guest-probe/nexium-guest-dpad-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage43-guest-dpad-up-right-readback:
+    name: Stage43 native Intel guest DPad Up/Right readback
+    if: github.head_ref == 'work/intel-stage43-guest-dpad-up-right'
+    needs: [intel-build, stage43-guest-dpad-up-right-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage43-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage43-guest-dpad-up-right-nro
+          path: stage43-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage43-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage43-probe/nexium-guest-dpad-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage43-exe"
+      - name: Run guest libnx DPad Up/Right through original SDL3 HID
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage43-exe")"
+          # Stage43 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage43-probe/nexium-guest-dpad-probe.nro \
+              --output stage43-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require guest DPad states, host pulses, and original NPad LIFO trace
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_dpad_up_right.py \
+            --report-dir stage43-evidence \
+            --output stage43-evidence/stage43-guest-dpad-up-right.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage43-guest-dpad-up-right-evidence
+          path: stage43-evidence/stage43-guest-dpad-up-right.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+  stage44-guest-left-stick-x-nro:
+    name: Stage44 build guest left X analog diagnostic NRO
+    if: github.head_ref == 'work/intel-stage44-guest-left-stick-x'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage44-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_left_stick_x_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage44-guest-probe/nexium-guest-left-stick-x-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest LeftX Probe" "NeXium Intel Research" "0.1.0" \
+            stage44-guest-probe/nexium-guest-left-stick-x-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage44-guest-probe/nexium-guest-left-stick-x-probe.elf \
+            stage44-guest-probe/nexium-guest-left-stick-x-probe.nro \
+            --nacp=stage44-guest-probe/nexium-guest-left-stick-x-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage44-guest-probe/nexium-guest-left-stick-x-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE44_GUEST_STICK_X_NRO_INVALID")
+          print(f"STAGE44_GUEST_STICK_X_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage44-guest-left-stick-x-nro
+          path: stage44-guest-probe/nexium-guest-left-stick-x-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage44-guest-left-stick-x-readback:
+    name: Stage44 native Intel guest left X analog readback
+    if: github.head_ref == 'work/intel-stage44-guest-left-stick-x'
+    needs: [intel-build, stage44-guest-left-stick-x-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage44-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage44-guest-left-stick-x-nro
+          path: stage44-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage44-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage44-probe/nexium-guest-left-stick-x-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage44-exe"
+      - name: Run original libnx left X through real SDL3 and InputSnapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage44-exe")"
+          # Stage44 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage44-probe/nexium-guest-left-stick-x-probe.nro \
+              --output stage44-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require guest stick X sequence, original InputSnapshot and host B
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_left_stick_x.py \
+            --report-dir stage44-evidence \
+            --output stage44-evidence/stage44-guest-left-stick-x.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage44-guest-left-stick-x-evidence
+          path: stage44-evidence/stage44-guest-left-stick-x.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+  stage45-guest-left-stick-y-nro:
+    name: Stage45 build guest left Y analog diagnostic NRO
+    if: github.head_ref == 'work/intel-stage45-guest-left-stick-y'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage45-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_left_stick_y_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage45-guest-probe/nexium-guest-left-stick-y-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest LeftY Probe" "NeXium Intel Research" "0.1.0" \
+            stage45-guest-probe/nexium-guest-left-stick-y-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage45-guest-probe/nexium-guest-left-stick-y-probe.elf \
+            stage45-guest-probe/nexium-guest-left-stick-y-probe.nro \
+            --nacp=stage45-guest-probe/nexium-guest-left-stick-y-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage45-guest-probe/nexium-guest-left-stick-y-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE45_GUEST_STICK_Y_NRO_INVALID")
+          print(f"STAGE45_GUEST_STICK_Y_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage45-guest-left-stick-y-nro
+          path: stage45-guest-probe/nexium-guest-left-stick-y-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage45-guest-left-stick-y-readback:
+    name: Stage45 native Intel guest left Y analog readback
+    if: github.head_ref == 'work/intel-stage45-guest-left-stick-y'
+    needs: [intel-build, stage45-guest-left-stick-y-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage45-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage45-guest-left-stick-y-nro
+          path: stage45-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage45-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage45-probe/nexium-guest-left-stick-y-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage45-exe"
+      - name: Run original libnx left Y through real SDL3 and InputSnapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage45-exe")"
+          # Stage45 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_Y_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage45-probe/nexium-guest-left-stick-y-probe.nro \
+              --output stage45-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require signed guest stick Y, inverted original InputSnapshot and B
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_left_stick_y.py \
+            --report-dir stage45-evidence \
+            --output stage45-evidence/stage45-guest-left-stick-y.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage45-guest-left-stick-y-evidence
+          path: stage45-evidence/stage45-guest-left-stick-y.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+  stage46-guest-right-stick-x-nro:
+    name: Stage46 build guest right X analog diagnostic NRO
+    if: github.head_ref == 'work/intel-stage46-guest-right-stick-x'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage46-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_right_stick_x_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage46-guest-probe/nexium-guest-right-stick-x-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest RightX Probe" "NeXium Intel Research" "0.1.0" \
+            stage46-guest-probe/nexium-guest-right-stick-x-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage46-guest-probe/nexium-guest-right-stick-x-probe.elf \
+            stage46-guest-probe/nexium-guest-right-stick-x-probe.nro \
+            --nacp=stage46-guest-probe/nexium-guest-right-stick-x-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage46-guest-probe/nexium-guest-right-stick-x-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE46_GUEST_RIGHT_X_NRO_INVALID")
+          print(f"STAGE46_GUEST_RIGHT_X_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage46-guest-right-stick-x-nro
+          path: stage46-guest-probe/nexium-guest-right-stick-x-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage46-guest-right-stick-x-readback:
+    name: Stage46 native Intel guest right X analog readback
+    if: github.head_ref == 'work/intel-stage46-guest-right-stick-x'
+    needs: [intel-build, stage46-guest-right-stick-x-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage46-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage46-guest-right-stick-x-nro
+          path: stage46-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage46-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage46-probe/nexium-guest-right-stick-x-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage46-exe"
+      - name: Run original libnx right X through real SDL3 and InputSnapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage46-exe")"
+          # Stage46 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_X_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage46-probe/nexium-guest-right-stick-x-probe.nro \
+              --output stage46-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require signed guest right X, original InputSnapshot and B
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_right_stick_x.py \
+            --report-dir stage46-evidence \
+            --output stage46-evidence/stage46-guest-right-stick-x.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage46-guest-right-stick-x-evidence
+          path: stage46-evidence/stage46-guest-right-stick-x.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+  stage47-guest-right-stick-y-nro:
+    name: Stage47 build guest right Y analog diagnostic NRO
+    if: github.head_ref == 'work/intel-stage47-guest-right-stick-y'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage47-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_right_stick_y_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage47-guest-probe/nexium-guest-right-stick-y-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest RightY Probe" "NeXium Intel Research" "0.1.0" \
+            stage47-guest-probe/nexium-guest-right-stick-y-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage47-guest-probe/nexium-guest-right-stick-y-probe.elf \
+            stage47-guest-probe/nexium-guest-right-stick-y-probe.nro \
+            --nacp=stage47-guest-probe/nexium-guest-right-stick-y-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage47-guest-probe/nexium-guest-right-stick-y-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE47_GUEST_RIGHT_Y_NRO_INVALID")
+          print(f"STAGE47_GUEST_RIGHT_Y_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage47-guest-right-stick-y-nro
+          path: stage47-guest-probe/nexium-guest-right-stick-y-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage47-guest-right-stick-y-readback:
+    name: Stage47 native Intel guest right Y analog readback
+    if: github.head_ref == 'work/intel-stage47-guest-right-stick-y'
+    needs: [intel-build, stage47-guest-right-stick-y-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage47-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage47-guest-right-stick-y-nro
+          path: stage47-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage47-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage47-probe/nexium-guest-right-stick-y-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage47-exe"
+      - name: Run original libnx right Y through real SDL3 and InputSnapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage47-exe")"
+          # Stage47 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_Y_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage47-probe/nexium-guest-right-stick-y-probe.nro \
+              --output stage47-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require signed guest right Y, inverted InputSnapshot and B
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_right_stick_y.py \
+            --report-dir stage47-evidence \
+            --output stage47-evidence/stage47-guest-right-stick-y.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage47-guest-right-stick-y-evidence
+          path: stage47-evidence/stage47-guest-right-stick-y.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+  stage48-guest-dual-stick-combined-nro:
+    name: Stage48 build guest dual stick analog diagnostic NRO
+    if: github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage48-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_dual_stick_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage48-guest-probe/nexium-guest-dual-stick-combined-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest DualStick Probe" "NeXium Intel Research" "0.1.0" \
+            stage48-guest-probe/nexium-guest-dual-stick-combined-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage48-guest-probe/nexium-guest-dual-stick-combined-probe.elf \
+            stage48-guest-probe/nexium-guest-dual-stick-combined-probe.nro \
+            --nacp=stage48-guest-probe/nexium-guest-dual-stick-combined-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage48-guest-probe/nexium-guest-dual-stick-combined-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE48_GUEST_DUAL_STICK_NRO_INVALID")
+          print(f"STAGE48_GUEST_DUAL_STICK_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage48-guest-dual-stick-combined-nro
+          path: stage48-guest-probe/nexium-guest-dual-stick-combined-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage48-guest-dual-stick-combined-readback:
+    name: Stage48 native Intel guest dual stick analog readback
+    if: github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration'
+    needs: [intel-build, stage48-guest-dual-stick-combined-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage48-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage48-guest-dual-stick-combined-nro
+          path: stage48-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage48-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage48-probe/nexium-guest-dual-stick-combined-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage48-exe"
+      - name: Run original libnx dual stick through real SDL3 and InputSnapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage48-exe")"
+          # Stage48 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DUAL_STICK_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage48-probe/nexium-guest-dual-stick-combined-probe.nro \
+              --output stage48-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require simultaneous guest dual-stick phases and original snapshot
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_dual_stick.py \
+            --report-dir stage48-evidence \
+            --output stage48-evidence/stage48-guest-dual-stick-combined.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage48-guest-dual-stick-combined-evidence
+          path: stage48-evidence/stage48-guest-dual-stick-combined.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+  stage50-guest-mixed-dpad-dual-stick-nro:
+    name: Stage50 build guest dual stick analog diagnostic NRO
+    if: github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick' || github.head_ref == 'work/intel-stage51-controller-profile'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage50-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_mixed_dpad_dual_stick_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage50-guest-probe/nexium-guest-mixed-dpad-dual-stick-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest Mixed DPad+DualStick Probe" "NeXium Intel Research" "0.1.0" \
+            stage50-guest-probe/nexium-guest-mixed-dpad-dual-stick-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage50-guest-probe/nexium-guest-mixed-dpad-dual-stick-probe.elf \
+            stage50-guest-probe/nexium-guest-mixed-dpad-dual-stick-probe.nro \
+            --nacp=stage50-guest-probe/nexium-guest-mixed-dpad-dual-stick-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage50-guest-probe/nexium-guest-mixed-dpad-dual-stick-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE50_GUEST_MIXED_DPAD_DUAL_STICK_NRO_INVALID")
+          print(f"STAGE50_GUEST_MIXED_DPAD_DUAL_STICK_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage50-guest-mixed-dpad-dual-stick-nro
+          path: stage50-guest-probe/nexium-guest-mixed-dpad-dual-stick-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage50-guest-mixed-dpad-dual-stick-readback:
+    name: Stage50 native Intel guest dual stick analog readback
+    if: github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick' || github.head_ref == 'work/intel-stage51-controller-profile'
+    needs: [intel-build, stage50-guest-mixed-dpad-dual-stick-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage50-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage50-guest-mixed-dpad-dual-stick-nro
+          path: stage50-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage50-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage50-probe/nexium-guest-mixed-dpad-dual-stick-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage50-exe"
+      - name: Run genuine guest DPad with both original analog sticks
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage50-exe")"
+          # Stage50 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=1 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DUAL_STICK_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage50-probe/nexium-guest-mixed-dpad-dual-stick-probe.nro \
+              --output stage50-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require mixed guest DPad and both simultaneous analog sticks
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_mixed_dpad_dual_stick.py \
+            --report-dir stage50-evidence \
+            --output stage50-evidence/stage50-guest-mixed-dpad-dual-stick.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage50-guest-mixed-dpad-dual-stick-evidence
+          path: stage50-evidence/stage50-guest-mixed-dpad-dual-stick.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+  stage52-guest-deadzone-jitter-nro:
+    name: Stage52 build guest analog deadzone jitter NRO
+    if: github.head_ref == 'work/intel-stage52-controller-deadzone-jitter'
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage52-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_deadzone_jitter_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage52-guest-probe/nexium-guest-deadzone-jitter-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest Deadzone Jitter Probe" "NeXium Intel Research" "0.1.0" \
+            stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage52-guest-probe/nexium-guest-deadzone-jitter-probe.elf \
+            stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nro \
+            --nacp=stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE52_GUEST_MIXED_DPAD_DUAL_STICK_NRO_INVALID")
+          print(f"STAGE52_GUEST_MIXED_DPAD_DUAL_STICK_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage52-guest-deadzone-jitter-nro
+          path: stage52-guest-probe/nexium-guest-deadzone-jitter-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage52-guest-deadzone-jitter-readback:
+    name: Stage52 native Intel guest analog deadzone jitter
+    if: github.head_ref == 'work/intel-stage52-controller-deadzone-jitter'
+    needs: [intel-build, stage52-guest-deadzone-jitter-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage52-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage52-guest-deadzone-jitter-nro
+          path: stage52-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage52-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage52-probe/nexium-guest-deadzone-jitter-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage52-exe"
+      - name: Run guest original four-axis low-amplitude deadzone jitter
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage52-exe")"
+          # Stage52 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DUAL_STICK_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DEADZONE_JITTER_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage52-probe/nexium-guest-deadzone-jitter-probe.nro \
+              --output stage52-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require raw jitter filtered in original host snapshot and guest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_deadzone_jitter.py \
+            --report-dir stage52-evidence \
+            --output stage52-evidence/stage52-guest-deadzone-jitter.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage52-guest-deadzone-jitter-evidence
+          path: stage52-evidence/stage52-guest-deadzone-jitter.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+  stage53-guest-deadzone-threshold-nro:
+    name: Stage53 build guest analog deadzone threshold NRO
+    if: github.head_ref == 'work/intel-stage53-deadzone-threshold' || (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits'))))
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile minimal guest PadState probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          mkdir -p stage53-guest-probe
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -fPIE \
+            -ffunction-sections -fdata-sections \
+            -I"$DEVKITPRO/libnx/include" \
+            -specs="$DEVKITPRO/libnx/switch.specs" \
+            -Wl,--gc-sections -pie \
+            probes/nexium_guest_deadzone_threshold_probe.c \
+            -L"$DEVKITPRO/libnx/lib" -lnx \
+            -o stage53-guest-probe/nexium-guest-deadzone-threshold-probe.elf
+          "$DEVKITPRO/tools/bin/nacptool" --create \
+            "NeXium Guest Deadzone Threshold Probe" "NeXium Intel Research" "0.1.0" \
+            stage53-guest-probe/nexium-guest-deadzone-threshold-probe.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" \
+            stage53-guest-probe/nexium-guest-deadzone-threshold-probe.elf \
+            stage53-guest-probe/nexium-guest-deadzone-threshold-probe.nro \
+            --nacp=stage53-guest-probe/nexium-guest-deadzone-threshold-probe.nacp
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("stage53-guest-probe/nexium-guest-deadzone-threshold-probe.nro")
+          data = path.read_bytes()
+          if len(data) < 0x14 or data[0x10:0x14] != b"NRO0":
+              raise SystemExit("STAGE53_GUEST_DEADZONE_THRESHOLD_NRO_INVALID")
+          print(f"STAGE53_GUEST_DEADZONE_THRESHOLD_NRO_READY bytes={len(data)}")
+          PY
+      - name: Upload diagnostic NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage53-guest-deadzone-threshold-nro
+          path: stage53-guest-probe/nexium-guest-deadzone-threshold-probe.nro
+          if-no-files-found: error
+          retention-days: 30
+
+
+
+  stage53-guest-deadzone-threshold-readback:
+    name: Stage53 native Intel guest analog deadzone threshold
+    if: github.head_ref == 'work/intel-stage53-deadzone-threshold' || (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits'))))
+    needs: [intel-build, stage53-guest-deadzone-threshold-nro]
+    runs-on: macos-15-intel
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact native Intel NeXium executable
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-macos-intel-rustarmic-probe
+          path: stage53-binary
+      - name: Download compiled guest HID probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: stage53-guest-deadzone-threshold-nro
+          path: stage53-probe
+      - name: Verify native binary and guest probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(find stage53-binary -type f -path '*/Contents/MacOS/nexium' -print -quit)"
+          NRO="stage53-probe/nexium-guest-deadzone-threshold-probe.nro"
+          test -n "$BIN"
+          test -s "$NRO"
+          test "$(xcrun lipo -archs "$BIN")" = x86_64
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          chmod 755 "$BIN"
+          printf '%s\n' "$BIN" > "$RUNNER_TEMP/stage53-exe"
+      - name: Run guest original below/above default analog deadzone
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage53-exe")"
+          # Stage53 uses a Rustarmic-only build; the GUI otherwise defaults
+          # to Dynarmic, which fails before guest CPU execution begins.
+          # Set CPU and diagnostics on the one uninterrupted env invocation.
+          # Shell comments must not interrupt backslash-continued assignments.
+          env NEXIUM_CPU_BACKEND=rustarmic \
+            NEXIUM_MACOS_NO_AUDIO=1 \
+            NEXIUM_MACOS_MINIMAL_EFRAME=0 \
+            NEXIUM_MACOS_FULL_INIT_MINIMAL_APP=0 \
+            NEXIUM_MACOS_HORIZON_CTOR_ONLY=0 \
+            NEXIUM_MACOS_SKIP_SDL3_INPUT=0 \
+            NEXIUM_MACOS_SDL3_PREINIT_BEFORE_WINIT=1 \
+            NEXIUM_MACOS_INPUT_POLL_TRACE=1 \
+            NEXIUM_MACOS_VIRTUAL_BUTTON_TEST=1 \
+            NEXIUM_MACOS_GUEST_HID_PROBE=1 \
+            NEXIUM_MACOS_GUEST_AB_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DPAD_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_STICK_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_X_PROBE=0 \
+            NEXIUM_MACOS_GUEST_RIGHT_Y_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DUAL_STICK_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DEADZONE_JITTER_PROBE=0 \
+            NEXIUM_MACOS_GUEST_DEADZONE_THRESHOLD_PROBE=1 \
+            NEXIUM_MACOS_STAGE37_HID_BRIDGE_TRACE=1 \
+            NEXIUM_HID_TRACE=1 \
+            NEXIUM_DIAG=lite \
+            NEXIUM_LOG_LEVEL=debug \
+            python3 scripts/nro_smoke_test.py \
+              --exe "$BIN" \
+              --nro stage53-probe/nexium-guest-deadzone-threshold-probe.nro \
+              --output stage53-evidence \
+              --seconds 80 \
+              --snapshot-ms 5000
+      - name: Require below vs above deadzone original host and guest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_guest_deadzone_threshold.py \
+            --report-dir stage53-evidence \
+            --output stage53-evidence/stage53-guest-deadzone-threshold.json
+      - name: Upload only sanitized guest HID evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage53-guest-deadzone-threshold-evidence
+          path: stage53-evidence/stage53-guest-deadzone-threshold.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Verify exact native Intel plus libnx guest proof triplet
+        if: (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits'))))
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Build script source pin must match Stage54's fail-closed contract.
+          grep -Fx 'REVISION="089562567a0a8760dfdd8420e1f57c35159a9219"' macos_probe.sh
+          BIN="$(cat "$RUNNER_TEMP/stage53-exe")"
+          python3 scripts/audit_intel_controller_proof_manifest.py \
+            --intel-binary "$BIN" \
+            --guest-nro stage53-probe/nexium-guest-deadzone-threshold-probe.nro \
+            --guest-receipt stage53-evidence/stage53-guest-deadzone-threshold.json \
+            --source-sha 089562567a0a8760dfdd8420e1f57c35159a9219 \
+            --repository-sha "$GITHUB_SHA" \
+            --github-run-id "$GITHUB_RUN_ID" \
+            --output stage53-evidence/stage54-controller-proof-manifest.json
+      - name: Stage55 replay published proof against exact local build triplet
+        if: (github.head_ref == 'work/intel-stage55-proof-replay' || (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits')))
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage53-exe")"
+          python3 scripts/verify_intel_controller_proof_manifest.py \
+            --manifest stage53-evidence/stage54-controller-proof-manifest.json \
+            --intel-binary "$BIN" \
+            --guest-nro stage53-probe/nexium-guest-deadzone-threshold-probe.nro \
+            --guest-receipt stage53-evidence/stage53-guest-deadzone-threshold.json \
+            --source-sha 089562567a0a8760dfdd8420e1f57c35159a9219 \
+            --repository-sha "$GITHUB_SHA" \
+            --github-run-id "$GITHUB_RUN_ID"
+      - name: Stage56 reject forged Mach-O NRO and ambiguous receipt formats
+        if: (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits'))
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage53-exe")"
+          python3 scripts/audit_intel_controller_proof_structure.py \
+            --intel-binary "$BIN" \
+            --guest-nro stage53-probe/nexium-guest-deadzone-threshold-probe.nro \
+            --guest-receipt stage53-evidence/stage53-guest-deadzone-threshold.json
+      - name: Stage57 validate file-backed Mach-O segment and section bounds
+        if: (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits')
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(cat "$RUNNER_TEMP/stage53-exe")"
+          python3 scripts/audit_intel_macho_segment_bounds.py --intel-binary "$BIN"
+      - name: Upload only sanitized exact-build proof manifest
+        if: success() && (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits'))))
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage54-exact-intel-controller-proof-manifest
+          path: stage53-evidence/stage54-controller-proof-manifest.json
+          if-no-files-found: warn
+          retention-days: 30
+
+
+
+
+
+  intel-build:
+    # Stage-13 independently checks capture/archive helpers without duplicating
+    # the expensive active main-port compiler jobs.
+    if: github.head_ref != 'work/intel-stage13-private-window-evidence' && github.head_ref != 'work/intel-stage39-guest-hid-map-audit'
+    name: Native Intel build (${{ matrix.backend }}, experimental)
+    # Intel compiler-rt preflight itself now reruns all syntax and fixture tests;
+    # do not stall macOS builds on GitHub's independent Ubuntu runner queue.
+    needs: [mig-intel, compiler-rt-intel]
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # This PR is a narrow macOS UI audio-ablation experiment.
+        backend: [rustarmic]
+    env:
+      NEXIUM_CPU_BACKEND: ${{ matrix.backend }}
+      NEXIUM_EXPERIMENT_AUDIO_ABLATION: '1'
+      NEXIUM_EXPERIMENT_MINIMAL_EFRAME: '1'
+      NEXIUM_EXPERIMENT_FULL_INIT_MINIMAL_APP: '1'
+      NEXIUM_EXPERIMENT_HORIZON_CTOR_ONLY: '1'
+      NEXIUM_EXPERIMENT_HORIZON_CTOR_PHASE_TRACE: '1'
+      NEXIUM_EXPERIMENT_SDL3_INPUT_ABLATION: '1'
+      NEXIUM_EXPERIMENT_SDL3_PREWINIT: '1'
+      NEXIUM_EXPERIMENT_INPUT_POLL_MARKERS: '1'
+      NEXIUM_EXPERIMENT_VIRTUAL_INPUT_SNAPSHOT: '1'
+      NEXIUM_EXPERIMENT_STAGE37_HID_BRIDGE: '1'
+      NEXIUM_EXPERIMENT_STAGE40_GUEST_HID: ${{ (github.head_ref == 'work/intel-stage40-guest-npad-readback' || github.head_ref == 'work/intel-stage42-guest-ab-chord' || github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration' || github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE42_GUEST_AB: ${{ (github.head_ref == 'work/intel-stage42-guest-ab-chord' || github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration' || github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE43_GUEST_DPAD: ${{ (github.head_ref == 'work/intel-stage43-guest-dpad-up-right' || github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration' || github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE44_GUEST_STICK_X: ${{ (github.head_ref == 'work/intel-stage44-guest-left-stick-x' || github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration' || github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE45_GUEST_STICK_Y: ${{ (github.head_ref == 'work/intel-stage45-guest-left-stick-y' || github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration' || github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE46_GUEST_RIGHT_X: ${{ (github.head_ref == 'work/intel-stage46-guest-right-stick-x' || github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration' || github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE47_GUEST_RIGHT_Y: ${{ (github.head_ref == 'work/intel-stage47-guest-right-stick-y' || github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration' || github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick') && '1' || '0' }}
+      NEXIUM_EXPERIMENT_STAGE48_DUAL_STICK: ${{ (github.head_ref == 'work/intel-stage48-dual-stick-combined' || github.head_ref == 'work/intel-stage49-controller-integration' || github.head_ref == 'work/intel-stage50-mixed-dpad-dual-stick') && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify true Intel hardware
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          sw_vers
+          xcodebuild -version
+      - name: Validate Intel Mach Interface Generator
+        if: matrix.backend == 'dynarmic'
+        run: bash scripts/mig_probe_intel.sh
+      - name: Install build dependencies
+        run: brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
+      - name: Experimental Intel NeXium build
+        id: build
+        continue-on-error: true
+        env:
+          # Explicit profile opt-in, never enabled by default or on main.
+          NEXIUM_INTEL_INPUT_PROFILE: ${{ (github.head_ref == 'work/intel-stage51-controller-profile' || github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' || github.head_ref == 'work/intel-stage53-deadzone-threshold' || (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits'))))) && 'controller-diagnostics-v1' || 'off' }}
+          NEXIUM_EXPERIMENT_STAGE52_DEADZONE_JITTER: ${{ (github.head_ref == 'work/intel-stage52-controller-deadzone-jitter' || github.head_ref == 'work/intel-stage53-deadzone-threshold' || (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits'))))) && '1' || '0' }}
+          NEXIUM_EXPERIMENT_STAGE53_DEADZONE_THRESHOLD: ${{ (github.head_ref == 'work/intel-stage53-deadzone-threshold' || (github.head_ref == 'work/intel-stage54-controller-proof-manifest' || (github.head_ref == 'work/intel-stage55-proof-replay' || (github.head_ref == 'work/intel-stage56-proof-file-formats' || (github.head_ref == 'work/intel-stage57-macho-segment-bounds' || github.head_ref == 'work/intel-stage58-reconcile-ancestor-audits'))))) && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          if [[ "$NEXIUM_INTEL_INPUT_PROFILE" == "controller-diagnostics-v1" ]]; then
+            # The legacy CI job supplies per-stage 0s to all unlisted branches.
+            # Unset these legacy selectors and let the *branch-independent*
+            # explicit diagnostics profile choose its full source patch chain.
+            unset NEXIUM_EXPERIMENT_STAGE40_GUEST_HID
+            unset NEXIUM_EXPERIMENT_STAGE42_GUEST_AB
+            unset NEXIUM_EXPERIMENT_STAGE43_GUEST_DPAD
+            unset NEXIUM_EXPERIMENT_STAGE44_GUEST_STICK_X
+            unset NEXIUM_EXPERIMENT_STAGE45_GUEST_STICK_Y
+            unset NEXIUM_EXPERIMENT_STAGE46_GUEST_RIGHT_X
+            unset NEXIUM_EXPERIMENT_STAGE47_GUEST_RIGHT_Y
+            unset NEXIUM_EXPERIMENT_STAGE48_DUAL_STICK
+          fi
+          bash ./macos_probe.sh
+      - name: Retain evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-macos-intel-${{ matrix.backend }}-probe
+          path: |
+            nexium-macos-intel-work/build.log
+            nexium-macos-intel-work/dist
+          if-no-files-found: warn
+      - name: Summarize native compilation diagnostics
+        if: always()
+        run: |
+          echo "### NeXium Intel — ${{ matrix.backend }}" >> "$GITHUB_STEP_SUMMARY"
+          if test -f nexium-macos-intel-work/build.log; then
+            echo 'Last compiler failures:' >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            grep -F -e 'fatal error:' -e 'error[' -e 'error: failed' -e 'error:' -e 'BUILD_BLOCKED' -e 'DYNARMIC_MIG_BLOCKED' -e 'BOOTSTRAP BLOCKED' \
+                nexium-macos-intel-work/build.log | tail -n 18 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No build log was produced' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Report compilation blockers
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::NeXium Intel (${{ matrix.backend }}) not yet buildable; inspect artifact build.log"
+          exit 1

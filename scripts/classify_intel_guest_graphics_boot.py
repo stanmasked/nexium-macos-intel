@@ -14,7 +14,7 @@ import sys
 
 from observe_intel_integrated_window import read_bounded_json
 
-MAX_LOG_BYTES = 4 * 1024 * 1024
+MAX_LOG_BYTES = 16 * 1024 * 1024
 SMOKE_STATES = frozenset({
     "exited_zero_unverified", "exited_nonzero",
     "timeout_alive_unverified", "launch_failed",

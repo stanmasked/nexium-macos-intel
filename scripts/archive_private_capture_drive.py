@@ -1,0 +1,719 @@
+#!/usr/bin/env python3
+"""Upload an already-sealed private Stage73 report to Drive and read back each byte.
+
+NOT wired to pull_request CI. A Drive token must never be available to PR code.
+This verifies upload integrity, not remote retention or guest GPU rendering.
+"""
+import argparse
+import hashlib
+import http.client
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import tempfile
+from urllib.parse import urlsplit, urlencode
+from stage73_trusted_host_guard import is_known_ci_host
+
+from seal_private_capture import verify_manifest, MAX_FILE_BYTES, ArchiveRejected, _relative
+
+HOST = "www.googleapis.com"
+DRIVE_ID = re.compile(r"[A-Za-z0-9_-]{10,128}\Z")
+RUN_ID = re.compile(r"[0-9]{1,20}\Z")
+COMMIT = re.compile(r"[0-9a-f]{40}\Z")
+MAX_METADATA = 16384
+
+
+class DriveArchiveRejected(ValueError):
+    """No raw response bodies, paths, tokens or identifiers in error messages."""
+
+
+class GoogleTransport:
+    def __init__(self, token):
+        if not token or len(token) > 8192 or "\n" in token or "\r" in token:
+            raise DriveArchiveRejected("invalid_credentials")
+        self._token = token
+
+    def call(self, method, path, body=b"", headers=None, limit=MAX_METADATA):
+        if not path.startswith("/") or path.startswith("//"):
+            raise DriveArchiveRejected("unsafe_url")
+        request_headers = {
+            "Authorization": "Bearer " + self._token,
+            "Accept": "application/json",
+        }
+        request_headers.update(headers or {})
+        connection = http.client.HTTPSConnection(HOST, timeout=45)
+        try:
+            connection.request(method, path, body=body, headers=request_headers)
+            response = connection.getresponse()
+            status = response.status
+            response_headers = dict(response.getheaders())
+            content = response.read(limit + 1)
+            if len(content) > limit:
+                raise DriveArchiveRejected("oversized_remote_response")
+            return status, response_headers, content
+        except (OSError, http.client.HTTPException) as error:
+            raise DriveArchiveRejected("remote_transport_failed") from error
+        finally:
+            connection.close()
+
+
+def json_response(transport, method, path, body=b"", headers=None):
+    status, response_headers, raw = transport.call(
+        method, path, body=body, headers=headers, limit=MAX_METADATA
+    )
+    if status not in (200, 201):
+        raise DriveArchiveRejected("remote_status_failed")
+    try:
+        data = json.loads(raw)
+    except (UnicodeError, ValueError, TypeError) as error:
+        raise DriveArchiveRejected("invalid_remote_json") from error
+    if not isinstance(data, dict):
+        raise DriveArchiveRejected("invalid_remote_json")
+    return data, response_headers
+
+
+def metadata_path(file_id, fields):
+    if not DRIVE_ID.fullmatch(file_id):
+        raise DriveArchiveRejected("invalid_remote_id")
+    return ("/drive/v3/files/" + file_id + "?" +
+            urlencode({"fields": fields, "supportsAllDrives": "true"}))
+
+
+def require_owner_only_acl(item):
+    """Shared=false is not sufficient when inherited permissions exist."""
+    perms = item.get("permissions")
+    if (item.get("shared") is not False
+            or item.get("driveId") not in (None, "")
+            or not isinstance(perms, list) or len(perms) != 1
+            or not isinstance(perms[0], dict)
+            or perms[0].get("type") != "user"
+            or perms[0].get("role") != "owner"):
+        raise DriveArchiveRejected("remote_acl_not_owner_only")
+
+
+def check_private_parent_chain(transport, folder_id, *, writable):
+    """Fail closed on ancestor ACL, cycles, shared drives or invisible grants."""
+    if not isinstance(folder_id, str) or not DRIVE_ID.fullmatch(folder_id):
+        raise DriveArchiveRejected("invalid_folder")
+    visited = set()
+    current = folder_id
+    for depth in range(16):
+        if current in visited:
+            raise DriveArchiveRejected("remote_parent_cycle")
+        visited.add(current)
+        fields = ("id,mimeType,trashed,shared,driveId,parents,"
+                  "permissions(type,role),capabilities(canAddChildren)")
+        item, _ = json_response(transport, "GET", metadata_path(current, fields))
+        if (item.get("id") != current
+                or item.get("trashed") is not False
+                or item.get("mimeType") != "application/vnd.google-apps.folder"):
+            raise DriveArchiveRejected("remote_ancestor_invalid")
+        require_owner_only_acl(item)
+        if depth == 0 and writable and item.get("capabilities", {}).get("canAddChildren") is not True:
+            raise DriveArchiveRejected("remote_folder_not_writable")
+        # A missing parents field MUST NOT be treated as proof this is
+        # My Drive root. Google may omit fields on restricted permissions.
+        # Authenticate the terminal node against the API's special root
+        # alias before allowing the ancestry walk to finish.
+        parents = item.get("parents")
+        # Google Drive omits parents for the ACTUAL My Drive root. A missing
+        # parent on every other node must still fail against the root alias.
+        if parents is not None and (not isinstance(parents, list)
+                                    or len(parents) > 1):
+            raise DriveArchiveRejected("remote_parent_ambiguous")
+        if not parents:
+            root_fields = "id,mimeType,trashed,shared,driveId,permissions(type,role)"
+            real_root, _ = json_response(
+                transport, "GET",
+                "/drive/v3/files/root?" + urlencode({"fields": root_fields}),
+            )
+            if (real_root.get("id") != current
+                    or real_root.get("mimeType") != "application/vnd.google-apps.folder"
+                    or real_root.get("trashed") is not False):
+                raise DriveArchiveRejected("remote_root_identity_unverified")
+            require_owner_only_acl(real_root)
+            return
+        current = parents[0]
+        if not isinstance(current, str) or not DRIVE_ID.fullmatch(current):
+            raise DriveArchiveRejected("remote_parent_invalid")
+    raise DriveArchiveRejected("remote_parent_chain_too_deep")
+
+
+
+def validate_metadata(item, *, file_id, parent_id, filename, size=None):
+    if item.get("id") != file_id or item.get("name") != filename:
+        raise DriveArchiveRejected("wrong_remote_identity")
+    require_owner_only_acl(item)
+    if item.get("trashed") is not False or item.get("parents") != [parent_id]:
+        raise DriveArchiveRejected("wrong_remote_parent")
+    if item.get("mimeType") != "application/octet-stream":
+        raise DriveArchiveRejected("wrong_remote_content_type")
+    if size is not None and str(item.get("size")) != str(size):
+        raise DriveArchiveRejected("wrong_remote_size")
+
+
+def check_parent(transport, folder_id):
+    check_private_parent_chain(transport, folder_id, writable=True)
+
+
+def remote_name_matches(transport, parent_id, filename):
+    """Bounded exact-name listing, only for protected Stage73 identities.
+
+    No response identifiers leave the trusted private process. A next page,
+    malformed item, or unverified list is NEVER treated as absence.
+    """
+    if (not isinstance(parent_id, str) or not DRIVE_ID.fullmatch(parent_id)
+            or not isinstance(filename, str)
+            or not re.fullmatch(
+                r"stage73-[0-9]{1,20}-[a-f0-9]{12}(?:-handoff\.json)?",
+                filename,
+            )):
+        raise DriveArchiveRejected("invalid_archive_identity")
+    query = "'" + parent_id + "' in parents and name = '" + filename + "' and trashed = false"
+    path = "/drive/v3/files?" + urlencode({
+        "q": query, "pageSize": "2", "fields": "nextPageToken,files(id,name)",
+        "supportsAllDrives": "true", "includeItemsFromAllDrives": "true",
+    })
+    listing, _ = json_response(transport, "GET", path)
+    items = listing.get("files")
+    if (listing.get("nextPageToken") or not isinstance(items, list)
+            or len(items) > 2 or any(
+                not isinstance(item, dict)
+                or item.get("name") != filename
+                or not isinstance(item.get("id"), str)
+                or not DRIVE_ID.fullmatch(item["id"])
+                for item in items)):
+        raise DriveArchiveRejected("remote_archive_identity_not_unique")
+    return [item["id"] for item in items]
+
+
+def require_remote_name_available(transport, parent_id, filename):
+    """No same-name entry may predate the new archive/receipt."""
+    if remote_name_matches(transport, parent_id, filename):
+        raise DriveArchiveRejected("remote_archive_identity_not_unique")
+
+
+def require_remote_name_owned(transport, parent_id, filename, file_id):
+    """After creating an object, its exact name must resolve ONLY to its ID."""
+    if (not isinstance(file_id, str) or not DRIVE_ID.fullmatch(file_id)
+            or remote_name_matches(transport, parent_id, filename) != [file_id]):
+        raise DriveArchiveRejected("remote_archive_identity_not_unique")
+
+
+def create_run_folder(transport, parent, run_id, commit):
+    name = "stage73-" + run_id + "-" + commit[:12]
+    data, _ = json_response(
+        transport, "POST",
+        "/drive/v3/files?" + urlencode({
+            # Only the generated ID is needed from a create response. Drive
+            # may omit ACL and writable metadata in the POST response; the
+            # independently fetched folder GET below is the mandatory,
+            # fail-closed privacy and placement authorization point.
+            "fields": "id",
+            "supportsAllDrives": "true",
+        }),
+        body=json.dumps({
+            "name": name, "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent],
+        }).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    folder_id = data.get("id")
+    if not isinstance(folder_id, str) or not DRIVE_ID.fullmatch(folder_id):
+        raise DriveArchiveRejected("folder_creation_unverified")
+    # The create response can be partial or differ from the effective ACL.
+    # Re-fetch the newly created folder and its entire private parent chain
+    # BEFORE beginning any payload upload. This is still a point-in-time
+    # safety check, not an atomic ACL lock or retention guarantee.
+    fields = ("id,name,mimeType,trashed,shared,driveId,parents,"
+              "permissions(type,role),capabilities(canAddChildren)")
+    saved, _ = json_response(
+        transport, "GET", metadata_path(folder_id, fields))
+    # Validate exact identity/placement BEFORE traversing remote parents:
+    # a moved or substituted folder must not redirect verification to an
+    # unrelated path. The full second pass then validates ACL ancestry and
+    # write permission, not merely the original POST response.
+    if (saved.get("id") != folder_id or saved.get("name") != name
+            or saved.get("mimeType") != "application/vnd.google-apps.folder"
+            or saved.get("parents") != [parent]
+            or saved.get("trashed") is not False):
+        raise DriveArchiveRejected("created_folder_readback_invalid")
+    require_owner_only_acl(saved)
+    check_private_parent_chain(transport, folder_id, writable=True)
+    # Drive names are non-unique; re-enumerate AFTER folder POST and before
+    # the first private payload. Concurrent writers cannot both be trusted.
+    require_remote_name_owned(transport, parent, name, folder_id)
+    return folder_id
+
+
+def require_capture_folder_placement(transport, folder_id, parent_id,
+                                     expected_name):
+    """Reject relocation/rename of an active private run folder."""
+    if (not isinstance(parent_id, str) or not DRIVE_ID.fullmatch(parent_id)
+            or not isinstance(expected_name, str) or not expected_name):
+        raise DriveArchiveRejected("invalid_run_folder_expectation")
+    fields = "id,name,mimeType,trashed,parents,shared,driveId,permissions(type,role)"
+    saved, _ = json_response(transport, "GET", metadata_path(folder_id, fields))
+    if (saved.get("id") != folder_id or saved.get("name") != expected_name
+            or saved.get("mimeType") != "application/vnd.google-apps.folder"
+            or saved.get("trashed") is not False
+            or saved.get("parents") != [parent_id]):
+        raise DriveArchiveRejected("run_folder_placement_changed")
+    require_owner_only_acl(saved)
+
+
+def upload_one(transport, folder_id, name, payload, digest, *,
+               expected_run_parent=None, expected_run_name=None):
+    if not name or "/" in name or len(name) > 190:
+        raise DriveArchiveRejected("invalid_entry_name")
+    if len(payload) > MAX_FILE_BYTES or hashlib.sha256(payload).hexdigest() != digest:
+        raise DriveArchiveRejected("local_capture_changed")
+    # Revalidate exact placement before walking the parent chain. A folder
+    # moved to another (even private) folder must not be accepted as the
+    # original run destination. The receipt folder has no run-name contract.
+    if (expected_run_parent is None) != (expected_run_name is None):
+        raise DriveArchiveRejected("invalid_run_folder_expectation")
+    if expected_run_parent is not None:
+        require_capture_folder_placement(
+            transport, folder_id, expected_run_parent, expected_run_name)
+    # A folder validated immediately after creation can have been reshared
+    # before the next (or any subsequent) payload. Recheck all ancestor
+    # permissions and writability before starting EACH upload session.
+    # This is a point-in-time fail-closed guard, not an atomic ACL lock.
+    check_private_parent_chain(transport, folder_id, writable=True)
+    init_metadata = {
+        "name": name, "parents": [folder_id],
+        "mimeType": "application/octet-stream",
+    }
+    status, headers, _ = transport.call(
+        "POST",
+        "/upload/drive/v3/files?" + urlencode({
+            "uploadType": "resumable",
+            "fields": "id,name,mimeType,parents,trashed,size,shared,driveId,permissions(type,role)",
+            "supportsAllDrives": "true",
+        }),
+        body=json.dumps(init_metadata).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "X-Upload-Content-Type": "application/octet-stream",
+            "X-Upload-Content-Length": str(len(payload)),
+        },
+    )
+    if status != 200:
+        raise DriveArchiveRejected("upload_init_failed")
+    location = next((value for key, value in headers.items()
+                     if key.lower() == "location"), None)
+    if not location:
+        raise DriveArchiveRejected("upload_session_missing")
+    parsed = urlsplit(location)
+    if (parsed.scheme != "https" or parsed.netloc != HOST
+            or parsed.path != "/upload/drive/v3/files" or not parsed.query
+            or parsed.username or parsed.password):
+        raise DriveArchiveRejected("upload_session_unsafe")
+    # Resumable-session creation is a distinct remote operation from sending
+    # the actual payload. A newly shared, moved or non-writable folder after
+    # session initialization must stop us BEFORE the content-bearing PUT.
+    # The session itself may remain on Drive, but no private bytes were sent.
+    if expected_run_parent is not None:
+        require_capture_folder_placement(
+            transport, folder_id, expected_run_parent, expected_run_name)
+    check_private_parent_chain(transport, folder_id, writable=True)
+    remote, _ = json_response(
+        transport, "PUT", parsed.path + "?" + parsed.query,
+        body=payload, headers={"Content-Type": "application/octet-stream"},
+    )
+    file_id = remote.get("id")
+    if not isinstance(file_id, str) or not DRIVE_ID.fullmatch(file_id):
+        raise DriveArchiveRejected("upload_id_missing")
+    fields = "id,name,mimeType,trashed,parents,size,shared,driveId,permissions(type,role)"
+    verified, _ = json_response(transport, "GET", metadata_path(file_id, fields))
+    validate_metadata(verified, file_id=file_id, parent_id=folder_id,
+                      filename=name, size=len(payload))
+    path = ("/drive/v3/files/" + file_id + "?" +
+            urlencode({"alt": "media", "supportsAllDrives": "true"}))
+    status, _, readback = transport.call(
+        "GET", path, limit=len(payload)
+    )
+    if (status != 200 or len(readback) != len(payload)
+            or hashlib.sha256(readback).hexdigest() != digest):
+        raise DriveArchiveRejected("remote_readback_mismatch")
+    # Even when media bytes match the sealed manifest, the individual file
+    # may have been re-shared, trashed, renamed or moved since its first
+    # metadata read. A second metadata request is required before we can
+    # claim the upload was verified as PRIVATE at this point in time.
+    verified_after_media, _ = json_response(
+        transport, "GET", metadata_path(file_id, fields))
+    validate_metadata(
+        verified_after_media, file_id=file_id, parent_id=folder_id,
+        filename=name, size=len(payload))
+    # Detect ACL or placement changes between pre-upload and readback.
+    # A rejection must not be mistaken for a verified private archive.
+    if expected_run_parent is not None:
+        require_capture_folder_placement(
+            transport, folder_id, expected_run_parent, expected_run_name)
+    check_private_parent_chain(transport, folder_id, writable=False)
+    return file_id
+
+
+
+def read_sealed_file(root, relative, expected_size, digest):
+    """Read a manifest-bound file using no-follow directory/file descriptors.
+
+    Resolve each child via dir_fd, so replacing a parent with a symlink
+    between the manifest scan and upload cannot redirect the read.
+    """
+    if (not _relative(relative) or type(expected_size) is not int
+            or not 0 <= expected_size <= MAX_FILE_BYTES
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+        raise DriveArchiveRejected("invalid_sealed_entry")
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    opened = []
+    try:
+        opened.append(os.open(root, directory_flags))
+        for component in relative.split("/")[:-1]:
+            opened.append(os.open(component, directory_flags, dir_fd=opened[-1]))
+        file_fd = os.open(relative.split("/")[-1], file_flags, dir_fd=opened[-1])
+        opened.append(file_fd)
+        stat_before = os.fstat(file_fd)
+        if (not stat.S_ISREG(stat_before.st_mode) or stat_before.st_nlink != 1
+                or stat_before.st_size != expected_size):
+            raise DriveArchiveRejected("unsafe_local_file")
+        chunks = []
+        size = 0
+        while True:
+            block = os.read(file_fd, min(1048576, expected_size - size + 1))
+            if not block:
+                break
+            size += len(block)
+            if size > expected_size:
+                raise DriveArchiveRejected("local_file_changed")
+            chunks.append(block)
+        stat_after = os.fstat(file_fd)
+        if (stat_before.st_size != stat_after.st_size
+                or stat_before.st_mtime_ns != stat_after.st_mtime_ns
+                or stat_before.st_ctime_ns != stat_after.st_ctime_ns):
+            raise DriveArchiveRejected("local_file_changed")
+        data = b"".join(chunks)
+        if size != expected_size or hashlib.sha256(data).hexdigest() != digest:
+            raise DriveArchiveRejected("local_file_changed")
+        return data
+    except OSError as error:
+        raise DriveArchiveRejected("local_file_unsafe_or_missing") from error
+    finally:
+        for descriptor in reversed(opened):
+            os.close(descriptor)
+
+
+
+def read_private_manifest_bytes(path, expected):
+    """Read the sealed private manifest without following a swapped symlink."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+        try:
+            before = os.fstat(fd)
+            if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                    or before.st_size > 24576):
+                raise DriveArchiveRejected("unsafe_private_manifest")
+            payload = os.read(fd, 24577)
+            after = os.fstat(fd)
+            if (len(payload) != before.st_size or len(payload) > 24576
+                    or before.st_mtime_ns != after.st_mtime_ns
+                    or before.st_ctime_ns != after.st_ctime_ns):
+                raise DriveArchiveRejected("changed_private_manifest")
+        finally:
+            os.close(fd)
+    except OSError as error:
+        raise DriveArchiveRejected("unreadable_private_manifest") from error
+    try:
+        parsed = json.loads(payload)
+    except (UnicodeError, ValueError) as error:
+        raise DriveArchiveRejected("invalid_private_manifest") from error
+    if parsed != expected:
+        raise DriveArchiveRejected("changed_private_manifest")
+    return payload
+
+
+def write_private_handoff(path, report, parent_id, run_id, commit, upload_result):
+    """Store PRIVATE receipt outside the entire disposable guest work tree."""
+    path = Path(path)
+    work_root = report.parent.resolve()
+    resolved = path.resolve()
+    if (resolved == work_root or work_root in resolved.parents
+            or path.exists() or path.is_symlink()
+            or not path.parent.is_dir() or path.parent.is_symlink()):
+        raise DriveArchiveRejected("unsafe_private_handoff_path")
+    folder = upload_result.get("private_run_folder_id")
+    manifest_sha = upload_result.get("private_manifest_sha256")
+    if (not isinstance(folder, str) or not DRIVE_ID.fullmatch(folder)
+            or not isinstance(manifest_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha)
+            or upload_result.get("readback_verified") is not True
+            or upload_result.get("retention_verified") is not False):
+        raise DriveArchiveRejected("untrusted_private_handoff")
+    receipt = {
+        "schema": "nexium-stage73-private-drive-handoff/v1",
+        "privacy": "private",
+        "source_commit": commit,
+        "run_id": run_id,
+        "parent_id": parent_id,
+        "run_folder_id": folder,
+        "manifest_sha256": manifest_sha,
+        "remote_readback_verified": True,
+        "independent_persistence_verified": False,
+        "retention_policy_verified": False,
+        "guest_gpu_frames_verified": False,
+    }
+    descriptor, tmp = tempfile.mkstemp(prefix=".stage73-private-", dir=path.parent)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as out:
+            json.dump(receipt, out, sort_keys=True, separators=(",", ":"))
+            out.write("\n")
+            out.flush()
+            os.fsync(out.fileno())
+        # Never overwrite an existing handoff: checking exists() before
+        # os.replace() would allow a concurrent file/symlink swap.
+        try:
+            os.link(tmp, path)
+        except FileExistsError as error:
+            raise DriveArchiveRejected("private_handoff_collision") from error
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def persist_private_handoff(transport, path, receipt_parent_id,
+                            capture_parent_id, run_id, commit, upload_result):
+    """Upload the private handoff to a DISTINCT private folder with read-back.
+
+    A locally sealed report and verified payload uploads alone are not
+    sufficient: the receipt must survive the disposable runner as well.
+    """
+    remote_folder = upload_result.get("private_run_folder_id")
+    manifest_sha = upload_result.get("private_manifest_sha256")
+    if (not isinstance(receipt_parent_id, str)
+            or not DRIVE_ID.fullmatch(receipt_parent_id)
+            or receipt_parent_id in (capture_parent_id, remote_folder)
+            or not isinstance(capture_parent_id, str)
+            or not DRIVE_ID.fullmatch(capture_parent_id)
+            or not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id)
+            or not isinstance(commit, str) or not COMMIT.fullmatch(commit)
+            or not isinstance(remote_folder, str)
+            or not DRIVE_ID.fullmatch(remote_folder)
+            or not isinstance(manifest_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha)
+            or upload_result.get("readback_verified") is not True
+            or upload_result.get("retention_verified") is not False):
+        raise DriveArchiveRejected("unsafe_receipt_destination")
+    expected = {
+        "schema": "nexium-stage73-private-drive-handoff/v1",
+        "privacy": "private",
+        "source_commit": commit,
+        "run_id": run_id,
+        "parent_id": capture_parent_id,
+        "run_folder_id": remote_folder,
+        "manifest_sha256": manifest_sha,
+        "remote_readback_verified": True,
+        "independent_persistence_verified": False,
+        "retention_policy_verified": False,
+        "guest_gpu_frames_verified": False,
+    }
+    raw = read_private_manifest_bytes(Path(path), expected)
+    if len(raw) > 8192:
+        raise DriveArchiveRejected("oversized_private_receipt")
+    # Check BOTH privacy and writability of the separate receipt folder.
+    check_parent(transport, receipt_parent_id)
+    name = "stage73-" + run_id + "-" + commit[:12] + "-handoff.json"
+    require_remote_name_available(transport, receipt_parent_id, name)
+    receipt_sha = hashlib.sha256(raw).hexdigest()
+    receipt_id = upload_one(transport, receipt_parent_id, name, raw, receipt_sha)
+    # The receipt identity is needed for an independently anchored recovery.
+    # A competing same-name file must invalidate the verification claim.
+    require_remote_name_owned(transport, receipt_parent_id, name, receipt_id)
+    return {"private_receipt_readback_verified": True,
+            # This MUST be anchored independently of remote Drive contents.
+            # Never print it or put it in PR logs.
+            "private_receipt_sha256": receipt_sha,
+            "independent_persistence_verified": False,
+            "retention_policy_verified": False}
+
+
+def write_private_receipt_anchor(path, report, receipt_path, capture_parent_id,
+                                 receipt_parent_id, run_id, commit, upload_result,
+                                 handoff_result):
+    """Preserve receipt SHA-256 outside guest workspace and remote Drive.
+
+    This is a LOCAL-ONLY anchor, not verified remote retention. A separate
+    protected archival step must preserve it before the runner is deleted.
+    """
+    path = Path(path)
+    root = report.parent.resolve()
+    absolute = path.resolve()
+    if (absolute == root or root in absolute.parents or
+            absolute == Path(receipt_path).resolve() or
+            path.is_symlink() or not path.parent.is_dir()
+            or path.parent.is_symlink()):
+        raise DriveArchiveRejected("unsafe_anchor_path")
+    digest = handoff_result.get("private_receipt_sha256")
+    if (not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            or handoff_result.get("private_receipt_readback_verified") is not True
+            or handoff_result.get("retention_policy_verified") is not False
+            or upload_result.get("readback_verified") is not True
+            or not isinstance(commit, str) or not COMMIT.fullmatch(commit)
+            or not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id)
+            or not isinstance(capture_parent_id, str)
+            or not DRIVE_ID.fullmatch(capture_parent_id)
+            or not isinstance(receipt_parent_id, str)
+            or not DRIVE_ID.fullmatch(receipt_parent_id)
+            or capture_parent_id == receipt_parent_id):
+        raise DriveArchiveRejected("untrusted_anchor_contents")
+    anchor = {
+        "schema": "nexium-stage73-independent-receipt-anchor/v1",
+        "privacy": "private",
+        "source_commit": commit,
+        "run_id": run_id,
+        "capture_parent_id": capture_parent_id,
+        "receipt_parent_id": receipt_parent_id,
+        "receipt_sha256": digest,
+        "receipt_remote_readback_verified": True,
+        "anchor_remote_retention_verified": False,
+        "guest_gpu_frames_verified": False,
+    }
+    descriptor, staging = tempfile.mkstemp(prefix=".stage73-anchor-", dir=path.parent)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(anchor, stream, sort_keys=True, separators=(",", ":"))
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Atomic exclusive create: never overwrite an existing anchor, even
+        # if another process creates one after our initial path check.
+        try:
+            os.link(staging, path)
+        except FileExistsError as error:
+            raise DriveArchiveRejected("anchor_collision") from error
+    finally:
+        if os.path.exists(staging):
+            os.unlink(staging)
+
+
+def upload_archive(report, manifest_path, parent_id, run_id, transport):
+    if not RUN_ID.fullmatch(run_id):
+        raise DriveArchiveRejected("invalid_run_id")
+    try:
+        verify_manifest(report, manifest_path)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (ArchiveRejected, OSError, UnicodeError, ValueError) as error:
+        raise DriveArchiveRejected("invalid_local_capture") from error
+    commit = manifest["source_commit"]
+    if not COMMIT.fullmatch(commit):
+        raise DriveArchiveRejected("invalid_source_commit")
+    # Fail before creating a remote folder if the manifest points to files
+    # that changed since sealing. The first verification above does this.
+    check_parent(transport, parent_id)
+    require_remote_name_available(
+        transport, parent_id, "stage73-" + run_id + "-" + commit[:12])
+    folder_id = create_run_folder(transport, parent_id, run_id, commit)
+    expected_run_name = "stage73-" + run_id + "-" + commit[:12]
+    count = 0
+    for index, entry in enumerate(manifest["files"]):
+        # No arbitrary traversal: the locally sealed manifest has already been
+        # validated; repeat it to catch changes between reads.
+        verify_manifest(report, manifest_path)
+        data = read_sealed_file(report, entry["path"], entry["bytes"], entry["sha256"])
+        name = str(index).zfill(3) + "-" + entry["path"].rsplit("/", 1)[-1]
+        upload_one(
+            transport, folder_id, name, data, entry["sha256"],
+            expected_run_parent=parent_id, expected_run_name=expected_run_name)
+        count += 1
+    verify_manifest(report, manifest_path)
+    raw = read_private_manifest_bytes(manifest_path, manifest)
+    manifest_sha = hashlib.sha256(raw).hexdigest()
+    upload_one(
+        transport, folder_id, "stage73-private-manifest.json",
+        raw, manifest_sha, expected_run_parent=parent_id,
+        expected_run_name=expected_run_name)
+    # Remote retention/access policy must be independently verified; do not
+    # set archive_ready or remote_retention_verified here.
+    return {"readback_verified": True, "retention_verified": False,
+            "uploaded_files": count + 1,
+            # These values MUST only be written to an independently persisted
+            # private handoff receipt; never print the result object.
+            "private_run_folder_id": folder_id,
+            "private_manifest_sha256": manifest_sha}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Trusted-runner Drive readback verification")
+    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--parent-id", required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--receipt-path", type=Path)
+    parser.add_argument("--receipt-parent-id")
+    parser.add_argument("--anchor-path", type=Path)
+    args = parser.parse_args(argv)
+    try:
+        # A code-controlled env toggle alone is not a trust boundary. While
+        # the uploader is experimental, forbid recognised CI-host execution.
+        # Run only from an independently reviewed, isolated private machine.
+        if is_known_ci_host():
+            raise DriveArchiveRejected("github_runner_forbidden")
+        if os.environ.get("NEXIUM_PRIVATE_ARCHIVE_ARMED") != "true":
+            raise DriveArchiveRejected("uploader_not_armed")
+        if (args.receipt_path is None or not args.receipt_parent_id
+                or args.anchor_path is None):
+            raise DriveArchiveRejected("private_handoff_and_anchor_required")
+        if (not DRIVE_ID.fullmatch(args.receipt_parent_id)
+                or args.receipt_parent_id == args.parent_id):
+            raise DriveArchiveRejected("unsafe_receipt_destination")
+        transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))
+        # Preflight the receipt destination as well as capture destination
+        # BEFORE the first remote POST. Otherwise the capture could finish
+        # only to discover a conflicting receipt name after its upload.
+        try:
+            verify_manifest(args.report, args.manifest)
+            source_commit = json.loads(
+                args.manifest.read_text(encoding="utf-8"))["source_commit"]
+        except (ArchiveRejected, OSError, UnicodeError, ValueError, KeyError) as error:
+            raise DriveArchiveRejected("invalid_local_capture") from error
+        if not isinstance(source_commit, str) or not COMMIT.fullmatch(source_commit):
+            raise DriveArchiveRejected("invalid_source_commit")
+        check_parent(transport, args.receipt_parent_id)
+        require_remote_name_available(
+            transport, args.receipt_parent_id,
+            "stage73-" + args.run_id + "-" + source_commit[:12] + "-handoff.json")
+        result = upload_archive(args.report, args.manifest,
+                                args.parent_id, args.run_id, transport)
+        manifest_data = json.loads(args.manifest.read_text(encoding="utf-8"))
+        write_private_handoff(args.receipt_path, args.report, args.parent_id,
+                              args.run_id, manifest_data["source_commit"], result)
+        handoff = persist_private_handoff(
+            transport, args.receipt_path, args.receipt_parent_id,
+            args.parent_id, args.run_id, manifest_data["source_commit"], result,
+        )
+        if (result["retention_verified"] is not False
+                or handoff["independent_persistence_verified"] is not False
+                or handoff["retention_policy_verified"] is not False):
+            raise DriveArchiveRejected("retention_claim_invalid")
+        write_private_receipt_anchor(
+            args.anchor_path, args.report, args.receipt_path,
+            args.parent_id, args.receipt_parent_id, args.run_id,
+            manifest_data["source_commit"], result, handoff,
+        )
+        print("STAGE73_REMOTE_CAPTURE_AND_HANDOFF_READBACK_WITH_LOCAL_ANCHOR_RETENTION_UNVERIFIED")
+        return 0
+    except (DriveArchiveRejected, OSError, ValueError, TypeError, KeyError):
+        print("STAGE73_PRIVATE_DRIVE_ARCHIVE_BLOCKED", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

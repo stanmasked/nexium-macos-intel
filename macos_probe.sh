@@ -151,6 +151,14 @@ if [[ "${NEXIUM_EXPERIMENT_STAGE53_DEADZONE_THRESHOLD:-0}" == "1" ]]; then
     python3 "$SELF/scripts/apply_macos_guest_deadzone_threshold.py" "$SRC"
 fi
 
+# Stage73: apply the single IPC log-level change AFTER all other opt-in
+# source edits, so the receipt binds the final pre-build svc.rs blob.
+if [[ "${NEXIUM_DISPLAY_IPC_TRACE:-0}" == "1" ]]; then
+    python3 "$SELF/scripts/apply_macos_display_ipc_trace.py" \
+        --source-root "$SRC" \
+        --receipt "$WORK/display-ipc-trace-patch.json"
+fi
+
 rustup target add x86_64-apple-darwin
 if [[ "$BACKEND" == "dynarmic" ]]; then
     # Pin the published crate, then patch a LOCAL copy rather than editing

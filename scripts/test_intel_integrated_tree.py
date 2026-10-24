@@ -28,6 +28,39 @@ TEST_COUNT = re.compile(r"Ran (\d+) tests? in ")
 EXPECTED_MIN_TESTS = 450
 
 
+def safe_unittest_failure_summary(combined: str, returncode: int,
+                                  min_tests: int, reason: str) -> str:
+    """Return only bounded test counts and allowlisted test identifiers."""
+    matched = TEST_COUNT.findall(combined)
+    executed = int(matched[0]) if len(matched) == 1 else -1
+    failures = errors = 0
+    summary = re.search(r"(?m)^FAILED \(([^)]*)\)$", combined)
+    if summary:
+        for item in summary.group(1).split(", "):
+            field = re.fullmatch(r"(failures|errors)=(\d+)", item)
+            if field:
+                if field.group(1) == "failures":
+                    failures = int(field.group(2))
+                else:
+                    errors = int(field.group(2))
+    cases = []
+    for line in combined.splitlines():
+        match = re.fullmatch(
+            r"(?:FAIL|ERROR): ([A-Za-z_][A-Za-z0-9_]*) "
+            r"\(([A-Za-z_][A-Za-z0-9_.]*)\)", line.strip()
+        )
+        if match:
+            cases.append(f"{match.group(2)}.{match.group(1)}")
+    cases = list(dict.fromkeys(cases))[:8]
+    case_summary = ",".join(cases) if cases else "unavailable"
+    return (
+        "STAGE68_INTEGRATED_PYTHON_BLOCKED "
+        f"reason={reason} returncode={returncode} "
+        f"reported_tests={executed} min_tests={min_tests} "
+        f"failures={failures} errors={errors} cases={case_summary}"
+    )
+
+
 def unpack_reviewed_tree(archive: bytes, output: Path) -> int:
     """Reject malformed, oversized, symlinked, or escaping Git archive paths."""
     if not isinstance(archive, bytes) or len(archive) > MAX_ARCHIVE:
@@ -91,15 +124,19 @@ def execute_integrated_tests(directory: Path, *, min_tests: int = EXPECTED_MIN_T
             text=True, capture_output=True, check=False, timeout=180,
         )
     except subprocess.TimeoutExpired:
+        print(safe_unittest_failure_summary("", -1, min_tests, "timeout"), file=sys.stderr)
         raise ValueError("integrated Python suite exceeded runtime budget") from None
     combined = test.stdout + "\n" + test.stderr
     matched = TEST_COUNT.findall(combined)
     if len(matched) != 1 or test.returncode != 0:
+        print(safe_unittest_failure_summary(combined, test.returncode, min_tests, "unittest_failure"), file=sys.stderr)
         raise ValueError("integrated Python unittest suite did not pass")
     executed = int(matched[0])
     if executed < min_tests:
+        print(safe_unittest_failure_summary(combined, test.returncode, min_tests, "below_minimum"), file=sys.stderr)
         raise ValueError("integrated Python suite unexpectedly reduced")
     if not re.search(r"(?m)^OK(?: \(skipped=\d+\))?$", combined):
+        print(safe_unittest_failure_summary(combined, test.returncode, min_tests, "success_marker_missing"), file=sys.stderr)
         raise ValueError("integrated Python suite lacks final success marker")
     return {
         "integrated_python_tests_passed": True,

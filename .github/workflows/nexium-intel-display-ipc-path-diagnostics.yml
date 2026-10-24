@@ -1,0 +1,115 @@
+name: NeXium Intel classify original guest display IPC path without raw logs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: nexium-stage73-ipc-classify-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  current-head:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      is_current: ${{ steps.freshness.outputs.is_current }}
+    steps:
+      - name: Skip classification for a superseded PR revision
+        id: freshness
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH_NAME: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${BRANCH_NAME}" | awk 'NR == 1 {print $1}')"
+          if [[ -n "$actual" && "$actual" == "$EXPECTED_HEAD_SHA" ]]; then
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+            echo "Stage73 revision is current."
+          else
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+            echo "Stage73 revision was superseded; skipping classification."
+          fi
+
+  guest-display-ipc-classification:
+    needs: current-head
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Audit classifier markers against exact pinned svc.rs formats
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          SOURCE="$RUNNER_TEMP/stage73-svc.rs"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/nexium-kernel/src/kernel/svc.rs" \
+            --output "$SOURCE"
+          python3 scripts/audit_stage73_display_ipc_markers.py --source "$SOURCE"
+      - name: Compile safe original display IPC classifier
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/classify_guest_display_ipc_path.py
+          python3 -m py_compile scripts/classify_intel_guest_graphics_boot.py
+          python3 -m py_compile scripts/probe_intel_graphics_runtime.py
+          python3 -m py_compile scripts/apply_macos_display_ipc_trace.py scripts/audit_stage73_display_ipc_markers.py
+      - name: Validate fixed-stage source markers and hostile-log behavior
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_stage73_trusted_host_environment.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_private_single_writer.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_safe_evidence_read.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_display_ipc_path.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_scoped_ipc_patch.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_private_archive.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_drive_readback.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_independent_persistence.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_offline_anchor_backup.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_synthetic_drive_rehearsal.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_native_workflow_gate.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage71_graphics_boot_diagnostics.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
+          echo "STAGE73_PRIVATE_DISPLAY_IPC_CLASSIFIER_PASS_NOT_GRAPHICS_CERTIFICATION"
+      # Only synthetic fixtures are tested here. Original trace logs remain private.
+
+  private-anchor-path-safety-macos:
+    needs: current-head
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.current-head.outputs.is_current == 'true'
+    runs-on: macos-15-intel
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Enforce reviewed revision and Intel macOS host
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile private path guards and run synthetic recovery tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/backup_stage73_private_anchor.py scripts/rehearse_stage73_private_drive.py scripts/stage73_safe_evidence_read.py scripts/stage73_trusted_host_guard.py scripts/stage73_private_single_writer.py
+          python3 -m unittest discover -s tests -p 'test_stage73_private_single_writer.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_safe_evidence_read.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_offline_anchor_backup.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_synthetic_drive_rehearsal.py' -v
+          echo "STAGE73_MACOS_INTEL_PRIVATE_ANCHOR_PATH_SAFETY_PASS_NOT_GRAPHICS_CERTIFICATION"
+      # Synthetic fixtures only; no Drive token, raw capture, NRO, or graphics runtime.

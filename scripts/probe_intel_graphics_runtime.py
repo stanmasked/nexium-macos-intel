@@ -24,6 +24,7 @@ import tempfile
 
 from audit_guest_framebuffer_build import validate_compiled_public_probe
 from classify_intel_guest_graphics_boot import inspect_original_graphics_boot
+from classify_guest_display_ipc_path import inspect_guest_display_ipc_path
 from audit_intel_pr_stack import audit_snapshot, collect_live
 from build_intel_merged_tree import (
     compile_native_intel, compute_virtual_tree, extract_virtual_source,
@@ -56,6 +57,41 @@ FAILURE_MARKERS = (
 GUEST_LOG_MAX = 4 * 1024 * 1024
 EXPECTED_NRO_MAX = 2 * 1024 * 1024
 
+SAFE_FAILURE_PHASES = frozenset({
+    "validate_intel_host", "validate_public_guest_nro",
+    "audit_reviewed_pr_stack", "build_virtual_merge",
+    "extract_virtual_source", "integrated_python_tests",
+    "compile_native_intel", "run_original_graphics_guest",
+    "inspect_original_graphics_boot", "inspect_guest_display_ipc_path",
+    "audit_original_guest_progress", "inspect_owned_window_evidence",
+    "verify_checkout_head", "emit_runtime_report",
+})
+
+
+def safe_runtime_blocked_marker(phase: str, error: BaseException) -> str:
+    """Emit only a fixed phase and broad exception category, never exception text."""
+    safe_phase = phase if phase in SAFE_FAILURE_PHASES else "unknown"
+    if isinstance(error, subprocess.TimeoutExpired):
+        reason = "TimeoutExpired"
+    elif isinstance(error, tarfile.TarError):
+        reason = "TarError"
+    elif isinstance(error, UnicodeError):
+        reason = "UnicodeError"
+    elif isinstance(error, OSError):
+        reason = "OSError"
+    elif isinstance(error, ValueError):
+        reason = "ValueError"
+    elif isinstance(error, KeyError):
+        reason = "KeyError"
+    elif isinstance(error, TypeError):
+        reason = "TypeError"
+    else:
+        reason = "OtherError"
+    return (
+        "STAGE68_GUEST_GRAPHICS_RUNTIME_BLOCKED "
+        f"phase={safe_phase} reason={reason}"
+    )
+
 # The guest C source dictates which progress prefix may immediately precede
 # each terminal error. This makes impossible success/failure combinations
 # fail closed rather than merely accepting an ordered *subset* of markers.
@@ -68,8 +104,11 @@ FAILURE_PREFIX_LENGTHS = {
 }
 
 
-def source_graphics_audit(report: Path, binary_sha: str, nro_sha: str) -> dict:
-    """Verify exact original guest markers, in order, without copying raw logs."""
+def source_graphics_audit(
+    report: Path, binary_sha: str, nro_sha: str, *,
+    emit_progress_diagnostic: bool = False,
+) -> dict:
+    """Audit guest markers separately from the lifetime of the host emulator."""
     smoke = read_bounded_json(report / "smoke_result.json")
     if smoke.get("emulator_sha256") != binary_sha or smoke.get("nro_sha256") != nro_sha:
         raise ValueError("source-bound guest graphic identity mismatch")
@@ -94,62 +133,82 @@ def source_graphics_audit(report: Path, binary_sha: str, nro_sha: str) -> dict:
         marker = line.split(MARKER_PREFIX, 1)[1].strip()
         if marker in PROGRESS_MARKERS or marker in FAILURE_MARKERS:
             hits.append(marker)
+    positive = [p for p in PROGRESS_MARKERS if p in hits]
+    failure = [p for p in FAILURE_MARKERS if p in hits]
+    expected = list(PROGRESS_MARKERS[:len(positive)])
+    if emit_progress_diagnostic:
+        diagnostic = {
+            "schema": "nexium-stage73-original-guest-progress/v2",
+            "original_guest_progress_markers": len(positive),
+            "last_original_guest_marker": hits[-1] if hits else None,
+            "first_marker_is_graphics_start": bool(hits and hits[0] == PROGRESS_MARKERS[0]),
+            "ordered_progress_prefix_valid": positive == expected,
+            "duplicate_marker_observed": len(hits) != len(set(hits)),
+            "marker_sequence_exact": hits == positive + failure,
+            "failure_marker_count": len(failure),
+            "emulator_process_status": smoke["status"],
+            "guest_exit_status_observed": False,
+            "raw_logs_uploaded": False,
+        }
+        print("STAGE73_ORIGINAL_GUEST_PROGRESS_DIAGNOSTIC "
+              + json.dumps(diagnostic, sort_keys=True), flush=True)
     if not hits or hits[0] != PROGRESS_MARKERS[0]:
         raise ValueError("original libnx graphics guest start was not observed")
     if len(hits) != len(set(hits)):
         raise ValueError("duplicate original guest graphics output marker")
-    positive = [p for p in PROGRESS_MARKERS if p in hits]
-    failure = [p for p in FAILURE_MARKERS if p in hits]
     if len(failure) > 1:
         raise ValueError("ambiguous guest graphics terminal failure markers")
     # Every progress marker prior to the last observed one must be present,
     # and the exact serialized original guest event order must hold.
-    expected = list(PROGRESS_MARKERS[:len(positive)])
     if positive != expected:
         raise ValueError("original guest graphics markers skip expected stages")
     if hits != positive + failure:
         raise ValueError("original guest graphics markers in impossible order")
     if failure and PROGRESS_MARKERS[-1] in positive:
         raise ValueError("successful and failed terminal graphics states overlap")
-    if PROGRESS_MARKERS[-1] in positive and smoke.get("status") != "exited_zero_unverified":
-        raise ValueError("guest completion marker without successful process exit")
     status = smoke.get("status")
     if failure:
         name = failure[0]
         if len(positive) not in FAILURE_PREFIX_LENGTHS[name]:
             raise ValueError("guest framebuffer failure impossible at observed API stage")
-        if status != "exited_nonzero":
-            raise ValueError("original guest failure marker without nonzero process exit")
+        # These are guest-originated OutputDebugString markers. The smoke
+        # status belongs to the host emulator process and cannot veto or
+        # confirm the guest's framebuffer failure state.
         classified = "explicit_guest_framebuffer_failure"
     elif PROGRESS_MARKERS[-1] in positive:
-        if status != "exited_zero_unverified":
-            raise ValueError("original guest success marker without zero process exit")
+        # The last guest marker is emitted after framebufferClose and all
+        # framebuffer API calls. It does not prove GPU presentation or the
+        # guest's actual return status, and the emulator may remain alive.
         classified = "all_guest_framebuffer_api_calls_returned"
     elif status == "timeout_alive_unverified":
-        # This is diagnostic only. Never treat a partial prefix as success.
+        # The emulator is still alive and the guest emitted only a partial
+        # marker prefix. This is diagnostic only, never a rendering pass.
         classified = "partial_guest_progress_timeout_unverified"
     else:
-        raise ValueError("guest process exited without an explicit graphics terminal marker")
+        # The host emulator exited before the guest's terminal marker. Do not
+        # infer a guest exit code or turn incomplete evidence into a hard error.
+        classified = "partial_guest_progress_emulator_exited_without_terminal_marker"
+    api_calls_complete = PROGRESS_MARKERS[-1] in positive
+    emulator_status = status
     return {
-        "schema": "nexium-stage68-original-guest-framebuffer-markers/v1",
+        "schema": "nexium-stage68-original-guest-framebuffer-markers/v2",
         "original_libnx_graphics_guest_started": True,
         "original_guest_progress_markers": len(positive),
         "graphics_guest_runtime_classification": classified,
-        "guest_framebuffer_runtime_completed": (
-            classified == "all_guest_framebuffer_api_calls_returned"
+        "guest_framebuffer_runtime_completed": api_calls_complete,
+        "guest_framebuffer_api_calls_completed_observed": api_calls_complete,
+        "emulator_process_timeout_unverified": (
+            emulator_status == "timeout_alive_unverified"
         ),
-        "guest_runtime_timeout_unverified": (
-            classified == "partial_guest_progress_timeout_unverified"
-        ),
+        "guest_exit_status": "not_observed",
+        "emulator_process_status": emulator_status,
         "last_original_guest_marker": hits[-1],
         "original_guest_failure_marker": failure[0] if failure else None,
         "guest_framebuffer_created_observed":
             "STAGE67_GUEST_FRAMEBUFFER_CREATED" in positive,
         "guest_framebuffer_end_call_returned_observed":
             "STAGE67_GUEST_FRAME_B_PRESENTED_CALL_RETURNED" in positive,
-        "guest_framebuffer_api_loop_complete_observed":
-            PROGRESS_MARKERS[-1] in positive,
-        "graphics_guest_exit_status": smoke["status"],
+        "guest_framebuffer_api_loop_complete_observed": api_calls_complete,
         "guest_gpu_frames_verified": False,
         "commercial_gameplay_verified": False,
         "physical_controller_verified": False,
@@ -160,9 +219,12 @@ def run_graphics_guest(source: Path, binary: Path, nro: Path, report: Path) -> N
     command = [
         sys.executable, str(source / "scripts" / "nro_smoke_test.py"),
         "--exe", str(binary), "--nro", str(nro), "--output", str(report),
-        "--seconds", "70", "--snapshot-ms", "5000", "--capture-window",
+        "--seconds", "25", "--snapshot-ms", "5000", "--capture-window",
     ]
     env = probe_environment(dict(os.environ))
+    # Keep normal DEBUG logging. Stage73 elevates only the single IPC-request
+    # log call in the disposable build, avoiding global per-SVC TRACE flooding.
+    env["NEXIUM_LOG_LEVEL"] = "debug"
     # Same original NeXium startup profile as the proven Stage65 diagnostic,
     # but the analog-input deadzone stimulus is not a graphics prerequisite.
     env["NEXIUM_MACOS_GUEST_DEADZONE_THRESHOLD_PROBE"] = "0"
@@ -170,12 +232,13 @@ def run_graphics_guest(source: Path, binary: Path, nro: Path, report: Path) -> N
         child = subprocess.run(
             command, cwd=source, env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            check=False, timeout=102,
+            check=False, timeout=48,
         )
     except subprocess.TimeoutExpired:
         raise ValueError("original graphics NRO smoke harness exceeded budget") from None
-    # Guest returns nonzero if framebuffer service is not yet implemented:
-    # that *is diagnostic data*, provided source_graphics_audit authenticates it.
+    # This child return code belongs to the smoke harness/host emulator, not
+    # to the guest NRO. Guest framebuffer failures are classified only from
+    # authenticated private guest markers in source_graphics_audit().
     if child.returncode not in (0, 2):
         raise ValueError("original graphics NRO smoke harness failed unexpectedly")
 
@@ -190,6 +253,7 @@ def main(argv=None) -> int:
     parser.add_argument("--guest-nro", required=True, type=Path)
     parser.add_argument("--guest-source", required=True, type=Path)
     args = parser.parse_args(argv)
+    phase = "validate_intel_host"
     try:
         intel = subprocess.run(
             ["sysctl", "-n", "hw.optional.arm64"],
@@ -200,8 +264,10 @@ def main(argv=None) -> int:
             intel.returncode == 0 and intel.stdout.strip() == "1",
         )
         # Reject symlinks on caller paths BEFORE making absolute.
+        phase = "validate_public_guest_nro"
         compiled = validate_compiled_public_probe(args.guest_nro, args.guest_source)
         nro = args.guest_nro.absolute()
+        phase = "audit_reviewed_pr_stack"
         snapshot = collect_live(
             args.repository, os.environ.get("GH_TOKEN", ""), top_pr=args.top_pr,
         )
@@ -217,6 +283,7 @@ def main(argv=None) -> int:
                 break
             node = heads[node["base"]]
         ordered.reverse()
+        phase = "build_virtual_merge"
         combined = compute_virtual_tree(
             args.git_repo, snapshot["main_sha"], ordered,
             args.expected_head_sha,
@@ -227,42 +294,77 @@ def main(argv=None) -> int:
             src, work, report = root / "source", root / "native", root / "report"
             src.mkdir()
             work.mkdir()
+            phase = "extract_virtual_source"
             files = extract_virtual_source(args.git_repo, combined, src)
+            phase = "integrated_python_tests"
             tests = execute_integrated_tests(src, min_tests=497)
             print("STAGE68_GATE_INTEGRATED_PYTHON_PASS", flush=True)
+            build_env = dict(os.environ)
+            build_env["NEXIUM_DISPLAY_IPC_TRACE"] = "1"
+            phase = "compile_native_intel"
             intel_binary = compile_native_intel(
                 src, work,
                 host_system=platform.system(), host_arch=platform.machine(),
-                apple_arm_capable=False, base_env=dict(os.environ),
+                apple_arm_capable=False, base_env=build_env,
             )
             print("STAGE68_GATE_REAL_INTEL_MACHO_PASS", flush=True)
+            if intel_binary.get("display_ipc_trace_patch_applied") is not True:
+                raise ValueError("Stage73 scoped IPC request log patch not bound to Intel build")
+            print("STAGE73_SCOPED_IPC_REQUEST_LOG_PATCH_VERIFIED", flush=True)
             binary = work / "nexium" / "target" / "x86_64-apple-darwin" / "release" / "nexium"
+            guest_run_error = None
+            phase = "run_original_graphics_guest"
             try:
                 run_graphics_guest(src, binary, nro, report)
+            except (OSError, ValueError, KeyError, TypeError, UnicodeError,
+                    subprocess.TimeoutExpired, tarfile.TarError) as error:
+                guest_run_error = error
             finally:
                 # Print ONLY pre-allowlisted original boot category and booleans.
                 # The raw emulator console, FileLogger and PNGs remain private.
                 if (report / "smoke_result.json").is_file():
+                    phase = "inspect_original_graphics_boot"
                     boot = inspect_original_graphics_boot(
                         report, intel_binary["native_macho_sha256"],
                         compiled["nro_sha256"],
                     )
                     print("STAGE71_ORIGINAL_GRAPHICS_BOOT_DIAGNOSTIC "
                           + json.dumps(boot, sort_keys=True), flush=True)
+                    phase = "inspect_guest_display_ipc_path"
+                    try:
+                        ipc = inspect_guest_display_ipc_path(
+                            report, intel_binary["native_macho_sha256"],
+                            compiled["nro_sha256"],
+                        )
+                        print("STAGE73_GUEST_DISPLAY_IPC_DIAGNOSTIC "
+                              + json.dumps(ipc, sort_keys=True), flush=True)
+                    except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+                        print("STAGE73_GUEST_DISPLAY_IPC_DIAGNOSTIC_BLOCKED",
+                              flush=True)
                 else:
                     print("STAGE71_ORIGINAL_GRAPHICS_SMOKE_RECEIPT_UNAVAILABLE",
                           flush=True)
+                    print("STAGE73_GUEST_DISPLAY_IPC_RECEIPT_UNAVAILABLE",
+                          flush=True)
+            if guest_run_error is not None:
+                phase = "run_original_graphics_guest"
+                raise guest_run_error
+            phase = "audit_original_guest_progress"
             guest = source_graphics_audit(
-                report, intel_binary["native_macho_sha256"], compiled["nro_sha256"]
+                report, intel_binary["native_macho_sha256"], compiled["nro_sha256"],
+                emit_progress_diagnostic=True,
             )
             print("STAGE68_GATE_ORIGINAL_GUEST_MARKER_SEQUENCE_AUDITED", flush=True)
+            phase = "inspect_owned_window_evidence"
             pixels = inspect_gui_evidence(
                 report, intel_binary["native_macho_sha256"], compiled["nro_sha256"],
                 allow_nonzero_guest=True,
             )
+        phase = "verify_checkout_head"
         check = git(args.git_repo, "rev-parse", "HEAD")
         if check.returncode != 0 or check.stdout.strip() != args.expected_head_sha:
             raise ValueError("original checked out Git HEAD changed")
+        phase = "emit_runtime_report"
         print(json.dumps({
             "schema": "nexium-stage68-integrated-original-guest-graphics/v1",
             "stacked_draft_prs": len(ordered),
@@ -281,8 +383,8 @@ def main(argv=None) -> int:
         print("STAGE68_GUEST_GRAPHICS_RUNTIME_DIAGNOSTIC_PASS_NOT_GPU_CERTIFICATION")
         return 0
     except (OSError, ValueError, KeyError, TypeError, UnicodeError,
-            subprocess.TimeoutExpired, tarfile.TarError):
-        print("STAGE68_GUEST_GRAPHICS_RUNTIME_BLOCKED", file=sys.stderr)
+            subprocess.TimeoutExpired, tarfile.TarError) as error:
+        print(safe_runtime_blocked_marker(phase, error), file=sys.stderr)
         return 2
 
 

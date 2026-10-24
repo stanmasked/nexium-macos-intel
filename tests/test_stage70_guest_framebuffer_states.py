@@ -72,37 +72,56 @@ class Stage70GuestFramebufferStates(unittest.TestCase):
             self.run_guest((*PROGRESS_MARKERS[:2], FAILURE_MARKERS[0]),
                            "exited_nonzero")
 
-    def test_guest_nonzero_without_explicit_failure_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "without an explicit"):
-            self.run_guest(PROGRESS_MARKERS[:3], "exited_nonzero")
+    def test_emulator_exit_without_guest_terminal_marker_is_unverified(self):
+        for status in ("exited_nonzero", "exited_zero_unverified"):
+            with self.subTest(status=status):
+                r = self.run_guest(PROGRESS_MARKERS[:3], status)
+                self.assertEqual(
+                    r["graphics_guest_runtime_classification"],
+                    "partial_guest_progress_emulator_exited_without_terminal_marker",
+                )
+                self.assertEqual(r["emulator_process_status"], status)
+                self.assertEqual(r["guest_exit_status"], "not_observed")
+                self.assertFalse(r["guest_framebuffer_runtime_completed"])
+                self.assertFalse(r["guest_gpu_frames_verified"])
 
-    def test_guest_zero_without_complete_api_calls_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "without an explicit"):
-            self.run_guest(PROGRESS_MARKERS[:6], "exited_zero_unverified")
-
-    def test_guest_failure_and_process_timeout_rejected(self):
-        with self.assertRaisesRegex(ValueError, "without nonzero"):
-            self.run_guest((PROGRESS_MARKERS[0], FAILURE_MARKERS[0]),
+    def test_guest_failure_marker_is_classified_when_emulator_times_out(self):
+        r = self.run_guest((PROGRESS_MARKERS[0], FAILURE_MARKERS[0]),
                            "timeout_alive_unverified")
+        self.assertEqual(r["graphics_guest_runtime_classification"],
+                         "explicit_guest_framebuffer_failure")
+        self.assertTrue(r["emulator_process_timeout_unverified"])
+        self.assertEqual(r["guest_exit_status"], "not_observed")
+        self.assertFalse(r["guest_framebuffer_runtime_completed"])
 
     def test_partial_progress_timeout_is_unverified_not_completion(self):
         r = self.run_guest(PROGRESS_MARKERS[:2], "timeout_alive_unverified")
         self.assertEqual(r["graphics_guest_runtime_classification"],
                          "partial_guest_progress_timeout_unverified")
-        self.assertTrue(r["guest_runtime_timeout_unverified"])
+        self.assertTrue(r["emulator_process_timeout_unverified"])
+        self.assertEqual(r["emulator_process_status"], "timeout_alive_unverified")
+        self.assertEqual(r["guest_exit_status"], "not_observed")
         self.assertFalse(r["guest_framebuffer_runtime_completed"])
         self.assertFalse(r["guest_gpu_frames_verified"])
 
-    def test_full_guest_completion_requires_zero_exit(self):
+    def test_full_guest_api_calls_complete_without_guest_exit_status(self):
         r = self.run_guest(PROGRESS_MARKERS, "exited_zero_unverified")
         self.assertEqual(r["graphics_guest_runtime_classification"],
                          "all_guest_framebuffer_api_calls_returned")
+        self.assertTrue(r["guest_framebuffer_api_calls_completed_observed"])
         self.assertTrue(r["guest_framebuffer_runtime_completed"])
+        self.assertEqual(r["emulator_process_status"], "exited_zero_unverified")
+        self.assertEqual(r["guest_exit_status"], "not_observed")
         self.assertFalse(r["guest_gpu_frames_verified"])
 
-    def test_full_progress_followed_by_nonzero_exit_rejected(self):
-        with self.assertRaisesRegex(ValueError, "without successful"):
-            self.run_guest(PROGRESS_MARKERS, "exited_nonzero")
+    def test_full_progress_with_nonzero_emulator_exit_keeps_guest_status_unverified(self):
+        r = self.run_guest(PROGRESS_MARKERS, "exited_nonzero")
+        self.assertEqual(r["graphics_guest_runtime_classification"],
+                         "all_guest_framebuffer_api_calls_returned")
+        self.assertTrue(r["guest_framebuffer_api_calls_completed_observed"])
+        self.assertEqual(r["emulator_process_status"], "exited_nonzero")
+        self.assertEqual(r["guest_exit_status"], "not_observed")
+        self.assertFalse(r["guest_gpu_frames_verified"])
 
     def test_all_failure_states_have_reviewed_valid_prefix(self):
         self.assertEqual(set(FAILURE_PREFIX_LENGTHS), set(FAILURE_MARKERS))

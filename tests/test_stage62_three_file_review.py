@@ -27,9 +27,16 @@ class Stage62ThreeFileReviewTests(unittest.TestCase):
         self.sources = {}
         ok(git(self.repo, "init", "-q"))
         for path in REVIEWED_PR60_BLOBS:
-            data = (Path(__file__).resolve().parents[1] / path).read_text(
-                encoding="utf-8"
+            # Stage62 tests the approved historical Git blobs. The live CI
+            # workflow continues to evolve in later PRs and is not a fixture.
+            approved_source = (
+                "tests/fixtures/stage62_approved_macos_probe.yml"
+                if path == ".github/workflows/nexium-macos-probe.yml"
+                else path
             )
+            data = (
+                Path(__file__).resolve().parents[1] / approved_source
+            ).read_text(encoding="utf-8")
             self.sources[path] = data
             target = self.repo / path
             target.parent.mkdir(parents=True, exist_ok=True)

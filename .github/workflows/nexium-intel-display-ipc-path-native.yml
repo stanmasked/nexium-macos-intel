@@ -1,0 +1,232 @@
+name: NeXium Intel capture bounded original guest display IPC path
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: nexium-stage73-ipc-native-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  private-archive-readiness:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      archive_ready: ${{ steps.guard.outputs.archive_ready }}
+    steps:
+      - name: Require verified private archive before creating raw capture
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fail closed until the private Drive uploader, checksum read-back,
+          # and retention verification are implemented and tested.
+          echo "archive_ready=false" >> "$GITHUB_OUTPUT"
+          echo "Private Drive archive upload is not wired into this workflow yet; refusing to create a new raw capture."
+
+  prepare-public-framebuffer-nro:
+    needs: [private-archive-readiness]
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.private-archive-readiness.outputs.archive_ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      is_current: ${{ steps.freshness.outputs.is_current }}
+      native_required: ${{ steps.scope.outputs.native_required }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify Stage73 revision is current
+        id: freshness
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH_NAME: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${BRANCH_NAME}" | awk 'NR == 1 {print $1}')"
+          if [[ -n "$actual" && "$actual" == "$EXPECTED_HEAD_SHA" ]]; then
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+            echo "Stage73 revision was superseded; skipping expensive work."
+          fi
+      - name: Determine whether this commit needs a native runtime trace
+        id: scope
+        if: steps.freshness.outputs.is_current == 'true'
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH_NAME: ${{ github.head_ref }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          runs_json="$(curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            --get \
+            --data-urlencode "branch=$BRANCH_NAME" \
+            --data-urlencode "status=success" \
+            --data-urlencode "per_page=100" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/nexium-intel-display-ipc-path-native.yml/runs")"
+          last_successful_run_id="$(printf '%s' "$runs_json" | jq -r '.workflow_runs[0].id // empty')"
+          last_successful_sha="$(printf '%s' "$runs_json" | jq -r '.workflow_runs[0].head_sha // empty')"
+          if [[ -z "$last_successful_run_id" || -z "$last_successful_sha" ]]; then
+            echo "native_required=true" >> "$GITHUB_OUTPUT"
+            echo "No previous successful native trace; require a fresh trace."
+            exit 0
+          fi
+          # A workflow can succeed with integrated-intel-guest-graphics skipped.
+          # Only a completed successful Intel job may be used to suppress a rerun.
+          jobs_json="$(curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            --get --data-urlencode "per_page=100" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$last_successful_run_id/jobs")"
+          if ! printf '%s' "$jobs_json" | jq -e \
+            '.jobs | any(.name == "integrated-intel-guest-graphics" and .status == "completed" and .conclusion == "success")' >/dev/null; then
+            echo "native_required=true" >> "$GITHUB_OUTPUT"
+            echo "Most recent successful workflow did not execute a successful Intel guest job."
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$last_successful_sha" "$EXPECTED_HEAD_SHA"; then
+            echo "native_required=true" >> "$GITHUB_OUTPUT"
+            echo "Last successful native trace is not an ancestor; require a fresh trace."
+            exit 0
+          fi
+          mapfile -t changed_paths < <(git diff --name-only "$last_successful_sha" "$EXPECTED_HEAD_SHA")
+          if (( ${#changed_paths[@]} == 0 )); then
+            echo "native_required=false" >> "$GITHUB_OUTPUT"
+            echo "This exact revision already has a successful native trace."
+            exit 0
+          fi
+          native_required=false
+          for path in "${changed_paths[@]}"; do
+            case "$path" in
+              .github/workflows/nexium-intel-display-ipc-path-diagnostics.yml|.github/workflows/nexium-intel-display-ipc-path-native.yml|tests/test_stage73_display_ipc_path.py|tests/test_stage73_scoped_ipc_patch.py)
+                ;;
+              *)
+                native_required=true
+                break
+                ;;
+            esac
+          done
+          echo "native_required=$native_required" >> "$GITHUB_OUTPUT"
+          if [[ "$native_required" == "true" ]]; then
+            echo "Changes since the last successful native trace require a new run."
+          else
+            echo "Only allowlisted classifier/workflow fixture paths changed since the last successful native trace."
+          fi
+      - name: Download source-identical Stage71 public libnx NRO seed
+        if: steps.freshness.outputs.is_current == 'true' && steps.scope.outputs.native_required == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: stage71-public-original-libnx-framebuffer-nro
+          path: stage73-graphics
+          repository: ${{ github.repository }}
+          run-id: 39821434769
+          github-token: ${{ github.token }}
+      - name: Verify pinned source and NRO identity before reuse
+        if: steps.freshness.outputs.is_current == 'true' && steps.scope.outputs.native_required == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object probes/nexium_guest_framebuffer_probe.c)" = "1f27a917527277da4dfba255c3f993e2a23c49e9"
+          test "$(shasum -a 256 stage73-graphics/framebuffer.nro | awk '{print $1}')" = "ced9638baad0b421196e99a3e146dd0a64789e55f14aaa70eac02a9ed4e1580a"
+          PIN=089562567a0a8760dfdd8420e1f57c35159a9219
+          SOURCE="$RUNNER_TEMP/stage73-svc.rs"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://raw.githubusercontent.com/nexium-emu/nexium/$PIN/nexium-kernel/src/kernel/svc.rs" \
+            --output "$SOURCE"
+          python3 scripts/audit_stage73_display_ipc_markers.py --source "$SOURCE"
+          python3 -m py_compile scripts/audit_stage73_display_ipc_markers.py
+          python3 -m unittest discover -s tests -p 'test_stage67_graphics_nro_build.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage71_graphics_boot_diagnostics.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_display_ipc_path.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage73_scoped_ipc_patch.py' -v
+          python3 scripts/audit_guest_framebuffer_build.py \
+            --guest-nro stage73-graphics/framebuffer.nro \
+            --source probes/nexium_guest_framebuffer_probe.c
+      - name: Transfer only audited public graphics NRO
+        if: steps.freshness.outputs.is_current == 'true' && steps.scope.outputs.native_required == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage73-public-original-libnx-framebuffer-nro
+          path: stage73-graphics/framebuffer.nro
+          if-no-files-found: error
+          retention-days: 3
+
+
+  integrated-intel-guest-graphics:
+    if: github.event_name == 'pull_request' && github.head_ref == 'work/intel-stage73-display-ipc-path-final' && needs.prepare-public-framebuffer-nro.outputs.is_current == 'true' && needs.prepare-public-framebuffer-nro.outputs.native_required == 'true' && needs.private-archive-readiness.outputs.archive_ready == 'true'
+    needs: [prepare-public-framebuffer-nro, private-archive-readiness]
+    runs-on: macos-15-intel
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage73-public-original-libnx-framebuffer-nro
+          path: stage73-graphics
+      - name: Enforce exact Intel host, commit SHA and direct public guest source
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" != 1
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
+          test -s stage73-graphics/framebuffer.nro
+      - name: Validate graphics marker ordering and hostile evidence controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/probe_intel_graphics_runtime.py
+          python3 -m py_compile scripts/apply_macos_display_ipc_trace.py
+          python3 -m unittest discover -s tests -p 'test_stage68_graphics_guest_runtime.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage70_guest_framebuffer_states.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage71_graphics_boot_diagnostics.py' -v
+          python3 -m unittest discover -s tests -p 'test_stage66_owned_window.py' -v
+      - name: Install native Intel NeXium compilation prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake ninja pkgconf boost molten-vk vulkan-loader vulkan-tools
+      - name: Capture original guest display IPC path on reviewed 40-PR Intel build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/probe_intel_graphics_runtime.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --top-pr 76 --min-depth 40 \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --git-repo . \
+            --guest-nro stage73-graphics/framebuffer.nro \
+            --guest-source probes/nexium_guest_framebuffer_probe.c
+          echo "Framebuffer API return/own-window pixels are diagnostic, not guest GPU verification."
+      # No raw logs, screenshots, private files, integrated Mach-O uploads,
+      # or automatic merges. Runtime evidence is classified locally.

@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from rehearse_stage73_private_drive import run_synthetic_rehearsal, main
+from rehearse_stage73_private_drive import run_synthetic_rehearsal, main, PREFLIGHT_MARKER
 from archive_private_capture_drive import DriveArchiveRejected
 from test_stage73_drive_readback import PARENT, RECEIPTS, COMMIT
 from test_stage73_independent_persistence import PersistentFakeTransport
@@ -40,6 +40,33 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
         self.assertTrue(self.backup.is_file())
         self.assertTrue(self.reference.is_file())
         self.assertEqual(len(self.transport.files), 4)
+
+    def test_read_only_cli_preflight_creates_no_remote_or_local_objects(self):
+        opts = [
+            "--capture-parent-id", PARENT,
+            "--receipt-parent-id", RECEIPTS,
+            "--run-id", "123", "--source-commit", COMMIT,
+            "--backup", str(self.backup), "--reference", str(self.reference),
+            "--preflight-only",
+        ]
+        env = {
+            "GITHUB_ACTIONS": "",
+            "NEXIUM_PRIVATE_ARCHIVE_ARMED": "true",
+            "NEXIUM_DRIVE_ACCESS_TOKEN": "fake",
+        }
+        out = io.StringIO()
+        with patch.dict(os.environ, env):
+            with patch("rehearse_stage73_private_drive.GoogleTransport",
+                       return_value=self.transport):
+                with contextlib.redirect_stdout(out):
+                    outcome = main(opts)
+        self.assertEqual(outcome, 0)
+        self.assertEqual(out.getvalue(), PREFLIGHT_MARKER + "\\n")
+        self.assertTrue(self.transport.calls)
+        self.assertFalse(any(method == "POST" for method, _ in self.transport.calls))
+        self.assertFalse(any(method == "PUT" for method, _ in self.transport.calls))
+        self.assertFalse(self.backup.exists())
+        self.assertFalse(self.reference.exists())
 
     def test_shared_parent_rejected_without_remote_writes(self):
         self.transport.shared_ancestor = True

@@ -41,3 +41,13 @@ account separation, disaster recovery, Drive retention policy, or native
 emulation success. The native CI archive_ready=false guard is unchanged.
 Do not merge PR #76 before protected-environment review and direct
 independent persistence evidence.
+
+
+Before any synthetic Drive upload, the trusted runner checks BOTH protected
+parent-folder ACL chains and searches for an existing capture run folder or
+private handoff receipt with the same run ID/source-commit. A collision,
+missing/incomplete listing, or changed privacy fails without any new POST.
+This is a fail-closed optimization for recoverable retries, not a remotely
+atomic reservation: concurrent trusted upload processes must not run with
+the same identity. Partial failure artifacts must be retained privately
+for later review, not automatically deleted.

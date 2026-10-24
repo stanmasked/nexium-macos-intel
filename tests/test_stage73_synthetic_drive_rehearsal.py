@@ -98,6 +98,46 @@ class Stage73SyntheticRehearsalTests(unittest.TestCase):
         self.assertTrue(self.backup.exists())
         self.assertTrue(self.reference.exists())
 
+    def test_second_run_id_rejected_before_any_new_remote_write(self):
+        self.assertTrue(run_synthetic_rehearsal(*self.args)["synthetic_only"])
+        first_remote_writes = sum(method == "POST"
+                                  for method, _ in self.transport.calls)
+        second_backup = self.a / "different-backup.json"
+        second_reference = self.b / "different-reference.json"
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "synthetic_run_identity_not_unique"):
+            run_synthetic_rehearsal(
+                self.transport, PARENT, RECEIPTS, "123", COMMIT,
+                second_backup, second_reference,
+            )
+        self.assertEqual(first_remote_writes, sum(
+            method == "POST" for method, _ in self.transport.calls))
+        self.assertFalse(second_backup.exists())
+        self.assertFalse(second_reference.exists())
+
+    def test_existing_capture_folder_rejected_before_remote_write(self):
+        self.transport.force_capture_run_collision = True
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "synthetic_run_identity_not_unique"):
+            run_synthetic_rehearsal(*self.args)
+        self.assertFalse(any(method == "POST"
+                             for method, _ in self.transport.calls))
+
+    def test_incomplete_collision_search_is_not_assumed_empty(self):
+        self.transport.force_incomplete_preflight_listing = True
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "synthetic_run_identity_not_unique"):
+            run_synthetic_rehearsal(*self.args)
+        self.assertFalse(any(method == "POST"
+                             for method, _ in self.transport.calls))
+
+    def test_preflight_checks_both_destination_acls_before_writes(self):
+        self.transport.shared_parent = True
+        with self.assertRaisesRegex(DriveArchiveRejected, "remote_acl_not_owner_only"):
+            run_synthetic_rehearsal(*self.args)
+        self.assertFalse(any(method == "POST"
+                             for method, _ in self.transport.calls))
+
     def test_cli_disabled_on_github_actions_even_with_arm(self):
         opts = [
             "--capture-parent-id", PARENT,

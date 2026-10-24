@@ -11,11 +11,12 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from urllib.parse import urlencode
 
 from archive_private_capture_drive import (
     COMMIT, RUN_ID, DRIVE_ID, DriveArchiveRejected, GoogleTransport,
     upload_archive, write_private_handoff, persist_private_handoff,
-    write_private_receipt_anchor,
+    write_private_receipt_anchor, json_response, check_parent,
 )
 from backup_stage73_private_anchor import (
     backup_offline_anchor, verify_offline_anchor, _separate_paths,
@@ -27,6 +28,29 @@ from verify_stage73_private_drive_persistence import (
 
 MARKER = "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_VERIFIED_RETENTION_UNVERIFIED"
 ERROR = "STAGE73_PRIVATE_SYNTHETIC_DRIVE_REHEARSAL_BLOCKED"
+
+
+
+def preflight_new_rehearsal(transport, capture_parent, receipt_parent,
+                            run_id, commit):
+    """Reject duplicate remote run IDs before writing any synthetic object."""
+    for parent in (capture_parent, receipt_parent):
+        check_parent(transport, parent)
+    targets = (
+        (capture_parent, "stage73-" + run_id + "-" + commit[:12]),
+        (receipt_parent, "stage73-" + run_id + "-" + commit[:12] + "-handoff.json"),
+    )
+    for parent, name in targets:
+        query = "'" + parent + "' in parents and name = '" + name + "' and trashed = false"
+        path = "/drive/v3/files?" + urlencode({
+            "q": query, "pageSize": "2", "fields": "nextPageToken,files(id,name)",
+            "supportsAllDrives": "true", "includeItemsFromAllDrives": "true",
+        })
+        result, _ = json_response(transport, "GET", path)
+        if (result.get("nextPageToken")
+                or not isinstance(result.get("files"), list)
+                or len(result["files"]) != 0):
+            raise DriveArchiveRejected("synthetic_run_identity_not_unique")
 
 
 def run_synthetic_rehearsal(transport, capture_parent, receipt_parent,
@@ -53,6 +77,10 @@ def run_synthetic_rehearsal(transport, capture_parent, receipt_parent,
             or not backup.parent.is_dir() or backup.parent.is_symlink()
             or not reference.parent.is_dir() or reference.parent.is_symlink()):
         raise DriveArchiveRejected("unsafe_synthetic_backup_paths")
+    # Perform read-only collision and ACL checks before even creating a
+    # remote run folder or a private upload session.
+    preflight_new_rehearsal(
+        transport, capture_parent, receipt_parent, run_id, commit)
     with tempfile.TemporaryDirectory(prefix="nexium-stage73-synthetic-") as root_name:
         root = Path(root_name)
         workspace = root / "workspace"

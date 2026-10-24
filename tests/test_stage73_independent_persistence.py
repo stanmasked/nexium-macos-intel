@@ -51,6 +51,15 @@ class PersistentFakeTransport(FakeTransport):
                     "permissions": [{"type": "user", "role": "owner"}],
                     "size": str(len(content)),
                 })
+            if getattr(self, "force_capture_run_collision", False) and parent == PARENT:
+                expected = "stage73-123-" + COMMIT[:12]
+                if filename == expected:
+                    records.append({"id": "existingRunFolder123",
+                                    "name": expected})
+            if getattr(self, "force_incomplete_preflight_listing", False) and filename:
+                return 200, {}, json.dumps({
+                    "files": [], "nextPageToken": "morePrivateItems",
+                }).encode()
             return 200, {}, json.dumps({"files": records}).encode()
         return super().call(method, path, body=body, headers=headers, limit=limit)
 

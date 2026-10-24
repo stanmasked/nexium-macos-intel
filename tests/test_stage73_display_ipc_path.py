@@ -828,6 +828,34 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         result = last_ipc_request_summary("only synthetic unrelated debug text")
         self.assertIsNone(result["last_ipc_request_prior_unanswered_same_command"])
 
+    def test_one_prior_reply_cannot_complete_two_prior_same_session_requests(self):
+        data = "\n".join((
+            'IPC request service="vi:u" cmd=2 session=0x20',
+            'IPC request service="vi:u" cmd=2 session=0x20',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:u cmd=2 session=0x20 rc=0x00000000',
+            'IPC request service="vi:u" cmd=2 session=0x20',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:u cmd=2 session=0x20 rc=0x00000000',
+        ))
+        result = last_ipc_request_summary(data)
+        self.assertTrue(result["last_ipc_request_prior_unanswered_same_command"])
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+        self.assertNotIn("0x20", json.dumps(result))
+
+    def test_orphan_reply_before_previous_request_does_not_cancel_pending(self):
+        data = "\n".join((
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:u cmd=2 session=0x20 rc=0x00000000',
+            'IPC request service="vi:u" cmd=2 session=0x20',
+            'IPC request service="vi:u" cmd=2 session=0x20',
+            'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '
+            'service=vi:u cmd=2 session=0x20 rc=0x00000000',
+        ))
+        result = last_ipc_request_summary(data)
+        self.assertTrue(result["last_ipc_request_prior_unanswered_same_command"])
+        self.assertFalse(result["last_ipc_request_response_after_request"])
+
     def test_nvdrv_response_from_different_service_alias_does_not_count(self):
         data = ('IPC request service="nvdrv:a" cmd=7\n'
                 'IPC FIRST-OCCURRENCE response (compare with RustSwitch) '

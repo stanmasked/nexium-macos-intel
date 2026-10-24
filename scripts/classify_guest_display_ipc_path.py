@@ -117,11 +117,21 @@ def last_ipc_request_summary(data: str) -> dict:
         if service == request_service and cmd == command
         and session == request_session
     ]
-    prior_unanswered = any(
-        not any(earlier_line < reply_line < request_line
-                for reply_line, _, _, _ in matching)
-        for earlier_line in previous_matching_requests
+    # Pair each earlier reply at most once, in log order. Reusing one
+    # response to discharge multiple overlapping requests would certify a
+    # false completion. Orphan replies before the first request do not count.
+    prior_events = sorted(
+        [(line_no, 1) for line_no in previous_matching_requests]
+        + [(line_no, -1) for line_no, _, _, _ in matching
+           if line_no < request_line]
     )
+    outstanding_prior = 0
+    for _, change in prior_events:
+        if change > 0:
+            outstanding_prior += 1
+        elif outstanding_prior:
+            outstanding_prior -= 1
+    prior_unanswered = outstanding_prior > 0
     response_after = (
         not prior_unanswered and
         any(line_no > request_line for line_no, _, _, _ in matching)

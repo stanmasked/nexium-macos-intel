@@ -158,6 +158,32 @@ def check_parent(transport, folder_id):
     check_private_parent_chain(transport, folder_id, writable=True)
 
 
+def require_remote_name_available(transport, parent_id, filename):
+    """Fail closed if a run folder or handoff name already exists in Drive.
+
+    Drive listing is not a remote atomic reservation. Concurrent protected
+    writers must still be serialized externally; this is a duplicate/retry
+    guard for the normal single-writer archival protocol.
+    """
+    if (not isinstance(parent_id, str) or not DRIVE_ID.fullmatch(parent_id)
+            or not isinstance(filename, str)
+            or not re.fullmatch(
+                r"stage73-[0-9]{1,20}-[a-f0-9]{12}(?:-handoff\\.json)?",
+                filename,
+            )):
+        raise DriveArchiveRejected("invalid_archive_identity")
+    query = "'" + parent_id + "' in parents and name = '" + filename + "' and trashed = false"
+    path = "/drive/v3/files?" + urlencode({
+        "q": query, "pageSize": "2", "fields": "nextPageToken,files(id,name)",
+        "supportsAllDrives": "true", "includeItemsFromAllDrives": "true",
+    })
+    listing, _ = json_response(transport, "GET", path)
+    if (listing.get("nextPageToken")
+            or not isinstance(listing.get("files"), list)
+            or listing["files"]):
+        raise DriveArchiveRejected("remote_archive_identity_not_unique")
+
+
 def create_run_folder(transport, parent, run_id, commit):
     name = "stage73-" + run_id + "-" + commit[:12]
     data, _ = json_response(
@@ -482,6 +508,7 @@ def persist_private_handoff(transport, path, receipt_parent_id,
     # Check BOTH privacy and writability of the separate receipt folder.
     check_parent(transport, receipt_parent_id)
     name = "stage73-" + run_id + "-" + commit[:12] + "-handoff.json"
+    require_remote_name_available(transport, receipt_parent_id, name)
     receipt_sha = hashlib.sha256(raw).hexdigest()
     upload_one(transport, receipt_parent_id, name, raw, receipt_sha)
     return {"private_receipt_readback_verified": True,
@@ -566,6 +593,8 @@ def upload_archive(report, manifest_path, parent_id, run_id, transport):
     # Fail before creating a remote folder if the manifest points to files
     # that changed since sealing. The first verification above does this.
     check_parent(transport, parent_id)
+    require_remote_name_available(
+        transport, parent_id, "stage73-" + run_id + "-" + commit[:12])
     folder_id = create_run_folder(transport, parent_id, run_id, commit)
     expected_run_name = "stage73-" + run_id + "-" + commit[:12]
     count = 0
@@ -621,6 +650,21 @@ def main(argv=None):
                 or args.receipt_parent_id == args.parent_id):
             raise DriveArchiveRejected("unsafe_receipt_destination")
         transport = GoogleTransport(os.environ.get("NEXIUM_DRIVE_ACCESS_TOKEN", ""))
+        # Preflight the receipt destination as well as capture destination
+        # BEFORE the first remote POST. Otherwise the capture could finish
+        # only to discover a conflicting receipt name after its upload.
+        try:
+            verify_manifest(args.report, args.manifest)
+            source_commit = json.loads(
+                args.manifest.read_text(encoding="utf-8"))["source_commit"]
+        except (ArchiveRejected, OSError, UnicodeError, ValueError, KeyError) as error:
+            raise DriveArchiveRejected("invalid_local_capture") from error
+        if not isinstance(source_commit, str) or not COMMIT.fullmatch(source_commit):
+            raise DriveArchiveRejected("invalid_source_commit")
+        check_parent(transport, args.receipt_parent_id)
+        require_remote_name_available(
+            transport, args.receipt_parent_id,
+            "stage73-" + args.run_id + "-" + source_commit[:12] + "-handoff.json")
         result = upload_archive(args.report, args.manifest,
                                 args.parent_id, args.run_id, transport)
         manifest_data = json.loads(args.manifest.read_text(encoding="utf-8"))

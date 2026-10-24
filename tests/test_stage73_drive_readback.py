@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import tempfile
@@ -60,6 +61,9 @@ class FakeTransport:
         self.created_folder_reparent_on_upload_init = False
         self.created_folder_rename_on_upload_init = False
         self.created_folder_readonly_on_upload_init = False
+        self.incomplete_preflight_listing = False
+        self.force_capture_identity_collision = False
+        self.force_receipt_identity_collision = False
         self.calls = []
 
     def call(self, method, path, body=b"", headers=None, limit=16384):
@@ -96,6 +100,31 @@ class FakeTransport:
                     and not self.ancestor_cycle):
                 del item["parents"]
             return 200, {}, json.dumps(item).encode()
+        if method == "GET" and url.path == "/drive/v3/files":
+            q = query.get("q", [""])[0]
+            p = re.search(r"'([^']+)' in parents", q)
+            n = re.search(r"name = '([^']+)'", q)
+            if p is None or n is None:
+                raise AssertionError("Unexpected Drive listing query")
+            parent_id, filename = p.group(1), n.group(1)
+            matches = [
+                {"id": folder_id, "name": folder["name"]}
+                for folder_id, folder in self.created_folders.items()
+                if folder["parents"] == [parent_id] and folder["name"] == filename
+            ]
+            matches.extend(
+                {"id": file_id, "name": metadata["name"]}
+                for file_id, (metadata, _) in self.files.items()
+                if metadata["parents"] == [parent_id]
+                and metadata["name"] == filename
+            )
+            if ((self.force_capture_identity_collision and filename.endswith(COMMIT[:12]))
+                    or (self.force_receipt_identity_collision and filename.endswith("-handoff.json"))):
+                matches.append({"id": "priorArchive9999", "name": filename})
+            result = {"files": matches}
+            if self.incomplete_preflight_listing:
+                result["nextPageToken"] = "moreUnknownPrivateItems"
+            return 200, {}, json.dumps(result).encode()
         if method == "POST" and url.path == "/drive/v3/files":
             item = json.loads(body)
             self.sequence += 1
@@ -501,6 +530,82 @@ class Stage73DriveReadbackTests(unittest.TestCase):
         with self.assertRaisesRegex(DriveArchiveRejected, "remote_folder_not_writable"):
             upload_archive(self.report, self.manifest, PARENT, "123", tr)
         self.assertFalse(any(m == "PUT" for m, _ in tr.calls))
+
+
+    def test_first_private_archive_checks_unique_name_before_remote_post(self):
+        tr = FakeTransport()
+        result = upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertTrue(result["readback_verified"])
+        preflight = [path for method, path in tr.calls
+                     if method == "GET" and path.startswith("/drive/v3/files?")]
+        self.assertTrue(any("name" in path for path in preflight))
+        self.assertLess(
+            tr.calls.index(next((method, path) for method, path in tr.calls
+                                if method == "GET" and path.startswith("/drive/v3/files?"))),
+            tr.calls.index(next((method, path) for method, path in tr.calls
+                                if method == "POST"))
+        )
+
+    def test_duplicate_private_run_id_refused_before_any_new_post(self):
+        tr = FakeTransport()
+        upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        previous_post_count = sum(m == "POST" for m, _ in tr.calls)
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "remote_archive_identity_not_unique"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertEqual(previous_post_count,
+                         sum(m == "POST" for m, _ in tr.calls))
+        self.assertEqual(len(tr.files), 3)
+
+    def test_existing_capture_collision_blocks_all_writes(self):
+        tr = FakeTransport()
+        tr.force_capture_identity_collision = True
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "remote_archive_identity_not_unique"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(m == "POST" for m, _ in tr.calls))
+
+    def test_incomplete_private_listing_blocks_all_writes(self):
+        tr = FakeTransport()
+        tr.incomplete_preflight_listing = True
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "remote_archive_identity_not_unique"):
+            upload_archive(self.report, self.manifest, PARENT, "123", tr)
+        self.assertFalse(any(m == "POST" for m, _ in tr.calls))
+
+    def test_duplicate_handoff_receipt_refused_without_new_upload(self):
+        tr, uploaded, receipt = self.make_receipt()
+        tr.force_receipt_identity_collision = True
+        prior_writes = sum(m in ("POST", "PUT") for m, _ in tr.calls)
+        with self.assertRaisesRegex(DriveArchiveRejected,
+                                    "remote_archive_identity_not_unique"):
+            persist_private_handoff(
+                tr, receipt, RECEIPTS, PARENT, "123", COMMIT, uploaded)
+        self.assertEqual(prior_writes,
+                         sum(m in ("POST", "PUT") for m, _ in tr.calls))
+
+    def test_real_uploader_preflights_receipt_conflict_before_capture(self):
+        from unittest.mock import patch
+        tr = FakeTransport()
+        tr.force_receipt_identity_collision = True
+        with tempfile.TemporaryDirectory() as private_dir:
+            with patch.dict("os.environ", {
+                "GITHUB_ACTIONS": "false",
+                "NEXIUM_PRIVATE_ARCHIVE_ARMED": "true",
+                "NEXIUM_DRIVE_ACCESS_TOKEN": "fake-testing-only",
+            }), patch("archive_private_capture_drive.GoogleTransport", return_value=tr):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    code = main([
+                        "--report", str(self.report), "--manifest", str(self.manifest),
+                        "--parent-id", PARENT, "--run-id", "123",
+                        "--receipt-parent-id", RECEIPTS,
+                        "--receipt-path", str(Path(private_dir) / "handoff.json"),
+                        "--anchor-path", str(Path(private_dir) / "anchor.json"),
+                    ])
+        self.assertEqual(code, 1)
+        self.assertEqual(stderr.getvalue(), "STAGE73_PRIVATE_DRIVE_ARCHIVE_BLOCKED\n")
+        self.assertFalse(any(m == "POST" for m, _ in tr.calls))
 
     def test_local_tamper_before_upload_fails_without_network(self):
         self.log.write_bytes(b"torn")

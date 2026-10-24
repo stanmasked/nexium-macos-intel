@@ -632,6 +632,70 @@ class Stage73GuestDisplayIpcPathTests(unittest.TestCase):
         self.set_through(10)
         self.assertEqual(self.inspect()["observed_stage"], "igbp_connect_request_buffer_not_observed")
 
+
+    def test_same_session_binder_transaction_interleaving_makes_connect_ambiguous(self):
+        self.set_scoped_window_path()
+        marker = 'IPC request service="IHOSBinderDriver" cmd=0 session=0x30 in_data=0'
+        self.data = self.data.replace(
+            marker, marker + '\nIPC request service="IHOSBinderDriver" '
+            'cmd=3 session=0x30 in_data=0', 1)
+        result = self.inspect()
+        self.assertEqual(
+            result["observed_stage"],
+            "binder_transaction_igbp_connect_correlation_ambiguous",
+        )
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("0x30", json.dumps(result))
+        self.assertNotIn("256", json.dumps(result))
+
+    def test_other_session_binder_transaction_does_not_make_connect_ambiguous(self):
+        self.set_scoped_window_path()
+        marker = 'IPC request service="IHOSBinderDriver" cmd=0 session=0x30 in_data=0'
+        self.data = self.data.replace(
+            marker, marker + '\nIPC request service="IHOSBinderDriver" '
+            'cmd=3 session=0x31 in_data=0', 1)
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertTrue(result["binder_transaction_session_correlated"])
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("0x31", json.dumps(result))
+
+    def test_same_binder_reconnect_before_request_buffer_is_ambiguous(self):
+        self.set_scoped_window_path()
+        marker = "IGBP::Connect binder=256 api=1 1280x720"
+        self.data = self.data.replace(
+            marker, marker + "\nIGBP::Connect binder=256 api=1 1280x720", 1)
+        result = self.inspect()
+        self.assertEqual(
+            result["observed_stage"],
+            "igbp_connect_request_buffer_correlation_ambiguous",
+        )
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("256", json.dumps(result))
+
+    def test_same_binder_reconnect_after_request_buffer_blocks_later_queue_attribution(self):
+        self.set_scoped_window_path()
+        marker = "IGBP::RequestBuffer binder=256 slot=0"
+        self.data = self.data.replace(
+            marker, marker + "\nIGBP::Connect binder=256 api=1 1280x720", 1)
+        result = self.inspect()
+        self.assertEqual(
+            result["observed_stage"],
+            "igbp_request_buffer_reconnect_before_later_buffer_operation_unverified",
+        )
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("256", json.dumps(result))
+
+    def test_other_binder_connect_does_not_block_current_binder_buffer_path(self):
+        self.set_scoped_window_path()
+        marker = "IGBP::Connect binder=256 api=1 1280x720"
+        self.data = self.data.replace(
+            marker, marker + "\nIGBP::Connect binder=512 api=1 1280x720", 1)
+        result = self.inspect()
+        self.assertEqual(result["observed_stage"], "igbp_queue_observed_not_gpu_proof")
+        self.assertFalse(result["guest_gpu_frames_verified"])
+        self.assertNotIn("512", json.dumps(result))
+
     def test_request_buffer_without_debug_visible_later_marker_is_unverified(self):
         self.set_through(11)
         self.assertEqual(

@@ -702,55 +702,106 @@ def inspect_guest_display_ipc_path(report: Path, macho_sha: str,
                     if connect_match is None:
                         stage = "binder_transact_igbp_connect_not_observed"
                     else:
-                        connect_binder = connect_match.group(1)
-                        buffer_matches = list(
-                            IGBP_REQUEST_BUFFER_PATTERN.finditer(
-                                data, connect_match.end()
+                        # The debug log has no Binder transaction/request ID.
+                        # If another transaction on the same Binder session
+                        # starts before Connect, do not attribute that Connect
+                        # to the first transaction by order alone.
+                        if binder_session is None:
+                            interleaved_binder_transaction = next(
+                                binder_transaction_pattern.finditer(
+                                    data, binder_transaction.end(),
+                                    connect_match.start()),
+                                None,
                             )
-                        )
-                        request_buffer_match = next(
-                            (match for match in buffer_matches
-                             if match.group(1) == connect_binder),
-                            None,
-                        )
-                        if request_buffer_match is None:
-                            if buffer_matches:
-                                stage = "igbp_connect_request_buffer_binder_mismatch"
-                            else:
-                                stage = "igbp_connect_request_buffer_not_observed"
                         else:
-                            request_buffer = request_buffer_match.end()
-                            operation_patterns = (
-                                ("queue", IGBP_QUEUE_BUFFER_PATTERN),
-                                ("dequeue_retry", IGBP_DEQUEUE_RETRY_PATTERN),
-                                ("dequeue_timeout", IGBP_DEQUEUE_TIMEOUT_PATTERN),
+                            interleaved_binder_transaction = next((
+                                match for match in SESSION_IPC_REQUEST_PATTERN.finditer(
+                                    data, binder_transaction.end(),
+                                    connect_match.start())
+                                if match.group(1) == "IHOSBinderDriver"
+                                and int(match.group(2)) in (0, 3)
+                                and int(match.group(3), 16) == binder_session
+                            ), None)
+                        if interleaved_binder_transaction is not None:
+                            stage = "binder_transaction_igbp_connect_correlation_ambiguous"
+                        else:
+                            connect_binder = connect_match.group(1)
+                            # Binder IDs can be reused across a repeated Connect.
+                            # Keep this Connect's evidence window separate from
+                            # a later connection carrying the same ID.
+                            next_same_binder_connect = next((
+                                match for match in IGBP_CONNECT_PATTERN.finditer(
+                                    data, connect_match.end())
+                                if match.group(1) == connect_binder
+                            ), None)
+                            buffer_end = (
+                                next_same_binder_connect.start()
+                                if next_same_binder_connect is not None else len(data)
                             )
-                            later_operations = []
-                            other_binder_operations = []
-                            for operation_kind, pattern in operation_patterns:
-                                for match in pattern.finditer(data, request_buffer):
-                                    item = (match.start(), operation_kind)
-                                    if match.group(1) == connect_binder:
-                                        later_operations.append(item)
-                                    else:
-                                        other_binder_operations.append(item)
-                            if not later_operations:
-                                if other_binder_operations:
-                                    stage = (
-                                        "igbp_request_buffer_other_binder_activity_"
-                                        "unverified"
-                                    )
+                            buffer_matches = list(
+                                IGBP_REQUEST_BUFFER_PATTERN.finditer(
+                                    data, connect_match.end(), buffer_end
+                                )
+                            )
+                            request_buffer_match = next(
+                                (match for match in buffer_matches
+                                 if match.group(1) == connect_binder),
+                                None,
+                            )
+                            if request_buffer_match is None:
+                                if next_same_binder_connect is not None:
+                                    stage = "igbp_connect_request_buffer_correlation_ambiguous"
+                                elif buffer_matches:
+                                    stage = "igbp_connect_request_buffer_binder_mismatch"
                                 else:
-                                    stage = (
-                                        "igbp_request_buffer_observed_later_buffer_operations_"
-                                        "unverified_at_debug_level"
-                                    )
+                                    stage = "igbp_connect_request_buffer_not_observed"
                             else:
-                                _, last_operation = max(later_operations)
-                                if last_operation == "queue":
-                                    stage = "igbp_queue_observed_not_gpu_proof"
+                                request_buffer = request_buffer_match.end()
+                                # Do not borrow a queue/dequeue marker from a
+                                # subsequent same-ID connection. The log does
+                                # not expose a unique connection generation.
+                                operation_end = (
+                                    next_same_binder_connect.start()
+                                    if next_same_binder_connect is not None
+                                    else len(data)
+                                )
+                                operation_patterns = (
+                                    ("queue", IGBP_QUEUE_BUFFER_PATTERN),
+                                    ("dequeue_retry", IGBP_DEQUEUE_RETRY_PATTERN),
+                                    ("dequeue_timeout", IGBP_DEQUEUE_TIMEOUT_PATTERN),
+                                )
+                                later_operations = []
+                                other_binder_operations = []
+                                for operation_kind, pattern in operation_patterns:
+                                    for match in pattern.finditer(
+                                            data, request_buffer, operation_end):
+                                        item = (match.start(), operation_kind)
+                                        if match.group(1) == connect_binder:
+                                            later_operations.append(item)
+                                        else:
+                                            other_binder_operations.append(item)
+                                if not later_operations:
+                                    if next_same_binder_connect is not None:
+                                        stage = (
+                                            "igbp_request_buffer_reconnect_before_later_"
+                                            "buffer_operation_unverified"
+                                        )
+                                    elif other_binder_operations:
+                                        stage = (
+                                            "igbp_request_buffer_other_binder_activity_"
+                                            "unverified"
+                                        )
+                                    else:
+                                        stage = (
+                                            "igbp_request_buffer_observed_later_buffer_operations_"
+                                            "unverified_at_debug_level"
+                                        )
                                 else:
-                                    stage = "igbp_dequeue_retry_or_timeout_observed"
+                                    _, last_operation = max(later_operations)
+                                    if last_operation == "queue":
+                                        stage = "igbp_queue_observed_not_gpu_proof"
+                                    else:
+                                        stage = "igbp_dequeue_retry_or_timeout_observed"
     return {
         "schema": "nexium-stage73-display-ipc-path/v3",
         "observed_stage": stage,
